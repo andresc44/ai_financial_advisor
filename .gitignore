@@ -2,6 +2,7 @@
 __pycache__/
 *.py[codz]
 *$py.class
+*.py[cod]
 
 # C extensions
 *.so
@@ -153,9 +154,11 @@ activemq-data/
 .venv
 env/
 venv/
+*.venv/
 ENV/
 env.bak/
 venv.bak/
+*.json
 
 # Spyder project settings
 .spyderproject
@@ -216,3 +219,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# IDEs / OS files
+.DS_Store
+.vscode/
+.idea/
