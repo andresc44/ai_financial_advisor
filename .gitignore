@@ -224,3 +224,6 @@ __marimo__/
 .DS_Store
 .vscode/
 .idea/
+
+#Google Service Account JSON Keys
+finnbot-504921-b0b491c76f49.json
