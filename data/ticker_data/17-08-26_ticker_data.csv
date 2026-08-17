@@ -1,0 +1,27 @@
+ticker,companyName,price,volume_M,marketCap_M,sector,industry,country
+ADBE,Adobe Inc. Common Stock,264.02,2.876298,104947.95,Technology,Computer Software: Prepackaged Software,United States
+ADSK,Autodesk Inc. Common Stock,251.66,1.39546,53100.26,Technology,Computer Software: Prepackaged Software,United States
+APP,Applovin Corporation Class A Common Stock,315.44,5.277783,105562.31144,Technology,Computer Software: Programming Data Processing,United States
+CDNS,Cadence Design Systems Inc. Common Stock,324.82,2.568288,89453.15426,Technology,Computer Software: Prepackaged Software,United States
+CRM,Salesforce Inc. Common Stock,196.21,8.664799,160695.99,Technology,Computer Software: Prepackaged Software,United States
+CRWD,CrowdStrike Holdings Inc. Class A Common Stock,216.95,6.750309,220911.350796,Technology,Computer Software: Prepackaged Software,United States
+CRWV,CoreWeave Inc. Class A Common Stock,105.26,33.337953,58054.742727,Technology,Computer Software: Prepackaged Software,United States
+DDOG,Datadog Inc. Class A Common Stock,255.46,4.423263,91729.305631,Technology,Computer Software: Prepackaged Software,United States
+GOOG,Alphabet Inc. Class C Capital Stock,343.54,10.946873,4201494.2,Technology,Computer Software: Programming Data Processing,United States
+GOOGL,Alphabet Inc. Class A Common Stock,345.9,17.808737,4230357.0,Technology,Computer Software: Programming Data Processing,United States
+GOOGM,Alphabet Inc. Depositary Shares representing a 1/20th Interest in a Share of Series A Mandatory Convertible Preferred Stock,49.29,0.617291,602816.7,Technology,Computer Software: Programming Data Processing,United States
+GOOGN,Alphabet Inc. Depositary Shares representing a 1/20th Interest in a Share of Series B Mandatory Convertible Preferred Stock,48.97,0.780921,598903.1,Technology,Computer Software: Programming Data Processing,United States
+HPE,Hewlett Packard Enterprise Company Common Stock,58.71,11.762689,77743.988718,Technology,Retail: Computer Software & Peripheral Equipment,United States
+INTU,Intuit Inc. Common Stock,345.66,3.226903,94550.79942,Technology,Computer Software: Prepackaged Software,United States
+MSFT,Microsoft Corporation Common Stock,495.4,16.21781,3678615.236241,Technology,Computer Software: Prepackaged Software,United States
+NBIS,Nebius Group N.V. Class A Ordinary Shares,277.68,29.024742,75488.756934,Technology,Computer Software: Programming Data Processing,Netherlands
+NET,Cloudflare Inc. Class A Common Stock,315.78,3.026441,112442.852403,Technology,Computer Software: Prepackaged Software,United States
+NOW,ServiceNow Inc. Common Stock,124.0,15.030808,128216.0,Technology,Computer Software: Prepackaged Software,United States
+NTES,NetEase Inc. American Depositary Shares,125.12,1.062525,79842.588498,Technology,Computer Software: Prepackaged Software,China
+ORCL,Oracle Corporation Common Stock,150.52,21.905515,433568.49492,Technology,Computer Software: Prepackaged Software,United States
+PLTR,Palantir Technologies Inc. Class A Common Stock,174.04,24.066095,418053.387659,Technology,Computer Software: Prepackaged Software,United States
+SAP,SAP  SE ADS,207.97,2.562781,255492.025129,Technology,Computer Software: Prepackaged Software,Germany
+SHOP,Shopify Inc. Class A Subordinate Voting Shares,154.32,5.489423,199969.557378,Technology,Computer Software: Prepackaged Software,Canada
+SNOW,Snowflake Inc. Common Stock,328.92,2.583124,114003.672,Technology,Computer Software: Prepackaged Software,United States
+SNPS,Synopsys Inc. Common Stock,421.5,1.243045,80708.535488,Technology,Computer Software: Prepackaged Software,United States
+SPCX,Space Exploration Technologies Corp. Class A Common Stock,140.0,96.727847,1845449.1923,Technology,Computer Software: Programming Data Processing,United States

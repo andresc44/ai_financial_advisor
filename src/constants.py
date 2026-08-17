@@ -201,3 +201,15 @@ INDUSTRIES = [
     "Water Supply",
     "Wholesale Distributors",
 ]
+
+# Lookback and Lookahead Windows (Days)
+COMPANY_NEWS_LOOKBACK_DAYS = 60
+EARNINGS_LOOKBACK_DAYS = 60
+EARNINGS_FUTURE_LOOKAHEAD_DAYS = 30
+
+# Environment and Credentials
+ENV_KEY_FINNHUB = "FINNHUB_API_KEY"
+DEFAULT_ENV_FILENAME = ".env"
+
+# API Settings
+FINNHUB_RATE_LIMIT_SLEEP = 0.05
