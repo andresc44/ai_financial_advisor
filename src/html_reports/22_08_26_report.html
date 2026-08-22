@@ -1,0 +1,1905 @@
+<!--
+================================================================================
+DAILY FINANCIAL DIGEST — EMAIL TEMPLATE (Jinja2)
+================================================================================
+Mobile-first (480px cap), table-based layout for Gmail/Outlook-on-Android
+rendering, Geotab brand palette, financial red/green conditionals.
+
+TOP-LEVEL DATA CONTRACT (see render_digest.py for the full typed schema):
+  report_date            | Type: str
+  market_status           | Type: Literal["Risk-On","Risk-Off","Consolidating"]
+  macro_metrics            | Type: List[Dict[str, Any]]
+  macro_stories             | Type: List[str]
+  sector_heatmap_url         | Type: str
+  portfolio_value              | Type: float
+  cash_balance                  | Type: float
+  daily_pl_dollar                | Type: float
+  daily_pl_percent                | Type: float
+  all_time_pl_dollar               | Type: float
+  all_time_pl_percent               | Type: float
+  portfolio_beta                     | Type: float
+  performance_chart_url               | Type: str
+  holdings                             | Type: List[Dict[str, Any]]
+  swing_candidates                      | Type: List[Dict[str, Any]]
+  value_candidates                       | Type: List[Dict[str, Any]]
+  allocation_chart_url                    | Type: str
+  risk_warnings                            | Type: List[str]
+
+REQUIRES CUSTOM JINJA FILTERS (registered on the Environment in
+render_digest.py — plain Jinja2 has no built-in currency/percent formatting):
+  currency         -> "$12,345.67"
+  signed_currency   -> "+$123.45" / "-$123.45"
+  signed_pct         -> "+1.23%" / "-1.23%"
+  pct                 -> "38.0%"
+
+DESIGN NOTE ON COLOR: the brief locks in the Geotab palette plus a strict
+green/red exception for price gain/loss. Zone 3's "Decision Flag" badge has
+three states, and only two map cleanly onto that palette (HOLD -> favorable
+blue, RISK ALERT -> the existing bearish red). "TRIM / TAKE PROFIT" is a
+genuinely separate, in-between signal, so one supplementary caution color
+(#D97706, amber) is introduced for it — flagged here since it's the one
+deviation from the given hex list. Sentiment badges (Bullish/Bearish/Neutral)
+and the pre-market status tag reuse the existing palette with no additions.
+================================================================================
+-->
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>Daily Financial Digest — Saturday, August 22, 2026</title>
+<!--[if mso]>
+<noscript>
+<xml>
+<o:OfficeDocumentSettings>
+<o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings>
+</xml>
+</noscript>
+<![endif]-->
+<style>
+  /* ---- Client resets ---- */
+  body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; display: block; }
+  body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #EFF2F7; }
+  a { text-decoration: none; }
+  table { border-collapse: collapse; }
+
+  /* ---- Mobile-first: this IS the base layout, capped at 480px ---- */
+  .email-container { width: 480px; max-width: 480px; }
+
+  @media screen and (max-width: 480px) {
+     .email-container { width: 100% !important; }
+     .fluid-td { width: 100% !important; display: block !important; }
+     .half-col { width: 50% !important; }
+     .quick-link-cell { padding-left: 4px !important; padding-right: 4px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#EFF2F7;">
+
+<!-- Preheader (hidden preview text) -->
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
+  Consolidating — Portfolio -0.02% today. Full digest inside.
+  <!-- Whitespace padding so Gmail/Apple Mail don't pull trailing body text into the inbox snippet -->
+  &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+</div>
+
+<center style="width:100%;background-color:#EFF2F7;">
+<!--[if mso]>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td>
+<![endif]-->
+<table role="presentation" class="email-container" width="480" cellpadding="0" cellspacing="0" border="0" align="center" style="width:480px;max-width:480px;margin:0 auto;background-color:#EFF2F7;">
+
+  <!-- ============================================================ -->
+  <!-- MASTHEAD                                                       -->
+  <!-- EXPECTED DATA: report_date | Type: str                          -->
+  <!-- EXPECTED DATA: market_status | Type: Literal["Risk-On","Risk-Off","Consolidating"] -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:24px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+      <p style="margin:0 0 4px 0;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#66788C;font-weight:700;">Daily Financial Digest</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td valign="middle" style="font-size:22px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">
+            Saturday, August 22, 2026
+          </td>
+          <td valign="middle" align="right">
+            <span style="display:inline-block;padding:7px 14px;border-radius:20px;background-color:#F1F4F8;color:#66788C;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;white-space:nowrap;">Consolidating</span>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ============================================================ -->
+  <!-- ZONE 1: GLOBAL MACRO PULSE                                     -->
+  <!-- EXPECTED DATA: macro_metrics | Type: List[Dict[str, Any]]       -->
+  <!--   each item: { label: str, value: str, change_percent: Optional[float] } -->
+  <!-- EXPECTED DATA: macro_stories | Type: List[str]                   -->
+  <!-- EXPECTED DATA: sector_heatmap_url | Type: str                     -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:16px 16px 0 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+        <tr>
+          <td style="padding:18px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Global Macro Pulse</p>
+            <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Industrial &amp; broad economy — mining/resources excluded</p>
+          </td>
+        </tr>
+
+        <!-- Macro metric grid: two columns, stacked table rows of pairs -->
+        <tr>
+          <td style="padding:12px 12px 4px 12px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="half-col" width="50%" valign="top" style="padding:4px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">ISM Mfg PMI</p>
+                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
+                          48.7
+                            <span style="font-size:12px;font-weight:700;color:#DC2626;">-1.20%</span>
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+                <td class="half-col" width="50%" valign="top" style="padding:4px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">Industrial Production</p>
+                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
+                          102.4
+                            <span style="font-size:12px;font-weight:700;color:#16A34A;">+0.40%</span>
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td class="half-col" width="50%" valign="top" style="padding:4px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">US 10-Yr Treasury Yield</p>
+                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
+                          4.18%
+                            <span style="font-size:12px;font-weight:700;color:#16A34A;">+0.90%</span>
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+                <td class="half-col" width="50%" valign="top" style="padding:4px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">Cass Freight Index</p>
+                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
+                          1.087
+                            <span style="font-size:12px;font-weight:700;color:#DC2626;">-2.10%</span>
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td class="half-col" width="50%" valign="top" style="padding:4px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">CPI (YoY)</p>
+                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
+                          2.9%
+                            <span style="font-size:12px;font-weight:700;color:#DC2626;">-0.30%</span>
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+                <td class="half-col" width="50%" valign="top" style="padding:4px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">Fed Funds Rate</p>
+                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
+                          4.25–4.50%
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Top 3 macro stories -->
+        <tr>
+          <td style="padding:8px 16px 16px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:12px 0 6px 0;font-size:13px;font-weight:700;color:#002B49;text-transform:uppercase;letter-spacing:0.5px;">Top Stories</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Container throughput at West Coast ports eased for a second straight week, easing near-term pressure on inbound industrial input costs.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Regional Fed manufacturing surveys point to stabilizing new-order volumes, though hiring intentions among factory respondents softened.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Freight carriers flagged continued rate softness as capacity outpaces demand, a headwind for logistics-linked industrial names this quarter.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Sector heatmap image -->
+        <tr>
+          <td style="padding:0 12px 16px 12px;">
+            <a href="https://finviz.com/map.ashx?t=sec" style="display:block;">
+              <img src="https://finviz.com/map.ashx?t=sec" alt="S&amp;P 500 Sector Performance Heatmap" width="456" style="width:100%;max-width:456px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ============================================================ -->
+  <!-- ZONE 2: EXECUTIVE ACCOUNT DASHBOARD (6-MONTH BENCHMARK)         -->
+  <!-- EXPECTED DATA: portfolio_value | Type: float                     -->
+  <!-- EXPECTED DATA: cash_balance | Type: float                          -->
+  <!-- EXPECTED DATA: daily_pl_dollar | Type: float                        -->
+  <!-- EXPECTED DATA: daily_pl_percent | Type: float                        -->
+  <!-- EXPECTED DATA: all_time_pl_dollar | Type: float                       -->
+  <!-- EXPECTED DATA: all_time_pl_percent | Type: float                       -->
+  <!-- EXPECTED DATA: portfolio_beta | Type: float                              -->
+  <!-- EXPECTED DATA: performance_chart_url | Type: str                          -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:16px 16px 0 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+        <tr>
+          <td style="padding:18px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Executive Account Dashboard</p>
+            <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Trailing 6 months vs. S&amp;P 500</p>
+          </td>
+        </tr>
+
+        <!-- Headline value + daily P/L -->
+        <tr>
+          <td style="padding:8px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">TOTAL PORTFOLIO VALUE</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="bottom" style="font-size:28px;font-weight:700;color:#002B49;">$182,430.18</td>
+                <td valign="bottom" align="right" style="font-size:15px;font-weight:700;color:#DC2626;white-space:nowrap;">
+                  -$30.50 (-0.02%)
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Metrics bar: cash / all-time P/L / beta -->
+        <tr>
+          <td style="padding:10px 12px 4px 12px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="33%" style="padding:4px;" valign="top">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr><td style="padding:10px 10px;font-family:Arial,Helvetica,sans-serif;">
+                      <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">CASH</p>
+                      <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">$14,205.62</p>
+                    </td></tr>
+                  </table>
+                </td>
+                <td width="34%" style="padding:4px;" valign="top">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr><td style="padding:10px 10px;font-family:Arial,Helvetica,sans-serif;">
+                      <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">ALL-TIME P/L</p>
+                      <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#16A34A;">+29.90%</p>
+                    </td></tr>
+                  </table>
+                </td>
+                <td width="33%" style="padding:4px;" valign="top">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+                    <tr><td style="padding:10px 10px;font-family:Arial,Helvetica,sans-serif;">
+                      <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">BETA (vs SPX)</p>
+                      <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">1.08</p>
+                    </td></tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Performance chart -->
+        <tr>
+          <td style="padding:10px 12px 16px 12px;">
+            <img src="https://your-cdn.example.com/charts/portfolio_vs_spx_180d.png?v=2026-08-22" alt="Portfolio value vs. S&amp;P 500, trailing 180 days" width="456" style="width:100%;max-width:456px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ============================================================ -->
+  <!-- ZONE 3: ACTIVE HOLDINGS                                        -->
+  <!-- EXPECTED DATA: holdings | Type: List[Dict[str, Any]]             -->
+  <!--   each item: {                                                    -->
+  <!--     ticker: str, company_name: str, position_value: float,          -->
+  <!--     shares_held: float, daily_pl_dollar: float, daily_pl_percent: float, -->
+  <!--     decision_flag: Literal["HOLD (IN RANGE)","TRIM / TAKE PROFIT","RISK ALERT"], -->
+  <!--     rsi: float, ma_status: str,                                        -->
+  <!--     chart_image_url: str, chart_link_url: str,                          -->
+  <!--     news_bullets: List[str], sentiment: Literal["Bullish","Bearish","Neutral"], -->
+  <!--     catalysts: List[Dict[str, Any]]  # {event_type,label,event_date,days_until} -->
+  <!--     links: Dict[str, str]  # {yahoo, finviz, tradingview, sec_filings}    -->
+  <!--   }                                                                        -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:20px 16px 0 16px;font-family:Arial,Helvetica,sans-serif;">
+      <p style="margin:0 0 8px 4px;font-size:16px;font-weight:700;color:#002B49;">Active Holdings</p>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/AHCO" style="font-size:18px;font-weight:700;color:#0078D3;">AHCO</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">AdaptHealth Corp.</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$48.60</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">9.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/AHCO/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=AHCO&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="AHCO daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/AHCO" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=AHCO" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/AHCO/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=AHCO&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/CHRW" style="font-size:18px;font-weight:700;color:#0078D3;">CHRW</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">C.H. Robinson Worldwide, Inc.</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$1,150.64</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">8.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/CHRW/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=CHRW&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="CHRW daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/CHRW" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=CHRW" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/CHRW/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=CHRW&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/AAON" style="font-size:18px;font-weight:700;color:#0078D3;">AAON</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Aaon Inc.</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$901.23</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">11.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/AAON/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=AAON&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="AAON daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/AAON" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=AAON" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/AAON/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=AAON&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/ENB" style="font-size:18px;font-weight:700;color:#0078D3;">ENB</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Enbridge Inc.</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$868.33</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">17.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/ENB/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=ENB&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="ENB daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/ENB" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=ENB" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/ENB/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=ENB&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/SCHG" style="font-size:18px;font-weight:700;color:#0078D3;">SCHG</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Schwab U.S. Large-Cap Growth ETF</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$599.08</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">17.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/SCHG/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=SCHG&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="SCHG daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/SCHG" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=SCHG" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/SCHG/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=SCHG&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/CVS" style="font-size:18px;font-weight:700;color:#0078D3;">CVS</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">CVS Health Corporation</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$936.50</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">10.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/CVS/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=CVS&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="CVS daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/CVS" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=CVS" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/CVS/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=CVS&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/AAPL" style="font-size:18px;font-weight:700;color:#0078D3;">AAPL</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Apple Inc.</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$623.26</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">2.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/AAPL/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=AAPL&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="AAPL daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/AAPL" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=AAPL" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/AAPL/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=AAPL&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/WMT" style="font-size:18px;font-weight:700;color:#0078D3;">WMT</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Walmart Inc.</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$830.48</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">8.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/WMT/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=WMT&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="WMT daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/WMT" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=WMT" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/WMT/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=WMT&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 16px 12px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+
+        <!-- 1. Header bar -->
+        <tr>
+          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top">
+                  <a href="https://finance.yahoo.com/quote/META" style="font-size:18px;font-weight:700;color:#0078D3;">META</a>
+                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Meta Platforms, Inc. Class A Common Stock</p>
+                </td>
+                <td valign="top" align="right">
+                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">$1,101.00</p>
+                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">2.0 sh</p>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:#16A34A;">
+                  +$286.40 (+1.58%) today
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 2. Decision flag badge  -->
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:#E6F3FC;color:#0078D3;font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">HOLD (IN RANGE)</span>
+          </td>
+        </tr>
+
+        <!-- 3. Technical health -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">58.3</p>
+                </td>
+                <td width="50%" style="padding:10px 12px;" valign="top">
+                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
+                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">Above 20 EMA</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 4. Interactive charting -->
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <a href="https://www.tradingview.com/symbols/META/" style="display:block;">
+              <img src="https://finviz.com/chart.ashx?t=META&amp;ty=c&amp;ta=1&amp;p=d&amp;s=l" alt="META daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+            </a>
+          </td>
+        </tr>
+
+        <!-- 5. AI news & sentiment -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td>
+                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
+                    News &amp; Sentiment
+                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E7F7ED;color:#16A34A;font-size:11px;font-weight:700;">Bullish</span>
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Dealer statistics showed retail machine sales stabilizing in North America after three soft months.</td>
+                  </tr></table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
+                    <td valign="top">Management reaffirmed full-year margin guidance on last week&#39;s investor call, citing services-mix tailwinds.</td>
+                  </tr></table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 6. Upcoming catalysts (14-day window) -->
+        <tr>
+          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Ex-Dividend</strong> — Quarterly dividend · 2026-08-25
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 3 Days</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
+                  <strong style="color:#002B49;">Earnings</strong> — Q3 FY26 Earnings · 2026-09-03
+                </td>
+                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
+                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In 12 Days</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
+        <tr>
+          <td style="padding:4px 8px 8px 8px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finance.yahoo.com/quote/META" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://finviz.com/quote.ashx?t=META" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.tradingview.com/symbols/META/" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
+                </td>
+                <td class="quick-link-cell" width="25%" style="padding:2px;">
+                  <a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&amp;company=META&amp;type=10-K" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+
+  <!-- ============================================================ -->
+  <!-- ZONE 4: ACTIONABLE CANDIDATE WATCHLIST                          -->
+  <!-- EXPECTED DATA: swing_candidates | Type: List[Dict[str, Any]]      -->
+  <!--   each item: { ticker, setup, entry_zone, target_price, stop_loss } -->
+  <!-- EXPECTED DATA: value_candidates | Type: List[Dict[str, Any]]        -->
+  <!--   each item: { ticker, moat, valuation_metric, buy_target }           -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:8px 16px 0 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+        <tr>
+          <td style="padding:18px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Candidate Watchlist</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:4px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:#0078D3;text-transform:uppercase;letter-spacing:0.5px;">Medium-Term Swing Setups</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">PH <span style="font-weight:400;color:#66788C;font-size:12px;">— Bull flag breakout above $148 on rising volume</span></p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="34%" style="font-size:12px;color:#66788C;">Entry<br><span style="font-size:13px;font-weight:700;color:#002B49;">$146–$148</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Target<br><span style="font-size:13px;font-weight:700;color:#16A34A;">$158</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Stop<br><span style="font-size:13px;font-weight:700;color:#DC2626;">$141</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">ETN <span style="font-weight:400;color:#66788C;font-size:12px;">— Ascending triangle nearing $312 resistance</span></p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="34%" style="font-size:12px;color:#66788C;">Entry<br><span style="font-size:13px;font-weight:700;color:#002B49;">$305–$308</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Target<br><span style="font-size:13px;font-weight:700;color:#16A34A;">$325</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Stop<br><span style="font-size:13px;font-weight:700;color:#DC2626;">$296</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">ROK <span style="font-weight:400;color:#66788C;font-size:12px;">— Reclaiming 50 EMA after basing at support</span></p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="34%" style="font-size:12px;color:#66788C;">Entry<br><span style="font-size:13px;font-weight:700;color:#002B49;">$268–$272</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Target<br><span style="font-size:13px;font-weight:700;color:#16A34A;">$288</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Stop<br><span style="font-size:13px;font-weight:700;color:#DC2626;">$258</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">DOV <span style="font-weight:400;color:#66788C;font-size:12px;">— Higher-low structure, MACD bullish cross</span></p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="34%" style="font-size:12px;color:#66788C;">Entry<br><span style="font-size:13px;font-weight:700;color:#002B49;">$182–$185</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Target<br><span style="font-size:13px;font-weight:700;color:#16A34A;">$196</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Stop<br><span style="font-size:13px;font-weight:700;color:#DC2626;">$176</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">XYL <span style="font-weight:400;color:#66788C;font-size:12px;">— Range breakout above $128 supply zone</span></p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="34%" style="font-size:12px;color:#66788C;">Entry<br><span style="font-size:13px;font-weight:700;color:#002B49;">$126–$129</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Target<br><span style="font-size:13px;font-weight:700;color:#16A34A;">$138</span></td>
+                      <td width="33%" style="font-size:12px;color:#66788C;">Stop<br><span style="font-size:13px;font-weight:700;color:#DC2626;">$121</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:8px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:#0078D3;text-transform:uppercase;letter-spacing:0.5px;">Long-Term Value / Growth</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">EMR</p>
+                  <p style="margin:0 0 4px 0;font-size:13px;color:#3B4758;line-height:18px;">Entrenched automation install base with high switching costs</p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="50%" style="font-size:12px;color:#66788C;">Valuation<br><span style="font-size:13px;font-weight:700;color:#002B49;">P/E 21.3x (5yr avg 23.6x)</span></td>
+                      <td width="50%" style="font-size:12px;color:#66788C;">Buy Target<br><span style="font-size:13px;font-weight:700;color:#002B49;">$108</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">ITW</p>
+                  <p style="margin:0 0 4px 0;font-size:13px;color:#3B4758;line-height:18px;">Decentralized 80/20 operating model drives best-in-class margins</p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="50%" style="font-size:12px;color:#66788C;">Valuation<br><span style="font-size:13px;font-weight:700;color:#002B49;">P/E 22.8x (5yr avg 21.9x)</span></td>
+                      <td width="50%" style="font-size:12px;color:#66788C;">Buy Target<br><span style="font-size:13px;font-weight:700;color:#002B49;">$232</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 16px 10px 16px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
+              <tr>
+                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
+                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">PNR</p>
+                  <p style="margin:0 0 4px 0;font-size:13px;color:#3B4758;line-height:18px;">Water infrastructure exposure with recurring aftermarket revenue</p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="50%" style="font-size:12px;color:#66788C;">Valuation<br><span style="font-size:13px;font-weight:700;color:#002B49;">P/E 24.1x (5yr avg 26.4x)</span></td>
+                      <td width="50%" style="font-size:12px;color:#66788C;">Buy Target<br><span style="font-size:13px;font-weight:700;color:#002B49;">$74</span></td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr><td style="padding-bottom:4px;">&nbsp;</td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ============================================================ -->
+  <!-- ZONE 5: RISK GUARDRAILS & ALLOCATION                            -->
+  <!-- EXPECTED DATA: allocation_chart_url | Type: str                   -->
+  <!-- EXPECTED DATA: risk_warnings | Type: List[str]                      -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:16px 16px 0 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
+        <tr>
+          <td style="padding:18px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Risk Guardrails &amp; Allocation</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:0 12px 12px 12px;">
+            <img src="https://your-cdn.example.com/charts/allocation_pie.png?v=2026-08-22" alt="Asset allocation breakdown" width="456" style="width:100%;max-width:456px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:0 16px 16px 16px;font-family:Arial,Helvetica,sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding-bottom:8px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FDECEC;border:1px solid #DC2626;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#DC2626;line-height:18px;">⚠️ Industrials sector exposure at 38% — max limit 35%.</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-bottom:8px;">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FDECEC;border:1px solid #DC2626;border-radius:8px;">
+                    <tr>
+                      <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#DC2626;line-height:18px;">⚠️ UNP position size is 5.4% of portfolio — approaching the 6% single-name cap.</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- ============================================================ -->
+  <!-- FOOTER (compliance boilerplate — not one of the 5 core zones)  -->
+  <!-- ============================================================ -->
+  <tr>
+    <td style="padding:20px 16px 32px 16px;font-family:Arial,Helvetica,sans-serif;" align="center">
+      <p style="margin:0 0 8px 0;font-size:11px;line-height:16px;color:#66788C;text-align:center;">
+        This digest is generated automatically for informational purposes only and is not investment advice.
+        Data may be delayed. Review all figures against your brokerage statements before acting.
+      </p>
+      <p style="margin:0;font-size:11px;color:#66788C;">
+        <a href="#" style="color:#66788C;text-decoration:underline;">Manage preferences</a> &nbsp;·&nbsp;
+        <a href="#" style="color:#66788C;text-decoration:underline;">Unsubscribe</a>
+      </p>
+    </td>
+  </tr>
+
+</table>
+<!--[if mso]>
+</td></tr></table>
+<![endif]-->
+</center>
+</body>
+</html>
