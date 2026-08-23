@@ -18,8 +18,7 @@ Dependencies:
 
 from __future__ import annotations
 from connect_questrade import QuestradePortfolioFetcher
-import datetime as _dt
-from datetime import datetime
+from datetime import datetime as _dt
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -345,18 +344,17 @@ def verify_output(html: str, digest: DigestData) -> None:
 # 5. ENTRYPOINT
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    here = Path(__file__).resolve().parent
-    digest = build_payload()
+def html_main(payload: dict,
+              here: Path = Path(__file__).resolve().parent) -> None:
+    user = payload.get("user_name", "Andres") if payload else "Andres"
+    date = payload.get("date", _dt.now(ZoneInfo("America/New_York")))
+    digest = build_payload(payload, user, date, here)
     html = render_digest(digest, template_dir=here)
     verify_output(html, digest)
-    today_est = datetime.now(ZoneInfo("America/New_York")).strftime("%d_%m_%y")
+    today_est = date.strftime("%d_%m_%y")
 
-    out_path = here / "html_reports" / f"{today_est}_report.html"
+    out_path = here / "html_reports" / f"{user}_{today_est}_report.html"
     # out_path = here / "rendered_digest_preview.html"
     out_path.write_text(html, encoding="utf-8")
     print(f"✓ Wrote preview to {out_path}")
 
-
-if __name__ == "__main__":
-    main()

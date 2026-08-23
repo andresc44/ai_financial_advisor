@@ -2,14 +2,41 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from snaptrade_client import SnapTrade, SnapTradeAuth
+from user_profiles import USER_PROFILES
 
 
 class QuestradePortfolioFetcher:
-    def __init__(self, env_path: str = ".env"):
+    def __init__(self, 
+                 user_name: str="Andres",
+                 env_path: str = ".env"
+                 ):
         load_dotenv(dotenv_path=env_path)
 
-        client_id = os.getenv("SNAPTRADE_CLIENT_ID")
-        consumer_key = os.getenv("SNAPTRADE_CONSUMER_KEY")
+        user_profile = USER_PROFILES.get(user_name)
+        if user_profile is None:
+            raise ValueError(f"User '{user_name}' not found in USER_PROFILES.")
+    
+        snap_client_id_value = user_profile.get("snaptrade_client_id")
+        if snap_client_id_value is None:
+            raise ValueError(
+                f"SnapTrade client ID for user '{user_name}' is not configured in USER_PROFILES."
+            )
+        client_id = os.environ.get(snap_client_id_value)
+        
+        snap_client_id_value = user_profile.get("snaptrade_client_id")
+        if snap_client_id_value is None:
+            raise ValueError(
+                f"SnapTrade client ID for user '{user_name}' is not configured in USER_PROFILES."
+            )
+        client_id = os.environ.get(snap_client_id_value)
+        
+        snap_consumer_key_value = user_profile.get("snaptrade_consumer_key")
+        
+        if snap_consumer_key_value is None:
+            raise ValueError(
+                f"SnapTrade consumer key for user '{user_name}' is not configured in USER_PROFILES."
+            )
+        consumer_key = os.environ.get(snap_consumer_key_value)
 
         if not client_id or not consumer_key:
             raise ValueError("Missing SNAPTRADE_CLIENT_ID or SNAPTRADE_CONSUMER_KEY in .env file.")
@@ -140,7 +167,7 @@ class QuestradePortfolioFetcher:
 
 
 if __name__ == "__main__":
-    fetcher = QuestradePortfolioFetcher()
+    fetcher = QuestradePortfolioFetcher(user_name="Andres")
     
     # 1. Fetch full DataFrame
     df_full = fetcher.get_holdings_df()

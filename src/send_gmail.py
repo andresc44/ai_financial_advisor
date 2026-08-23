@@ -5,31 +5,42 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from user_profiles import USER_PROFILES
 
 load_dotenv()
 
-here = Path(__file__).resolve().parent
-
-
-def get_latest_report_path() -> Path:
+def get_latest_report_path(user_name: str="Andres",
+                           date: datetime = datetime.now(ZoneInfo("America/New_York")),
+                           here: Path = Path(__file__).resolve().parent,
+                           ) -> Path:
     """Generates the report path dynamically using current US Eastern time."""
-    today_est = datetime.now(ZoneInfo("America/New_York")).strftime("%d_%m_%y")
-    return here / "html_reports" / f"{today_est}_report.html"
+    today_est = date.strftime("%d_%m_%y")
+    return here / "html_reports" / f"{user_name}_{today_est}_report.html"
 
 
-def send_html_email(
-    subject: str,
-    to_email: str = "andres.cervera.rozo@gmail.com",
-    html_file_path: str | Path | None = None,
-    sender_email: str = os.environ["GMAIL_USER"],
-    app_password: str = os.environ["GMAIL_APP_PASSWORD"],
-):
+def send_html_email(user_name: str = "Andres",
+                    subject: str = "Daily Finnbot Digest",
+                    date: datetime = datetime.now(ZoneInfo("America/New_York")),
+                    here: Path = Path(__file__).resolve().parent
+                    ):
+    user_profile = USER_PROFILES.get(user_name)
+    if user_profile is None:
+        raise ValueError(f"User '{user_name}' not found in USER_PROFILES.")
 
+    to_email_value = user_profile.get("destination_email")
+    if to_email_value is None:
+        raise ValueError(
+            f"Destination email for user '{user_name}' is not configured in USER_PROFILES."
+        )
+    to_email = os.environ[to_email_value]
+
+    sender_email = os.environ["GMAIL_USER"]
+    app_password = os.environ["GMAIL_APP_PASSWORD"]
     if not sender_email or not app_password:
         raise ValueError("Missing credentials. Set GMAIL_USER and GMAIL_APP_PASSWORD.")
 
     # 1. Read HTML file content
-    resolved_path = Path(html_file_path) if html_file_path else get_latest_report_path()
+    resolved_path = get_latest_report_path(user_name, date, here)
 
     with open(resolved_path, "r", encoding="utf-8") as f:
         html_content = f.read()
@@ -56,5 +67,5 @@ def send_html_email(
 
 if __name__ == "__main__":
     send_html_email(
-        subject="First attempt to send email with HTML report",
+        subject="Testing email functionality with main file",
     )
