@@ -1,9 +1,9 @@
 import os
 import pandas as pd
 import requests
-from connect_questrade import QuestradePortfolioFetcher
+from personal.connect_snaptrade import PortfolioFetcher
 from dotenv import load_dotenv
-from user_profiles import USER_PROFILES
+from personal.user_profiles import USER_PROFILES
 
 
 load_dotenv()
@@ -89,7 +89,7 @@ def send_telegram_message(user_name: str, message: str) -> bool:
     print(f"✅ Telegram message sent to {user_name}.")
 if __name__ == "__main__":
     # Sample DataFrame matching your holdings layout
-    fetcher = QuestradePortfolioFetcher()
+    fetcher = PortfolioFetcher()
     df_full = fetcher.get_holdings_df()
     # Send 'symbol' column
     send_telegram_column(df=df_full, column_name="symbol")

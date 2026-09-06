@@ -1,4 +1,5 @@
-from personal import get_personal_content
+#File to run hourly to check for alerts and send Telegram messages to users based on their profiles.
+from personal.personal_consolidated import get_personal_content
 from send_telegram import send_telegram_message
 
 def check_for_alerts(user_name: str = "Andres"):

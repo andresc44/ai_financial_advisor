@@ -1,6 +1,6 @@
-
+#File to consolidate universal content for the daily digest, including market data, news, and recommendations, into a single structured dictionary for easy access and display.
 from pathlib import Path
-from filter_tickers import DataFetcher
+from universal.recommendations.filter_tickers import DataFetcher
 from market_news import fetch_live_macro_stories
 from macro_indicators import get_market_dashboard_data
 import sys

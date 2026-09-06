@@ -1,3 +1,4 @@
+#File to connect to Gemini API and fetch top 5 macroeconomic stories for daily digest, with Google Search grounding enabled.
 import os
 import time
 from dotenv import load_dotenv

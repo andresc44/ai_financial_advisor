@@ -1,3 +1,4 @@
+# File to create a Tickers class that fetches and filters  stock ticker datasets based on basic criteria.
 from datetime import datetime
 from pathlib import Path
 from typing import Any

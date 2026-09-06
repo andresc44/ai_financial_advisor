@@ -1,3 +1,4 @@
+#File to pull portfolio data using snaptrade api and convert to pandas dataframe for analysis and reporting.
 import os
 import pandas as pd
 from dotenv import load_dotenv
@@ -5,7 +6,7 @@ from snaptrade_client import SnapTrade, SnapTradeAuth
 from user_profiles import USER_PROFILES
 
 
-class QuestradePortfolioFetcher:
+class PortfolioFetcher:
     def __init__(self, 
                  user_name: str="Andres",
                  env_path: str = ".env"
@@ -167,7 +168,7 @@ class QuestradePortfolioFetcher:
 
 
 if __name__ == "__main__":
-    fetcher = QuestradePortfolioFetcher(user_name="Andres")
+    fetcher = PortfolioFetcher(user_name="Andres")
     
     # 1. Fetch full DataFrame
     df_full = fetcher.get_holdings_df()

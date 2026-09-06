@@ -1,9 +1,10 @@
+#main file for creating the daily digest payload and sending it to users. This file is called by a cron job to run daily.
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from create_html import html_main
 from send_gmail import send_html_email
-from universal import get_universal_content
-from personal import get_personal_content
+from universal.universal_consolidated import get_universal_content
+from personal.personal_consolidated import get_personal_content
 import copy
 from pathlib import Path
 
@@ -26,6 +27,7 @@ class DigestPayload:
         return user_payload
     
     def send_daily_digest_to(self, user_name: str = "Andres"):
+        #add if statement for if someone like Ste who wants the universal but not the personal, check if account linked
         user_payload = self.personalized_content(user_name)
         html_main(user_payload, self.src_dir)
         # populate_and_send_email(user_payload)  # Placeholder for actual email sending logic

@@ -1,3 +1,4 @@
+# File to grab data from Yahoo Finance and Finnhub APIs, filter tickers based on fundamental data, and export the results to JSON files.
 import json
 import os
 import time

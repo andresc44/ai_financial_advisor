@@ -1,3 +1,4 @@
+# File to fetch and consolidate various macroeconomic indicators from multiple sources (Yahoo Finance, FRED, CNN Fear & Greed Index, S&P 500 Breadth) into a single structured dictionary for analysis and reporting.
 import io
 import os
 import pandas as pd

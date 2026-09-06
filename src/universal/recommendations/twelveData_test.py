@@ -1,3 +1,4 @@
+#File to try out twelvedata api
 import os
 from dotenv import load_dotenv
 from twelvedata import TDClient

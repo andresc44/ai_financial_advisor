@@ -1,3 +1,4 @@
+#File to test the import of the Tickers and perform filtering
 import csv
 from datetime import datetime, timezone
 import random

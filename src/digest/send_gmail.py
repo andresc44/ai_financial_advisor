@@ -1,3 +1,4 @@
+#File to send emails via gmail using the Gmail SMTP server. This file is called by the daily digest payload to send the generated HTML report to users.
 import os
 from pathlib import Path
 import smtplib
@@ -5,7 +6,7 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from user_profiles import USER_PROFILES
+from personal.user_profiles import USER_PROFILES
 
 load_dotenv()
 

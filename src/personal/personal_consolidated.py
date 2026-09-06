@@ -1,5 +1,5 @@
 from user_profiles import USER_PROFILES
-from connect_questrade import QuestradePortfolioFetcher
+from personal.connect_snaptrade import PortfolioFetcher
 
 def get_personal_content(user_name: str = "Andres"):
     """
@@ -11,7 +11,7 @@ def get_personal_content(user_name: str = "Andres"):
     if not user_profile:
         raise ValueError(f"User profile for '{user_name}' not found.")
     if user_profile.get("account_company") == "Questrade":
-        portfolio = QuestradePortfolioFetcher(user_name=user_name)
+        portfolio = PortfolioFetcher(user_name=user_name)
         holdings = portfolio.get_holdings_df()
     else:
         holdings = None
