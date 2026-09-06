@@ -1,4 +1,4 @@
-from user_profiles import USER_PROFILES
+from personal.user_profiles import USER_PROFILES
 from personal.connect_snaptrade import PortfolioFetcher
 
 def get_personal_content(user_name: str = "Andres"):

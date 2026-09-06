@@ -3,7 +3,7 @@ import csv
 from datetime import datetime, timezone
 import random
 import pandas as pd
-from ticker_fetcher import Tickers
+from universal.recommendations.ticker_fetcher import Tickers
 
 
 import os
@@ -43,7 +43,7 @@ file_path = ticker_client.fetch_ticker_data(
 print(f"Filtered file generated: {file_path}")
 
 import sys
-from filter_tickers import DataFetcher
+from universal.recommendations.filter_tickers import DataFetcher
 
 
 def test_single_symbol(fetcher: DataFetcher, symbol: str = "AAPL") -> dict:

@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from snaptrade_client import SnapTrade, SnapTradeAuth
-from user_profiles import USER_PROFILES
+from personal.user_profiles import USER_PROFILES
 
 
 class PortfolioFetcher:
