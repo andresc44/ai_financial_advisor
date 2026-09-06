@@ -1,6 +1,8 @@
 
 from pathlib import Path
 from filter_tickers import DataFetcher
+from market_news import fetch_live_macro_stories
+from macro_indicators import get_market_dashboard_data
 import sys
 
 
@@ -19,7 +21,8 @@ def get_universal_content():
         sys.exit(1)
     filtered_tickers = fetcher.filter_all()
     # news_dict = fetcher.fetch_all_news(filtered_tickers)
-    
+    headline_news = fetch_live_macro_stories()
+    market_data = get_market_dashboard_data()
     
     
     
