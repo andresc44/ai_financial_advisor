@@ -1,4 +1,6 @@
 #File to try out twelvedata api
+
+#Try grabbing MACD, bollinger bands, RSI, and vol and candlesticks
 import os
 from dotenv import load_dotenv
 from twelvedata import TDClient
