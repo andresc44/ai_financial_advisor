@@ -1,9 +1,9 @@
 import os
 import pandas as pd
 import requests
-from personal.connect_snaptrade import PortfolioFetcher
+from personalized.pull_holdings_data import PortfolioFetcher
 from dotenv import load_dotenv
-from personal.user_profiles import USER_PROFILES
+from personalized.user_profiles import USER_PROFILES
 
 
 load_dotenv()

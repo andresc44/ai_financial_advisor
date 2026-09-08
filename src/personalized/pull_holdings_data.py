@@ -627,8 +627,8 @@ if __name__ == "__main__":
     df_simple = fetcher.get_holdings_digest_payload()
 
     # 3. Export to CSVs
-    df_full.to_csv("questrade_positions_full.csv", index=False)
-    df_simple.to_csv("questrade_positions_simple.csv", index=False)
+    fetcher.full_data.to_csv("questrade_positions_full.csv", index=False)
+    df_simple["holdings"].to_csv("questrade_positions_simple.csv", index=False)
 
     print("================ SIMPLIFIED DATAFRAME ================")
     print(df_simple)
