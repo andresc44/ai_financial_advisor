@@ -10,10 +10,14 @@ from google.oauth2 import service_account
 from dotenv import load_dotenv
 from snaptrade_client import SnapTrade, SnapTradeAuth
 from user_profiles import USER_PROFILES
+from add_metrics import add_metrics_to_holdings
+from recommendation import add_recommendations
 
 
 class PortfolioFetcher:
-
+    add_metrics_to_holdings = add_metrics_to_holdings #method to append online data to the holdings dataframe
+    add_recommendations = add_recommendations #method to evaluate hold positions and add recommendations to the holdings dataframe
+    
     def __init__(self, user_name: str = "Andres", env_path: str = ".env"):
         print("Searching for user snaptrade credentials in .env file...")
         load_dotenv(dotenv_path=env_path, override=True)
@@ -30,7 +34,7 @@ class PortfolioFetcher:
             )
         self.holdings_source = os.environ.get(holdings_source_value)
         print(f"Holdings source for user '{user_name}': {self.holdings_source}")
-            
+        
         if self.holdings_source == "SNAPTRADE":
             snap_client_id_value = user_profile.get("snaptrade_client_id")
             if snap_client_id_value is None:
@@ -581,14 +585,46 @@ class PortfolioFetcher:
 
         df_pnl = self.calculate_daily_pnl(df)
         return self.add_technical_indicators(df_pnl)
+    
+    
+    def get_holdings_digest_payload(self, desired_columns: list[str] = None) -> dict:
+        """Return a dictionary payload containing the holdings data filtered to desired columns."""
+        if desired_columns is None:
+            # Default fallback list if no custom columns are passed
+            desired_columns = [
+                "symbol",
+                "shares",
+                "avg_cost_basis",
+                "current_price",
+                "market_value",
+                "unrealized_pnl",
+                "unrealized_pnl_pct",
+                "recommendation",
+            ]
+
+        holdings_with_metrics = self.add_metrics_to_holdings(self.full_data)
+        holdings_with_recommendations = self.add_recommendations(
+            holdings_with_metrics
+        )
+
+        # Safely filter columns (ignores any column name not present in the DataFrame)
+        available_cols = [
+            col
+            for col in desired_columns
+            if col in holdings_with_recommendations.columns
+        ]
+        filtered_df = holdings_with_recommendations[available_cols]
+
+        return {"holdings": filtered_df.to_dict(orient="records")}
+        
+        
 
 
 if __name__ == "__main__":
-    fetcher = PortfolioFetcher(user_name="Andres")
-    df_full = fetcher.full_data
+    fetcher = PortfolioFetcher(user_name="Andres")    
 
     # 2. Extract simplified DataFrame
-    df_simple = fetcher.simplify_data(df_full)
+    df_simple = fetcher.get_holdings_digest_payload()
 
     # 3. Export to CSVs
     df_full.to_csv("questrade_positions_full.csv", index=False)

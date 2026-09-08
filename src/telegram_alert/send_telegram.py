@@ -84,9 +84,10 @@ def send_telegram_message(user_name: str, message: str) -> bool:
 
     response = requests.post(url, json=payload, timeout=10)
     response.raise_for_status()
+    print(f"✅ Telegram message sent to {user_name}.")
     return True
 
-    print(f"✅ Telegram message sent to {user_name}.")
+    
 if __name__ == "__main__":
     # Sample DataFrame matching your holdings layout
     fetcher = PortfolioFetcher()
