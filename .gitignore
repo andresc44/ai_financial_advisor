@@ -233,3 +233,4 @@ snaptrade-recovery-codes.txt
 
 #Telegram alerts timestamped CSV
 telegram_alerts_timestamped.csv
+cron_test_results.csv
