@@ -7,13 +7,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import finnhub
-from dotenv import load_dotenv
 from line_profiler import profile
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from src.parameters import params_dict
 
-import constants
+import sys
+from pathlib import Path
+from dotenv import load_dotenv
+
+
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+env_path = project_root / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
+            
 
 
 class DataFetcher:
@@ -34,7 +44,7 @@ class DataFetcher:
         self.env_path = (
             Path(env_path).resolve()
             if env_path
-            else self.project_root / constants.DEFAULT_ENV_FILENAME
+            else self.project_root / ".env"
         )
         
         self.finnhub_client = self.__init_finnhub_client()
@@ -47,21 +57,17 @@ class DataFetcher:
     @staticmethod
     def __resolve_project_root() -> Path:
         """Determines project root directory based on current file location."""
-        try:
-            script_dir = Path(__file__).resolve().parent
-        except NameError:
-            script_dir = Path.cwd()
 
-        return script_dir.parent if script_dir.name == "src" else script_dir
+        return Path(__file__).resolve().parents[3]
 
     def __init_finnhub_client(self) -> finnhub.Client:
         """Loads environment variables and initializes the Finnhub API client."""
-        load_dotenv(dotenv_path=self.env_path)
-        api_key = os.getenv(constants.ENV_KEY_FINNHUB)
+        # load_dotenv(dotenv_path=self.env_path)
+        api_key = os.getenv(FINNHUB_API_KEY)
 
         if not api_key:
             raise ValueError(
-                f"'{constants.ENV_KEY_FINNHUB}' not found in environment or at '{self.env_path}'."
+                f"'{FINNHUB_API_KEY}' not found in environment or at '{self.env_path}'."
             )
 
         return finnhub.Client(api_key=api_key)
@@ -102,7 +108,6 @@ class DataFetcher:
     # DATA RETRIEVAL METHODS
     # ==========================================
 
-    from typing import Dict, List, Union, Any
 
     def fetch_yahoo_data(self, symbol: str, fetch_news: bool = False) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """Fetches key metrics (dict) or news articles (list of dicts) directly for a ticker from Yahoo Finance."""
@@ -156,7 +161,7 @@ class DataFetcher:
         def _safe_api_call(call_name: str, func, *args, **kwargs):
             try:
                 res = func(*args, **kwargs)
-                time.sleep(constants.FINNHUB_RATE_LIMIT_SLEEP)
+                time.sleep(params_dict["FINNHUB_RATE_LIMIT_SLEEP"])
                 return res
             except Exception as e:
                 return {"error": f"Failed to fetch {call_name}: {str(e)}"}
@@ -164,7 +169,7 @@ class DataFetcher:
         if fetch_news:
             now = datetime.now()
             news_from_date = (
-                now - timedelta(days=constants.COMPANY_NEWS_LOOKBACK_DAYS)
+                now - timedelta(days=params_dict["COMPANY_NEWS_LOOKBACK_DAYS"])
             ).strftime("%Y-%m-%d")
             today_date = now.strftime("%Y-%m-%d")
 

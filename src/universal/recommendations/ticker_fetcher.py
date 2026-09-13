@@ -1,12 +1,17 @@
-# File to create a Tickers class that fetches and filters  stock ticker datasets based on basic criteria.
+# File to create a Tickers class that fetches and filters stock ticker datasets based on basic criteria.
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
+import sys
 
-from constants import (
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+    
+from src.constants import (
     INDUSTRIES,
     REGION_COUNTRY_MAP,
     SECTORS,
@@ -45,7 +50,7 @@ class Tickers:
             except NameError:
                 script_dir = Path.cwd()
 
-            project_root = script_dir.parent if script_dir.name == "src" else script_dir
+            project_root = script_dir.parents[2]
             self.output_dir = project_root / "data" / "ticker_data"
 
     # --- Public Getter Methods ---
@@ -72,7 +77,6 @@ class Tickers:
 
     def fetch_ticker_data(
         self,
-        exchanges: dict[str, bool] | None = None,
         mktcap_min: float | int | None = None,
         mktcap_max: float | int | None = None,
         volume_min: float | int | None = None,
@@ -85,9 +89,10 @@ class Tickers:
         industry: str | None = None,
         clear_existing_data: bool = True,
     ) -> Path | None:
-        if exchanges is None:
-            exchanges = {"NASDAQ": True, "NYSE": True, "AMEX": True}
-
+        """
+        Fetches and filters NASDAQ stock ticker data based on provided criteria, then saves the filtered dataset to a CSV file.
+        """
+        
         clean_region = region.upper() if isinstance(region, str) else None
         valid_region = clean_region if clean_region in self.VALID_REGIONS else None
         clean_country = country.strip() if isinstance(country, str) and country.strip() else None
@@ -96,64 +101,11 @@ class Tickers:
         sector_val = self._resolve_sector(sector)
 
         us_eastern_time = datetime.now(ZoneInfo("America/New_York"))
-        date_str = us_eastern_time.strftime("%d-%m-%y")
+        date_str = us_eastern_time.strftime("%d-%m-%y-%p")
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         name_parts = [date_str]
-        all_exchanges_selected = exchanges and all(exchanges.values())
-        active_ex = [k.lower() for k, v in exchanges.items() if v]
-
-        # if not all_exchanges_selected:
-        #     if active_ex:
-        #         name_parts.append("_".join(active_ex))
-        #     else:
-        #         name_parts.append("no_exchange")
-
-        # # Mutually exclusive: Region takes priority over Country
-        # if valid_region:
-        #     name_parts.append(f"region_{valid_region.lower()}")
-        # elif clean_country:
-        #     country_slug = clean_country.lower().replace(" ", "_")
-        #     name_parts.append(f"country_{country_slug}")
-
-        # # Mutually exclusive: Sector takes priority over Industry
-        # if sector_val:
-        #     name_parts.append(f"sector_{sector_val.lower().replace(' ', '_')}")
-        # elif clean_industry:
-        #     ind_slug = (
-        #         clean_industry.lower()
-        #         .translate(str.maketrans("", "", ":/\\*?\"<>|"))
-        #         .replace(" ", "_")
-        #     )
-        #     name_parts.append(f"ind_{ind_slug}")
-
-        # if mktcap_min is not None or mktcap_max is not None:
-        #     cap_parts = []
-        #     if mktcap_min is not None:
-        #         cap_parts.append(f"min{mktcap_min}")
-        #     if mktcap_max is not None:
-        #         cap_parts.append(f"max{mktcap_max}")
-        #     name_parts.append(f"mktcap_{'_'.join(cap_parts)}")
-
-        # if volume_min is not None or volume_max is not None:
-        #     vol_parts = []
-        #     if volume_min is not None:
-        #         vol_parts.append(f"min{volume_min}")
-        #     if volume_max is not None:
-        #         vol_parts.append(f"max{volume_max}")
-        #     name_parts.append(f"vol_{'_'.join(vol_parts)}")
-
-        # if lastsale_min is not None or lastsale_max is not None:
-        #     sale_parts = []
-        #     if lastsale_min is not None:
-        #         sale_parts.append(f"min{lastsale_min}")
-        #     if lastsale_max is not None:
-        #         sale_parts.append(f"max{lastsale_max}")
-        #     name_parts.append(f"lastsale_{'_'.join(sale_parts)}")
-
-        # if len(name_parts) == 1:
-        #     name_parts.append("all")
 
         prefix = "_".join(name_parts)
         ticker_file_name = f"{prefix}_ticker_data.csv"
@@ -169,11 +121,6 @@ class Tickers:
         try:
             print("Fetching raw ticker dataset from NASDAQ API...")
             df_filtered = self._fetch_from_nasdaq()
-
-            if "exchange" in df_filtered.columns:
-                df_filtered = df_filtered[
-                    df_filtered["exchange"].str.upper().isin([e.upper() for e in active_ex])
-                ]
 
             # Region / Country filter (Mutually exclusive)
             if valid_region and "country" in df_filtered.columns:

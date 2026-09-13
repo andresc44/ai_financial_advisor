@@ -3,15 +3,25 @@ import csv
 from datetime import datetime, timezone
 import random
 import pandas as pd
-from universal.recommendations.ticker_fetcher import Tickers
-
+from ticker_fetcher import Tickers
 
 import os
 import requests
 import time
+
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+env_path = project_root / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
+
+from src.parameters import params_dict
+from filter_tickers import DataFetcher
 
 ticker_client = Tickers()
 
@@ -26,24 +36,21 @@ ticker_client = Tickers()
 # --- Step 2: Pass all filter arguments explicitly ---
 
 file_path = ticker_client.fetch_ticker_data(
-    exchanges={"NASDAQ": True, "NYSE": True, "AMEX": True},
-    mktcap_min=50000.0,          # Minimum market cap in Millions USD
-    mktcap_max=None,        # Maximum market cap in Millions USD
-    volume_min=0.1,        # Minimum trading volume in Millions
-    volume_max=None,     # Maximum trading volume in Millions
-    lastsale_min=5.0,         # Minimum share price USD
-    lastsale_max=500,        # Maximum share price USD
-    region=None,    # Takes priority over 'country'
-    country=None,   # Ignored when region is defined
-    sector=None,       # Takes priority over 'industry'
-    industry="Software",       # Ignored when sector is defined
-    clear_existing_data=True,  # Deletes previous CSV exports in output dir
+    mktcap_min=params_dict["MKTCAP_MIN"],        # Minimum market cap in Millions USD
+    mktcap_max=params_dict["MKTCAP_MAX"],        # Maximum market cap in Millions USD
+    volume_min=params_dict["VOLUME_MIN"],        # Minimum trading volume in Millions
+    volume_max=params_dict["VOLUME_MAX"],        # Maximum trading volume in Millions
+    lastsale_min=params_dict["LASTSALE_MIN"],    # Minimum share price USD
+    lastsale_max=params_dict["LASTSALE_MAX"],    # Maximum share price USD
+    region=params_dict["REGION"],                # Takes priority over 'country'
+    country=params_dict["COUNTRY"],              # Ignored when region is defined
+    sector=params_dict["SECTOR"],                # Takes priority over 'industry'
+    industry=params_dict["INDUSTRY"],            # Ignored when sector is defined
+    clear_existing_data=params_dict["CLEAR_EXISTING_DATA"],  # Deletes previous CSV exports in output dir
 )
 
 print(f"Filtered file generated: {file_path}")
 
-import sys
-from universal.recommendations.filter_tickers import DataFetcher
 
 
 def test_single_symbol(fetcher: DataFetcher, symbol: str = "AAPL") -> dict:
@@ -192,5 +199,5 @@ def main():
     # print("\n🎉 All tests passed successfully!")
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     main()

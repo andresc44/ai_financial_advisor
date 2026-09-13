@@ -62,7 +62,7 @@ if __name__ == "__main__":
     digest_recipients = determine_recipients(recipients)
 
     if not digest_recipients:
-        print(f"[{now}] No recipients scheduled for this hour. Exiting.")
+        print(f"[{now}] No recipients scheduled for this period. Exiting.")
         exit(0)
 
     print(f"[{now}] Active recipients found: {digest_recipients}. Fetching universal content...")
