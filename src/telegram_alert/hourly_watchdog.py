@@ -1,5 +1,4 @@
 #File to run hourly to check for alerts and send Telegram messages to users based on their profiles.
-#TODO: Setup cron job timer
 
 import os
 from personalized.pull_holdings_data import PortfolioFetcher
@@ -168,4 +167,5 @@ def process_user_alerts(
 
 
 if __name__ == "__main__":
+    #cron job runs hourly at the 45th minute to check for alerts and send Telegram messages to users based alerts
     process_user_alerts(retention_days=RETENTION_DAYS, cooldown_hours=COOLDOWN_HOURS)

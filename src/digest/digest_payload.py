@@ -5,6 +5,7 @@ from create_html import html_main
 from send_gmail import send_html_email
 from universal.universal_consolidated import get_universal_content
 from personal.personal_consolidated import get_personal_content
+from pre_vs_post import check_timezone
 import copy
 from pathlib import Path
 
@@ -23,11 +24,25 @@ class DigestPayload:
     def personalized_content(self, user_name: str = "Andres"):
         # copy the current class and add personalized content based on user_name
         user_payload = copy.deepcopy(self.payload)
-        user_payload.update(get_personal_content(user_name))
-        return user_payload
+        user_profile = USER_PROFILES.get(user_name)
+        if user_profile is None:
+            raise ValueError(f"User '{user_name}' not found in USER_PROFILES.")
+
+        holdings_source_value = user_profile.get(holdings_source)
+        if holdings_source_value is None:
+            raise ValueError(
+                f"Holdings source value for user '{user_name}' is not configured"
+                " in USER_PROFILES."
+            )
+            
+        holdings_source = os.environ.get(holdings_source_value)
+        if holdings_source not in ["SNAPTRADE", "SHEETS"]:
+            return user_payload  # Return the payload without personal content if holdings_source is not valid
+        else:
+            user_payload.update(get_personal_content(user_name))
+            return user_payload
     
     def send_daily_digest_to(self, user_name: str = "Andres"):
-        #add if statement for if someone like Ste who wants the universal but not the personal, check if account linked
         user_payload = self.personalized_content(user_name)
         html_main(user_payload, self.src_dir)
         # populate_and_send_email(user_payload)  # Placeholder for actual email sending logic
@@ -38,10 +53,28 @@ class DigestPayload:
         print(f"Sending daily digest to {user_name} with personalized payload")
         return True
 
+
 if __name__ == "__main__":
-    #this is the file that gets put on a cron timer
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{now}] Starting digest check...")
+
+    recipients = ["Andres", "Mauricio", "Steven"]
+    digest_recipients = determine_recipients(recipients)
+
+    if not digest_recipients:
+        print(f"[{now}] No recipients scheduled for this hour. Exiting.")
+        exit(0)
+
+    print(f"[{now}] Active recipients found: {digest_recipients}. Fetching universal content...")
     digest = DigestPayload()
+
     if digest.universal_content():
-        print("Universal content added to payload.")
-        digest.send_daily_digest_to("Andres")
-        digest.send_daily_digest_to("Mauricio")
+        print(f"[{now}] Universal content loaded. Sending digests...")
+        for user in digest_recipients:
+            try:
+                digest.send_daily_digest_to(user)
+                print(f"[{now}] Successfully sent digest to {user}.")
+            except Exception as e:
+                print(f"[{now}] ERROR sending digest to {user}: {e}")
+    else:
+        print(f"[{now}] Failed to generate universal content. Digest aborted.")

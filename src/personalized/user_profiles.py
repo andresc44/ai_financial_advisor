@@ -8,6 +8,8 @@ USER_PROFILES = {
         "snaptrade_client_id": "ANDRES_SNAPTRADE_CLIENT_ID",
         "snaptrade_consumer_key": "ANDRES_SNAPTRADE_CONSUMER_KEY",
         "google_sheets_id": "ANDRES_SHEETS_ID",
+        "Receive_Premarket_Digest": "ANDRES_RECEIVE_PREMARKET_DIGEST",
+        "Receive_Postmarket_Digest": "ANDRES_RECEIVE_POSTMARKET_DIGEST",
         
     },
     "Mauricio": {
@@ -18,7 +20,9 @@ USER_PROFILES = {
         "holdings_source": "MAURICIO_HOLDINGS_SOURCE",
         "snaptrade_client_id": "MAURICIO_SNAPTRADE_CLIENT_ID",
         "snaptrade_consumer_key": "MAURICIO_SNAPTRADE_CONSUMER_KEY",
-        "google_sheets_id": "MAURICIO_SHEETS_ID"
+        "google_sheets_id": "MAURICIO_SHEETS_ID",
+        "Receive_Premarket_Digest": "MAURICIO_RECEIVE_PREMARKET_DIGEST",
+        "Receive_Postmarket_Digest": "MAURICIO_RECEIVE_POSTMARKET_DIGEST",
     },
     "Steven": {
         "account_company": "STEVEN_INSTITUTION",
@@ -28,6 +32,8 @@ USER_PROFILES = {
         "holdings_source": "STEVEN_HOLDINGS_SOURCE",
         "snaptrade_client_id": "STEVEN_SNAPTRADE_CLIENT_ID",
         "snaptrade_consumer_key": "STEVEN_SNAPTRADE_CONSUMER_KEY",
-        "google_sheets_id": "STEVEN_SHEETS_ID"
-        },
+        "google_sheets_id": "STEVEN_SHEETS_ID",
+        "Receive_Premarket_Digest": "STEVEN_RECEIVE_PREMARKET_DIGEST",
+        "Receive_Postmarket_Digest": "STEVEN_RECEIVE_POSTMARKET_DIGEST",
+    },
 }
