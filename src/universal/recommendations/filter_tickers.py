@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+import requests
 
 import finnhub
 from line_profiler import profile
@@ -17,6 +18,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
+from concurrent.futures import ThreadPoolExecutor
 
 project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
@@ -26,6 +28,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 
 from yahoo_filter_helper import filter_yahoo_tickers
 from finnhub_filter_helper import filter_finnhub_tickers
+from twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
 
 
 class DataFetcher:
@@ -51,6 +54,8 @@ class DataFetcher:
         
         self.finnhub_client = self.__init_finnhub_client()
         self.all_tickers = self.__load_ticker_df()["ticker"].dropna().tolist()
+        self.twelvedata_api_key = os.getenv("TWELVEDATA_API_KEY", "")
+        self.session = requests.Session()
 
     # ==========================================
     # INITIALIZATION & PATH HELPERS
@@ -68,7 +73,7 @@ class DataFetcher:
 
         if not api_key:
             raise ValueError(
-                f"'{FINNHUB_API_KEY}' not found in environment or at '{self.env_path}'."
+                f"'FINNHUB_API_KEY' not found in environment or at '{self.env_path}'."
             )
 
         return finnhub.Client(api_key=api_key)
@@ -206,6 +211,55 @@ class DataFetcher:
 
         return finnhub_data
     
+
+    def fetch_twelvedata_batch_data(
+        self, 
+        symbols: List[str], 
+        indicators: List[tuple[str, dict] | str], 
+        interval: str = "1day"
+    ) -> Dict[str, Any]:
+        if not symbols or not indicators:
+            print("[DEBUG] fetch_twelvedata_batch_data called with empty symbols or indicators.")
+            return {}
+
+        symbols_str = ",".join(symbols)
+        batch_results: Dict[str, Any] = {}
+
+        for item in indicators:
+            indicator_name, extra_params = item if isinstance(item, tuple) else (item, {})
+            url = f"https://api.twelvedata.com/{indicator_name.lower()}"
+            
+            params = {
+                "symbol": symbols_str,
+                "interval": interval,
+                "apikey": self.twelvedata_api_key,
+                **extra_params
+            }
+
+            # Generate unique key per parameter set (e.g., 'rsi' vs 'rsi_9')
+            param_suffix = f"_{extra_params.get('time_period')}" if "time_period" in extra_params else ""
+            indicator_key = f"{indicator_name}{param_suffix}"
+
+            try:
+                resp = self.session.get(url, params=params, timeout=10)
+                data = resp.json()
+
+                if isinstance(data, dict) and data.get("status") == "error":
+                    print(f"[DEBUG API Error] Twelve Data returned error: {data.get('message')}")
+                    continue
+
+                if len(symbols) == 1:
+                    batch_results.setdefault(symbols[0], {})[indicator_key] = data
+                else:
+                    for symbol, payload in data.items():
+                        batch_results.setdefault(symbol, {})[indicator_key] = payload
+
+            except Exception as e:
+                print(f"[DEBUG Exception] Failed fetching {indicator_key}: {e}")
+
+        print(f"[DEBUG Batch Results Complete] Formatted keys: {list(batch_results.keys())}")
+        return batch_results
+    
     def __get_metric_with_alert(self, data: Dict[str, Any], key: str, symbol: str, default: Any = False) -> Any:
         if key not in data:
             print(f"Alert: Field '{key}' not found for ticker '{symbol}'.")
@@ -215,10 +269,14 @@ class DataFetcher:
     def yahoo_filter(self, tickers: Optional[List[str]] = None) -> List[str]:
         """Delegates filtering logic to the standalone helper function."""
         return filter_yahoo_tickers(self, tickers=tickers)
-    
+
     def finnhub_filter(self, tickers: Optional[List[str]] = None) -> List[str]:
         """Filters tickers based on Finnhub fundamental data."""
         return filter_finnhub_tickers(self, tickers=tickers)
+
+    def twelvedata_filter(self, tickers: Optional[List[str]] = None) -> List[str]:
+        """Delegates technical indicator filtering to twelvedata_helpers."""
+        return filter_twelvedata_tickers(self, tickers=tickers)
     
     def filter_all(self, full_tickers: Optional[List[str]] = None) -> List[str]:
         """Apply cascading filters across available data sources."""
@@ -230,8 +288,11 @@ class DataFetcher:
         print("Starting to filter data based on Finnhub data")
         finnhub_tickers = self.finnhub_filter(tickers=yahoo_tickers)
         
-        print(f"Output tickers are: {finnhub_tickers}")
-        return finnhub_tickers
+        print("Starting to filter data based on Twelve Data technical indicators")
+        twelvedata_tickers = self.twelvedata_filter(tickers=finnhub_tickers)
+        
+        print(f"Output tickers are: {twelvedata_tickers}")
+        return twelvedata_tickers
         
     def fetch_all_news(self, tickers: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
         """Fetches Yahoo and Finnhub news data for a list of tickers, normalizes and sorts
@@ -307,12 +368,16 @@ class DataFetcher:
         return news_data       
     
     def fetch_all(self, tickers: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """Fetches Yahoo and Finnhub data for a list of tickers (or loads from CSV if None)."""
+        """Fetches Yahoo, Finnhub, and Twelve Data context for a list of tickers."""
         if tickers is None:
             tickers = self.all_tickers
 
+        # 1. Batch fetch Twelve Data context upfront for all tickers to save API latency
+        twelvedata_context = fetch_twelvedata_context_data(self, tickers=tickers)
+
         market_data: Dict[str, Dict[str, Any]] = {}
 
+        # 2. Iterate and assemble combined ticker datasets
         for symbol in tickers:
             print(f"Fetching yahoo data for {symbol}...")
             yahoo_data = self.fetch_yahoo_data(symbol)
@@ -322,10 +387,54 @@ class DataFetcher:
             market_data[symbol] = {
                 "yahoo": yahoo_data,
                 "finnhub": finnhub_data,
+                "twelvedata": twelvedata_context.get(symbol, {}),
             }
 
         return market_data
 
+    def congregate_LLM_input_data(
+        self, 
+        tickers: Optional[List[str]] = None, 
+        as_dict_records: bool = True
+    ) -> Dict[str, Dict[str, Any]]:
+        """Combines market data (Yahoo, Finnhub, Twelve Data) and aggregated news into a 
+        single unified dictionary per ticker for LLM consumption.
+        
+        Args:
+            tickers: Optional list of symbols. Defaults to self.all_tickers if None.
+            as_dict_records: If True, converts news DataFrames into JSON-serializable list of dicts.
+        """
+        if tickers is None:
+            tickers = self.all_tickers
+
+        # 1. Fetch market fundamentals/technical context and news data payloads
+        print(f"Fetching market and news data for {len(tickers)} tickers...")
+        market_data = self.fetch_all(tickers=tickers)
+        print(f"✓ Successfully fetched market data for {len(market_data)} tickers.")
+        news_data = self.fetch_all_news(tickers=tickers)
+        print(f"✓ Successfully fetched news data for {len(news_data)} tickers.")
+
+        llm_payload: Dict[str, Dict[str, Any]] = {}
+
+        for symbol in tickers:
+            symbol_market = market_data.get(symbol, {})
+            symbol_news_df = news_data.get(symbol, pd.DataFrame())
+
+            # Convert Pandas DataFrame into list of dicts for direct JSON/LLM serialization
+            if as_dict_records and isinstance(symbol_news_df, pd.DataFrame):
+                news_payload = symbol_news_df.to_dict(orient="records")
+            else:
+                news_payload = symbol_news_df
+
+            llm_payload[symbol] = {
+                "yahoo": symbol_market.get("yahoo", {}),
+                "finnhub": symbol_market.get("finnhub", {}),
+                "twelvedata": symbol_market.get("twelvedata", {}),
+                "news": news_payload,
+            }
+            print(f"✓ Aggregated LLM payload for {symbol}: {len(news_payload)} news articles, market data keys: {list(symbol_market.keys())}")
+
+        return llm_payload
     # ==========================================
     # DATA SANITIZATION & EXPORT
     # ==========================================
