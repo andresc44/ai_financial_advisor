@@ -23,7 +23,9 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
-            
+
+from yahoo_filter_helper import filter_yahoo_tickers
+from finnhub_filter_helper import filter_finnhub_tickers
 
 
 class DataFetcher:
@@ -62,8 +64,7 @@ class DataFetcher:
 
     def __init_finnhub_client(self) -> finnhub.Client:
         """Loads environment variables and initializes the Finnhub API client."""
-        # load_dotenv(dotenv_path=self.env_path)
-        api_key = os.getenv(FINNHUB_API_KEY)
+        api_key = os.getenv("FINNHUB_API_KEY")
 
         if not api_key:
             raise ValueError(
@@ -87,7 +88,7 @@ class DataFetcher:
         for file in matching_files:
             date_part = file.name.split("_")[0]
             try:
-                file_date = datetime.strptime(date_part, "%d-%m-%y")
+                file_date = datetime.strptime(date_part, "%d-%m-%y-%p")
                 dated_files.append((file_date, file))
             except ValueError:
                 continue
@@ -212,72 +213,12 @@ class DataFetcher:
         return data[key]
     @profile
     def yahoo_filter(self, tickers: Optional[List[str]] = None) -> List[str]:
-        """Filters tickers based on basic Yahoo parameters."""
-        input_tickers = tickers if tickers is not None else self.all_tickers
-        filtered_yahoo_tickers = []            
-        
-        for symbol in input_tickers:
-            print(f"Fetching Yahoo data for {symbol}...")
-            yahoo_metrics = self.fetch_yahoo_data(symbol=symbol, fetch_news=False)
-            if not isinstance(yahoo_metrics, dict):
-                print(f"Alert: Yahoo data for '{symbol}' is not a dictionary. Skipping.")
-                continue
-            
-            # Sample Basic Filters:
-            if not (market_cap := self.__get_metric_with_alert(yahoo_metrics, "marketCap", symbol)): continue
-            if not market_cap >= 10_000: continue
-            
-            if not (regularMarketPreviousClose := self.__get_metric_with_alert(yahoo_metrics, "regularMarketPreviousClose", symbol)): continue
-            if not regularMarketPreviousClose < 100: continue
-
-            filtered_yahoo_tickers.append(symbol)
-            print(f"✓ {symbol} passed Yahoo filters: Market Cap = {market_cap}, Market Close = {regularMarketPreviousClose}")
-            
-        return filtered_yahoo_tickers
+        """Delegates filtering logic to the standalone helper function."""
+        return filter_yahoo_tickers(self, tickers=tickers)
     
     def finnhub_filter(self, tickers: Optional[List[str]] = None) -> List[str]:
         """Filters tickers based on Finnhub fundamental data."""
-        input_tickers = tickers if tickers is not None else self.all_tickers
-        filtered_finnhub_tickers = []            
-        
-        for symbol in input_tickers:
-            print(f"Fetching Finnhub data for {symbol}...")
-            finnhub_data = self.fetch_finnhub_data(symbol, fetch_news=False)
-            if not isinstance(finnhub_data, dict):
-                print(f"Alert: Finnhub data for '{symbol}' is not a dictionary. Skipping.")
-                continue
-
-            # Safely navigate nested keys matching Finnhub JSON payload
-            profile = finnhub_data.get("profile", {})
-            quote = finnhub_data.get("quote", {})
-            basic_fin = finnhub_data.get("basic_financials", {})
-
-            # Sample Basic Filters:
-            # 1. Market Cap > $10 Billion (Finnhub reports market Capitalization in millions)
-            # 2. Net Profit Margin (TTM) > 15%
-            # 3. P/E TTM <= 25
-            # 4. Revenue Growth (TTM YoY) > 5%
-            
-            if not (mcap_mil := self.__get_metric_with_alert(profile, "marketCapitalization", symbol)): continue
-            if not mcap_mil >= 1_000: continue  # Market Cap in Millions USD
-            
-            if not (total_shares := self.__get_metric_with_alert(quote, "t", symbol)): continue
-            if not total_shares > 100_000: continue  # Total Shares Outstanding
-            
-            if not (net_margin := self.__get_metric_with_alert(basic_fin, "netProfitMarginTTM", symbol)): continue
-            if not net_margin > 1: continue
-            
-            if not (pe_ttm := self.__get_metric_with_alert(basic_fin, "peTTM", symbol, float("inf"))): continue
-            if not (0 < pe_ttm <= 90): continue
-            
-            if not (rev_growth := self.__get_metric_with_alert(basic_fin, "revenueGrowthTTMYoy", symbol)): continue
-            if not rev_growth > -30: continue
-
-            filtered_finnhub_tickers.append(symbol)
-            print(f"✓ {symbol} passed Finnhub filters: Market Cap = {mcap_mil}M, Total Shares = {total_shares}, Net Margin = {net_margin}%, P/E TTM = {pe_ttm}, Revenue Growth = {rev_growth}%")
-            
-        print(f"Filtered final tickers: {filtered_finnhub_tickers}")
-        return filtered_finnhub_tickers
+        return filter_finnhub_tickers(self, tickers=tickers)
     
     def filter_all(self, full_tickers: Optional[List[str]] = None) -> List[str]:
         """Apply cascading filters across available data sources."""
