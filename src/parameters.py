@@ -1,8 +1,7 @@
 params_dict = {
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 60,
-    "EARNINGS_LOOKBACK_DAYS": 60,
-    "EARNINGS_FUTURE_LOOKAHEAD_DAYS": 30,
+    "EARNINGS_FUTURE_LOOKAHEAD_DAYS": 180,
     # API Settings
     "FINNHUB_RATE_LIMIT_SLEEP": 0.05,
     # Stage 1 Ticker Filter Parameters
@@ -140,6 +139,8 @@ params_dict = {
         # --- Category B: Context-Dependent Examples (Fixed Level Approximations) ---
         # ("sma", "1day", ">=", 200, {"time_period": 300}),                      # Absolute level threshold check
         # ("ema", "1day", ">=", 50,  {"time_period": 50, "series_type": "open"}),# 50-period EMA on Open price
+        # Syntax: (endpoint, interval, extra_params)
+        
     ],
     # Context/time-series indicators fetched for data enrichment (No comparison operators or thresholds)
     "TWELVEDATA_CONTEXT": [
@@ -147,5 +148,63 @@ params_dict = {
         # ("bbands", "1day", {"time_period": 20}),
         # ("stoch", "1day", {"fastkperiod": 14, "slowkperiod": 3}),
         # ("sma", "1day", {"time_period": 200}),
+        # -----------------------------------------------------------------------------------------
+                # ENDPOINT OPTIONS:
+                #   - "time_series": Full OHLCV candlestick historical series (Open, High, Low, Close, Volume)
+                #   - "quote": Single-candle real-time snapshot (bid, ask, 52-week highs/lows, open/close)
+                #   - "eod": End-of-Day single candle data
+                #   - "price": Latest single price point
+                #
+                # INTERVAL OPTIONS:
+                #   - Intraday: "1min", "5min", "15min", "30min", "45min", "1h", "2h", "4h", "8h"
+                #   - Daily/Long-term: "1day", "1week", "1month"
+                #
+                # EXTRA_PARAMS DICTIONARY OPTIONS:
+                #   - "outputsize": (int, 1-5000, default=30) Number of historical candles/data points to return
+                #   - "start_date": (str, 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS') Filter series start boundary
+                #   - "end_date":   (str, 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS') Filter series end boundary
+                #   - "order":      (str, 'ASC' | 'DESC') Sort order of returned candles (default='DESC')
+                #   - "dp":         (int, 0-11) Number of decimal places for price/volume values
+                #   - "timezone":   (str, 'Exchange' | 'UTC' | 'America/New_York' etc.) Timezone of timestamps
+                # -----------------------------------------------------------------------------------------
+                # 1. Standard daily candlestick history (last 30 trading days)
+        ("time_series", "1day", {"outputsize": 60}),
     ],
+    # 1. Recommendation Trends (SDK only accepts 'symbol')
+    "RECOMMENDATION_TRENDS": {},
+    # 2. Earnings Surprise (Historical quarterly EPS surprise count)
+    "EARNINGS_SURPRISE": {
+        "LIMIT": 4 # int: Number of past quarters (e.g. 4, 8, 12)
+    },
+    # 3. Insider Sentiment (Monthly MSPR and transaction scores window)
+    "INSIDER_SENTIMENT": {
+        "DAYS_BACK": 365
+    },
+    # 4. Financials Reported (As-reported SEC filings)
+    "FINANCIALS_REPORTED": {
+        "FREQ": "annual", # str: 'annual' or 'quarterly'
+        "ID": None, # str | None: Specific statement ID filter
+        "ACCESS_NUMBER": None, # str | None: SEC filing access number
+    },
+    # 5. Company Basic Financials (Time-series metrics filter)
+    "COMPANY_BASIC_FINANCIALS": {
+        "METRIC": "all" # str: 'all', 'margin', 'valuation', 'price', etc.
+    },
+    
+    "CLAUDE_CONFIG": {
+        "model": "claude-3-5-sonnet-20241022",
+        "max_tokens": 1000,
+        "temperature": 0.0,            # Deterministic output for quantitative evaluation
+        "max_concurrency": 15,         # Controls API rate limits & parallel throughput
+        "system_prompt": (
+            "You are an expert quantitative trader and equity analyst for Finnbot. "
+            "Your objective is to evaluate the provided stock dataset under a strict trade strategy. "
+            "Analyze technical momentum, fundamental valuation, and recent news catalysts. "
+            "You MUST invoke the `record_stock_recommendation` tool to output your final analysis."
+        ),
+    },
+    #Sanitize
+    "FINANCIALS_REPORTED_MAX_DAYS": 365, # int: Maximum age of reported financials to consider (in days)
+    "SERIES_MAX_DAYS": 30,               # int: Maximum age of historical series data to consider (in days)
+    
 }

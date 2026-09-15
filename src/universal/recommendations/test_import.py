@@ -49,7 +49,6 @@ file_path = ticker_client.fetch_ticker_data(
     clear_existing_data=params_dict["CLEAR_EXISTING_DATA"],  # Deletes previous CSV exports in output dir
 )
 
-print(f"Filtered file generated: {file_path}")
 
 def main():
     print("Initializing DataFetcher instance...")
@@ -64,13 +63,13 @@ def main():
     #Fetching all tickers and testing pipeline
     print(f"Testing filter_all() for {fetcher.all_tickers} ---")
     filtered_tickers = fetcher.filter_all()
-    llm_packet = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
+    llm_packets = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
     current_dir = Path(__file__).resolve().parent
     output_path = current_dir / "LLM_input.json"
 
     # 3. Save to JSON
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(llm_packet, f, indent=4, default=str)
+        json.dump(llm_packets, f, indent=4, default=str)
 
     print(f"✓ LLM input payload successfully saved to: {output_path}")
     

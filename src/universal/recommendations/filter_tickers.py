@@ -2,7 +2,7 @@
 import json
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import requests
@@ -12,7 +12,6 @@ from line_profiler import profile
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from src.parameters import params_dict
 
 import sys
 from pathlib import Path
@@ -26,10 +25,10 @@ if str(project_root) not in sys.path:
 env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
-from yahoo_filter_helper import filter_yahoo_tickers
-from finnhub_filter_helper import filter_finnhub_tickers
-from twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
-
+from src.universal.recommendations.yahoo_filter_helper import filter_yahoo_tickers
+from src.universal.recommendations.finnhub_filter_helper import filter_finnhub_tickers
+from src.universal.recommendations.twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
+from src.parameters import params_dict
 
 class DataFetcher:
     """Handles fetching, processing, and exporting stock market data 
@@ -117,7 +116,6 @@ class DataFetcher:
 
     def fetch_yahoo_data(self, symbol: str, fetch_news: bool = False) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """Fetches key metrics (dict) or news articles (list of dicts) directly for a ticker from Yahoo Finance."""
-        t_start = time.perf_counter()
         ticker_obj = yf.Ticker(symbol)
 
         def _safe_get(key: str, attribute_name: str, is_callable: bool = False, *args, **kwargs):
@@ -208,6 +206,21 @@ class DataFetcher:
             if isinstance(full_financials, dict) and "metric" in full_financials
             else full_financials
         )
+        
+        # Define dynamic date range for future corporate events 
+        today = datetime.now()
+        from_date = today.strftime("%Y-%m-%d")
+        to_date = (today + timedelta(days=params_dict["EARNINGS_FUTURE_LOOKAHEAD_DAYS"])).strftime("%Y-%m-%d")
+
+        # Fetch upcoming earnings calendar data
+        finnhub_data["earnings_calendar"] = _safe_api_call(
+            "earnings_calendar",
+            self.finnhub_client.earnings_calendar,
+            _from=from_date,
+            to=to_date,
+            symbol=symbol,
+        )
+        
 
         return finnhub_data
     
@@ -391,48 +404,161 @@ class DataFetcher:
             }
 
         return market_data
-
-    def congregate_LLM_input_data(
-        self, 
-        tickers: Optional[List[str]] = None, 
-        as_dict_records: bool = True
+    
+    def fetch_series_data(
+        self,
+        tickers: Optional[List[str]] = None,
     ) -> Dict[str, Dict[str, Any]]:
-        """Combines market data (Yahoo, Finnhub, Twelve Data) and aggregated news into a 
-        single unified dictionary per ticker for LLM consumption.
-        
-        Args:
-            tickers: Optional list of symbols. Defaults to self.all_tickers if None.
-            as_dict_records: If True, converts news DataFrames into JSON-serializable list of dicts.
+        """Fetches series data across Finnhub endpoints using ALL CAPS parameter keys.
+
+        Falls back to src.parameters.params_dict if no custom params_dict is passed.
         """
         if tickers is None:
             tickers = self.all_tickers
 
-        # 1. Fetch market fundamentals/technical context and news data payloads
+        earnings_cfg = params_dict.get("EARNINGS_SURPRISE", {})
+        insider_cfg = params_dict.get("INSIDER_SENTIMENT", {})
+        fin_reported_cfg = params_dict.get("FINANCIALS_REPORTED", {})
+        basic_fin_cfg = params_dict.get("COMPANY_BASIC_FINANCIALS", {})
+
+        series_payload: Dict[str, Dict[str, Any]] = {}
+
+        for symbol in tickers:
+            ticker_data: Dict[str, Any] = {}
+
+            # 1. Recommendation Trends
+            try:
+                ticker_data["recommendation_trends"] = (
+                    self.finnhub_client.recommendation_trends(symbol=symbol)
+                )
+                print(f"✓ Successfully fetched recommendation trends for {symbol}.")
+            except Exception as e:
+                ticker_data["recommendation_trends"] = {"error": str(e)}
+
+            # 2. Earnings Surprise
+            try:
+                kwargs = {}
+                if "LIMIT" in earnings_cfg:
+                    kwargs["limit"] = earnings_cfg["LIMIT"]
+
+                ticker_data["earnings_surprise"] = (
+                    self.finnhub_client.company_earnings(symbol=symbol, **kwargs)
+                )
+                print(f"✓ Successfully fetched earnings surprise data for {symbol}.")
+            except Exception as e:
+                ticker_data["earnings_surprise"] = {"error": str(e)}
+
+            # 3. Insider Sentiment
+            try:
+                kwargs = {}
+                if "DAYS_BACK" in insider_cfg:
+                    today = date.today()
+                    from_date = today - timedelta(days=insider_cfg["DAYS_BACK"])
+
+                    kwargs["to"] = today.strftime("%Y-%m-%d")
+                    kwargs["_from"] = from_date.strftime("%Y-%m-%d")
+
+                ticker_data["insider_sentiment"] = (
+                    self.finnhub_client.stock_insider_sentiment(
+                        symbol=symbol, **kwargs
+                    )
+                )
+                print(f"✓ Successfully fetched insider sentiment data for {symbol}.")
+            except Exception as e:
+                ticker_data["insider_sentiment"] = {"error": str(e)}
+
+            # 4. Financials Reported
+            try:
+                kwargs = {}
+                if "FREQ" in fin_reported_cfg:
+                    kwargs["freq"] = fin_reported_cfg["FREQ"]
+                if fin_reported_cfg.get("ID"):
+                    kwargs["id"] = fin_reported_cfg["ID"]
+                if fin_reported_cfg.get("ACCESS_NUMBER"):
+                    kwargs["access_number"] = fin_reported_cfg["ACCESS_NUMBER"]
+
+                ticker_data["financials_reported"] = (
+                    self.finnhub_client.financials_reported(
+                        symbol=symbol, **kwargs
+                    )
+                )
+                print(f"✓ Successfully fetched financials reported data for {symbol}.")
+            except Exception as e:
+                ticker_data["financials_reported"] = {"error": str(e)}
+
+            # 5. Company Basic Financials ('series' key only)
+            try:
+                kwargs = {}
+                if "METRIC" in basic_fin_cfg:
+                    kwargs["metric"] = basic_fin_cfg["METRIC"]
+
+                raw_basic = self.finnhub_client.company_basic_financials(
+                    symbol=symbol, **kwargs
+                )
+                if isinstance(raw_basic, dict):
+                    ticker_data["series_financials"] = raw_basic.get("series", {})
+                else:
+                    ticker_data["series_financials"] = {}
+            except Exception as e:
+                ticker_data["series_financials"] = {"error": str(e)}
+
+            series_payload[symbol] = ticker_data
+
+        return series_payload
+
+    def congregate_LLM_input_data(
+        self,
+        tickers: Optional[List[str]] = None,
+        as_dict_records: bool = True,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Combines market data, Finnhub series data, and news into a unified dictionary."""
+        if tickers is None:
+            tickers = self.all_tickers
+
         print(f"Fetching market and news data for {len(tickers)} tickers...")
         market_data = self.fetch_all(tickers=tickers)
         print(f"✓ Successfully fetched market data for {len(market_data)} tickers.")
+
         news_data = self.fetch_all_news(tickers=tickers)
         print(f"✓ Successfully fetched news data for {len(news_data)} tickers.")
+
+        print(f"Fetching Finnhub series data for {len(tickers)} tickers...")
+        series_data = self.fetch_series_data(
+            tickers=tickers
+        )
+        print(
+            f"✓ Successfully fetched series data for {len(series_data)} tickers."
+        )
 
         llm_payload: Dict[str, Dict[str, Any]] = {}
 
         for symbol in tickers:
             symbol_market = market_data.get(symbol, {})
             symbol_news_df = news_data.get(symbol, pd.DataFrame())
+            symbol_series = series_data.get(symbol, {})
 
-            # Convert Pandas DataFrame into list of dicts for direct JSON/LLM serialization
             if as_dict_records and isinstance(symbol_news_df, pd.DataFrame):
                 news_payload = symbol_news_df.to_dict(orient="records")
             else:
                 news_payload = symbol_news_df
 
+            finnhub_payload = symbol_market.get("finnhub", {})
+            if isinstance(finnhub_payload, dict):
+                finnhub_payload.update(symbol_series)
+                print(f"✓ Merged series data into Finnhub payload for {symbol}.")
+            else:
+                finnhub_payload = symbol_series
+
             llm_payload[symbol] = {
                 "yahoo": symbol_market.get("yahoo", {}),
-                "finnhub": symbol_market.get("finnhub", {}),
+                "finnhub": finnhub_payload,
                 "twelvedata": symbol_market.get("twelvedata", {}),
                 "news": news_payload,
             }
-            print(f"✓ Aggregated LLM payload for {symbol}: {len(news_payload)} news articles, market data keys: {list(symbol_market.keys())}")
+            print(
+                f"✓ Aggregated LLM payload for {symbol}: {len(news_payload)} news articles"
+            )
 
         return llm_payload
     # ==========================================
