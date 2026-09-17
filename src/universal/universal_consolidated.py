@@ -13,7 +13,7 @@ if str(project_root) not in sys.path:
 from src.parameters import params_dict
 from recommendations.ticker_fetcher import Tickers
 from src.universal.recommendations.LLM_recommendation import run_llm_evaluation
-
+from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 
 def get_universal_content():
     """
@@ -54,6 +54,13 @@ def get_universal_content():
     #     json.dump(llm_packets, f, indent=4, default=str)
 
     # print(f"✓ Saved output to {output_filename}")
+    
+    for ticker in llm_packets.keys():
+        raw_data = llm_packets[ticker]
+        sanitized_payload = sanitize_ticker_payload(ticker, raw_data)
+        print(sanitized_payload)
+        
+    print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
     
     # generated_recommendations = run_llm_evaluation(llm_packets) #LLM pipeline
     

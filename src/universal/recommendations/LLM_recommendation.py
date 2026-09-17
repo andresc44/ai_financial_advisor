@@ -5,9 +5,15 @@ from typing import Any, Dict, List, Literal, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from anthropic import AsyncAnthropic, APIError
+from pathlib import Path
+import sys
 
-from sanitizer import sanitize_ticker_payload
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+    
 from src.parameters import params_dict
+from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 
 # Automatically load environment variables from .env file
 load_dotenv()
