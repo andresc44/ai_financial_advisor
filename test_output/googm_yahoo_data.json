@@ -1,0 +1,667 @@
+{
+    "info": {
+        "maxAge": 86400,
+        "priceHint": 2,
+        "previousClose": 49.38,
+        "open": 49.41,
+        "dayLow": 49.1,
+        "dayHigh": 49.79,
+        "regularMarketPreviousClose": 49.38,
+        "regularMarketOpen": 49.41,
+        "regularMarketDayLow": 49.1,
+        "regularMarketDayHigh": 49.79,
+        "volume": 617276,
+        "regularMarketVolume": 617276,
+        "averageVolume": 5402931,
+        "averageVolume10days": 1150640,
+        "averageDailyVolume10Day": 1150640,
+        "bid": 35.55,
+        "ask": 63.34,
+        "bidSize": 2,
+        "askSize": 2,
+        "fiftyTwoWeekLow": 46.24,
+        "fiftyTwoWeekHigh": 53.13,
+        "allTimeHigh": 53.13,
+        "allTimeLow": 46.24,
+        "fiftyDayAverage": 50.0976,
+        "twoHundredDayAverage": 50.10353,
+        "currency": "USD",
+        "tradeable": false,
+        "quoteType": "EQUITY",
+        "symbol": "GOOGM",
+        "language": "en-US",
+        "region": "US",
+        "typeDisp": "Equity",
+        "quoteSourceName": "Nasdaq Real Time Price",
+        "triggerable": true,
+        "customPriceAlertConfidence": "HIGH",
+        "hasPrePostMarketData": true,
+        "firstTradeDateMilliseconds": 1780493400000,
+        "regularMarketChange": -0.09000015,
+        "regularMarketDayRange": "49.1 - 49.79",
+        "fullExchangeName": "NasdaqGS",
+        "averageDailyVolume3Month": 5402931,
+        "fiftyTwoWeekLowChange": 3.0499992,
+        "fiftyTwoWeekLowChangePercent": 0.06596019,
+        "fiftyTwoWeekRange": "46.24 - 53.13",
+        "fiftyTwoWeekHighChange": -3.8400002,
+        "fiftyTwoWeekHighChangePercent": -0.07227555,
+        "fiftyTwoWeekChangePercent": -2.2023797,
+        "dividendDate": 1786752000,
+        "fiftyDayAverageChange": -0.8075981,
+        "fiftyDayAverageChangePercent": -0.016120495,
+        "twoHundredDayAverageChange": -0.81352997,
+        "twoHundredDayAverageChangePercent": -0.01623698,
+        "sourceInterval": 15,
+        "exchangeDataDelayedBy": 0,
+        "cryptoTradeable": false,
+        "shortName": "Alphabet Inc. - Depositary Shar",
+        "longName": "Alphabet Inc. Depositary Shares representing a 1/20th Interest in a Share of Series A Mandatory Convertible Preferred Stock",
+        "corporateActions": [],
+        "regularMarketTime": 1786737601,
+        "exchange": "NMS",
+        "messageBoardId": "finmb_29096",
+        "exchangeTimezoneName": "America/New_York",
+        "exchangeTimezoneShortName": "EDT",
+        "gmtOffSetMilliseconds": -14400000,
+        "market": "us_market",
+        "esgPopulated": false,
+        "regularMarketChangePercent": -0.18226033,
+        "regularMarketPrice": 49.29,
+        "marketState": "PRE",
+        "trailingPegRatio": null
+    },
+    "news": [
+        {
+            "id": "b94480b0-a424-374d-8de4-cbe0d88d870e",
+            "content": {
+                "id": "b94480b0-a424-374d-8de4-cbe0d88d870e",
+                "contentType": "STORY",
+                "title": "Elon Musk and Jensen Huang’s New Partnership Could Create the Next Era of Technology",
+                "description": "",
+                "summary": "Four seemingly unrelated headlines dropped over two weeks, and when you line them up in sequence, they point to a partnership that could reshape who controls the next trillion dollars of AI infrastructure.",
+                "pubDate": "2026-08-16T22:57:48Z",
+                "displayTime": "2026-08-16T22:57:48Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/24_7_wall_st__718/1491bf719316a4e4a1c7252e86ffb1ac.jpg",
+                    "originalWidth": 2560,
+                    "originalHeight": 1707,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/l8k8Q21Wbci6ixx1swEWNw--~B/aD0xNzA3O3c9MjU2MDthcHBpZD15dGFjaHlvbg--/https://media.zenfs.com/en/24_7_wall_st__718/1491bf719316a4e4a1c7252e86ffb1ac.jpg",
+                            "width": 2560,
+                            "height": 1707,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/JKGdX0Xt6sMlIn2OKvI7Bw--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/24_7_wall_st__718/1491bf719316a4e4a1c7252e86ffb1ac.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "24/7 Wall St.",
+                    "url": "https://247wallst.com/",
+                    "sourceId": "24_7_wall_st__718"
+                },
+                "canonicalUrl": {
+                    "url": "https://247wallst.com/investing/2026/08/16/elon-musk-and-jensen-huangs-new-partnership-could-create-the-next-era-of-technology/",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/elon-musk-jensen-huang-partnership-225748686.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "7c3f66f5-c0aa-3de9-b754-55a7d895c243",
+            "content": {
+                "id": "7c3f66f5-c0aa-3de9-b754-55a7d895c243",
+                "contentType": "STORY",
+                "title": "What Is Alphabet (GOOGL) Betting On With Gemini 3.7 Flash?",
+                "description": "",
+                "summary": "Alphabet (NasdaqGS:GOOGL) has released its Gemini 3.7 Flash AI model, aimed at speeding up productivity tasks and coding automation. The rollout of Alphabet's higher end Gemini 3.5 Pro model has been delayed, raising fresh questions about its position against rivals such as OpenAI and Anthropic. Investors are weighing rising competitive pressure from open source and lower cost Chinese AI models, which could influence Alphabet's long term AI market position. The wider build out of AI...",
+                "pubDate": "2026-08-16T22:09:07Z",
+                "displayTime": "2026-08-16T22:09:07Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/simply_wall_st__316/1fc7d8c4b041b0aaed5c1d373b17b5b4.jpg",
+                    "originalWidth": 1194,
+                    "originalHeight": 432,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/DsPfvV2m9a9oeBhgaVCYNg--~B/aD00MzI7dz0xMTk0O2FwcGlkPXl0YWNoeW9u/https://media.zenfs.com/en/simply_wall_st__316/1fc7d8c4b041b0aaed5c1d373b17b5b4.jpg",
+                            "width": 1194,
+                            "height": 432,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/xyPzPeUopY2DVRZdNfmT7Q--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/simply_wall_st__316/1fc7d8c4b041b0aaed5c1d373b17b5b4.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "Simply Wall St.",
+                    "url": "https://simplywall.st/",
+                    "sourceId": "simply_wall_st__316"
+                },
+                "canonicalUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/alphabet-googl-betting-gemini-3-220907115.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/alphabet-googl-betting-gemini-3-220907115.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "66fecd09-ac9f-3dab-b34b-6d5557ebf397",
+            "content": {
+                "id": "66fecd09-ac9f-3dab-b34b-6d5557ebf397",
+                "contentType": "STORY",
+                "title": "Google’s (GOOGL) Latest AI Model Arrives Amid A Bigger Balancing Act",
+                "description": "",
+                "summary": "On August 13, Alphabet’s (NASDAQ:GOOGL) Google unveiled Gemini 3.7 Flash, a new AI model built for coding and automated business tasks. The launch came without word on when the company’s flagship Gemini 3.5 Pro model will arrive, a gap investors have watched closely as a gauge of whether Google’s DeepMind unit can keep pace with […]",
+                "pubDate": "2026-08-16T19:47:43Z",
+                "displayTime": "2026-08-16T19:47:43Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/insidermonkey.com/9acb7c00e0b826add3430717957e8def.jpg",
+                    "originalWidth": 1456,
+                    "originalHeight": 816,
+                    "caption": "Google's (GOOGL) Latest AI Model Arrives Amid A Bigger Balancing Act",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/x4ZDhL51YYuBsZxo4ZSFsg--~B/aD04MTY7dz0xNDU2O2FwcGlkPXl0YWNoeW9u/https://media.zenfs.com/en/insidermonkey.com/9acb7c00e0b826add3430717957e8def.jpg",
+                            "width": 1456,
+                            "height": 816,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/3vnPb1.iNhPijq1.k0Jezg--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/insidermonkey.com/9acb7c00e0b826add3430717957e8def.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "Insider Monkey",
+                    "url": "http://www.insidermonkey.com",
+                    "sourceId": "insidermonkey.com"
+                },
+                "canonicalUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/google-googl-latest-ai-model-194743447.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/google-googl-latest-ai-model-194743447.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "043682f6-c63c-35a3-8af8-285d97e08b3e",
+            "content": {
+                "id": "043682f6-c63c-35a3-8af8-285d97e08b3e",
+                "contentType": "STORY",
+                "title": "Elon Musk’s SpaceX Holdings Revealed. (Hint: It’s A Lot.)",
+                "description": "",
+                "summary": "SpaceX  is a popular stock, backed by some investing and corporate heavy hitters.  The heaviest hitter of all, of course, is Elon Musk.  It’s the first time public funds have disclosed SpaceX positions.",
+                "pubDate": "2026-08-16T16:46:00Z",
+                "displayTime": "2026-08-16T16:46:00Z",
+                "isHosted": false,
+                "bypassModal": false,
+                "previewUrl": "https://finance.yahoo.com/m/043682f6-c63c-35a3-8af8-285d97e08b3e/elon-musk%E2%80%99s-spacex-holdings.html",
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/Barrons.com/5e07a17450b517f8f14a2ad4f556f049.jpg",
+                    "originalWidth": 1280,
+                    "originalHeight": 640,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/Wu5hThvP14LwDLcDX1ufgQ--~B/aD02NDA7dz0xMjgwO2FwcGlkPXl0YWNoeW9u/https://media.zenfs.com/en/Barrons.com/5e07a17450b517f8f14a2ad4f556f049.jpg",
+                            "width": 1280,
+                            "height": 640,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/4Fdb_YGKc9P43AIThRouJg--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/Barrons.com/5e07a17450b517f8f14a2ad4f556f049.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "Barrons.com",
+                    "url": "http://www.barrons.com/",
+                    "sourceId": "Barrons.com"
+                },
+                "canonicalUrl": {
+                    "url": "https://www.barrons.com/articles/elon-musk-spacex-holdings-stock-8a935b9d?siteid=yhoof2&yptr=yahoo",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": null,
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "ca41f793-ce40-388d-a916-920e4ca1f060",
+            "content": {
+                "id": "ca41f793-ce40-388d-a916-920e4ca1f060",
+                "contentType": "STORY",
+                "title": "SpaceX is Planning to Spend Up to $500 Billion on Data Centers. Here’s Why Elon Musk is Pushing All-In",
+                "description": "",
+                "summary": "SpaceX is moving fast enough to potentially spend half a trillion dollars on data centers in a single year, and the inference economics driving that decision reveal something surprising about where the entire AI arms race could break down.",
+                "pubDate": "2026-08-16T13:31:55Z",
+                "displayTime": "2026-08-16T13:31:55Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/24_7_wall_st__718/728649af3f60cb8e1bc68323bc430385.jpg",
+                    "originalWidth": 2560,
+                    "originalHeight": 1707,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/r4xYp3OnwiOln_mqQlv94A--~B/aD0xNzA3O3c9MjU2MDthcHBpZD15dGFjaHlvbg--/https://media.zenfs.com/en/24_7_wall_st__718/728649af3f60cb8e1bc68323bc430385.jpg",
+                            "width": 2560,
+                            "height": 1707,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/sAmkryiU2PhYIfuDBMSGrg--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/24_7_wall_st__718/728649af3f60cb8e1bc68323bc430385.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "24/7 Wall St.",
+                    "url": "https://247wallst.com/",
+                    "sourceId": "24_7_wall_st__718"
+                },
+                "canonicalUrl": {
+                    "url": "https://247wallst.com/investing/2026/08/16/spacex-is-planning-to-spend-up-to-500-billion-on-data-centers-heres-why-elon-musk-is-pushing-all-in/",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/spacex-planning-spend-500-billion-133155872.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "0494dd68-73f9-3752-920f-0f3930d741eb",
+            "content": {
+                "id": "0494dd68-73f9-3752-920f-0f3930d741eb",
+                "contentType": "STORY",
+                "title": "At AI-Fueled Market Party, Wall Street Eyes the Rates Punch Bowl",
+                "description": "",
+                "summary": "Enthusiasm for Big Tech and its huge investments in artificial intelligence is powering the stock market to record highs again. With a resilient economy and scorching demand, there’s seemingly only one obstacle that can derail this ride: higher interest rates.",
+                "pubDate": "2026-08-16T12:30:00Z",
+                "displayTime": "2026-08-16T12:30:00Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/bloomberg_holding_pen_162/509840bc17679d4e8e7e5df704f406f4.jpg",
+                    "originalWidth": 2010,
+                    "originalHeight": 1782,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/prpx96SEbTdeYE69.GFwzQ--~B/aD0xNzgyO3c9MjAxMDthcHBpZD15dGFjaHlvbg--/https://media.zenfs.com/en/bloomberg_holding_pen_162/509840bc17679d4e8e7e5df704f406f4.jpg",
+                            "width": 2010,
+                            "height": 1782,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/4ap4dygdWZHvFLWbiupGgQ--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/bloomberg_holding_pen_162/509840bc17679d4e8e7e5df704f406f4.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "Bloomberg",
+                    "url": "https://www.bloomberg.com/company",
+                    "sourceId": "bloomberg_holding_pen_162"
+                },
+                "canonicalUrl": {
+                    "url": "https://finance.yahoo.com/markets/stocks/articles/ai-fueled-market-party-wall-123000539.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/markets/stocks/articles/ai-fueled-market-party-wall-123000539.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "01d98123-8ba9-3986-af52-fe8e79bac896",
+            "content": {
+                "id": "01d98123-8ba9-3986-af52-fe8e79bac896",
+                "contentType": "STORY",
+                "title": "Open-Weight AI Won’t Crimp Demand for Picks and Shovels",
+                "description": "",
+                "summary": "Some of the artificial intelligence boom’s biggest beneficiaries can cash in whether open models proliferate or not.",
+                "pubDate": "2026-08-16T09:30:00Z",
+                "displayTime": "2026-08-16T09:30:00Z",
+                "isHosted": false,
+                "bypassModal": false,
+                "previewUrl": "https://finance.yahoo.com/m/01d98123-8ba9-3986-af52-fe8e79bac896/open-weight-ai-won%E2%80%99t-crimp.html",
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/wsj.com/ac11f4210ee14b0c60bfe4398f666584.jpg",
+                    "originalWidth": 1280,
+                    "originalHeight": 640,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/yU7dgk5V5NQHGMw3FnAzeg--~B/aD02NDA7dz0xMjgwO2FwcGlkPXl0YWNoeW9u/https://media.zenfs.com/en/wsj.com/ac11f4210ee14b0c60bfe4398f666584.jpg",
+                            "width": 1280,
+                            "height": 640,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/5rF6WhuFQPitFRCWT0g1dQ--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/wsj.com/ac11f4210ee14b0c60bfe4398f666584.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "The Wall Street Journal",
+                    "url": "http://www.wsj.com/",
+                    "sourceId": "wsj.com"
+                },
+                "canonicalUrl": {
+                    "url": "https://www.wsj.com/tech/ai/open-weight-ai-wont-crimp-demand-for-picks-and-shovels-523e6410?siteid=yhoof2&yptr=yahoo",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": null,
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "ff7f7b56-0f8b-377f-9ee7-6ca8c9734eea",
+            "content": {
+                "id": "ff7f7b56-0f8b-377f-9ee7-6ca8c9734eea",
+                "contentType": "STORY",
+                "title": "How could open-weight models impact GenAI ROIC?",
+                "description": "",
+                "summary": "Investing.com -- The rise of lower-cost open-weight AI models could pressure pricing and returns for model developers, but hyperscalers should continue generating attractive returns from the computing infrastructure needed to run them, Morgan Stanley analysts said.",
+                "pubDate": "2026-08-15T23:52:36Z",
+                "displayTime": "2026-08-15T23:52:36Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": null,
+                "provider": {
+                    "displayName": "Investing.com",
+                    "url": "https://www.investing.com/",
+                    "sourceId": "investing_com_631"
+                },
+                "canonicalUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/could-open-weight-models-impact-235236970.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/technology/ai/articles/could-open-weight-models-impact-235236970.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "691cc921-a247-3f04-99b9-03459416b6d9",
+            "content": {
+                "id": "691cc921-a247-3f04-99b9-03459416b6d9",
+                "contentType": "STORY",
+                "title": "Apple, Samsung Can Absorb the Smartphone Cost Shock — Smaller Rivals May Not Be so Lucky",
+                "description": "",
+                "summary": "Apple Inc., Samsung Electronics Co. Ltd. and other major smartphone makers face a tougher demand environment as rising component costs push handset prices higher in the U.S. and China, according to new research from Counterpoint Research. Counterpoint analysts said Thursday...",
+                "pubDate": "2026-08-15T18:01:59Z",
+                "displayTime": "2026-08-15T18:01:59Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/benzinga_79/4990b089a0009cb97aee9113ea15c088.jpg",
+                    "originalWidth": 1024,
+                    "originalHeight": 700,
+                    "caption": "Apple, Samsung Can Absorb the Smartphone Cost Shock — Smaller Rivals May Not Be so Lucky",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/gCp5DpiVdhSkU7bhfjL0ag--~B/aD03MDA7dz0xMDI0O2FwcGlkPXl0YWNoeW9u/https://media.zenfs.com/en/benzinga_79/4990b089a0009cb97aee9113ea15c088.jpg",
+                            "width": 1024,
+                            "height": 700,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/47RxTA4KfKNiPJJzyPgqjA--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/benzinga_79/4990b089a0009cb97aee9113ea15c088.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "Benzinga",
+                    "url": "https://www.benzinga.com/",
+                    "sourceId": "benzinga_79"
+                },
+                "canonicalUrl": {
+                    "url": "https://finance.yahoo.com/markets/stocks/articles/apple-samsung-absorb-smartphone-cost-180159241.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/markets/stocks/articles/apple-samsung-absorb-smartphone-cost-180159241.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        },
+        {
+            "id": "99a3bd34-ecdf-3658-a9ea-0ab3804eff9e",
+            "content": {
+                "id": "99a3bd34-ecdf-3658-a9ea-0ab3804eff9e",
+                "contentType": "STORY",
+                "title": "Warren Buffett Wasn’t the Only Billionaire Buying Alphabet Stock in Q2",
+                "description": "",
+                "summary": "Every August, 13F filings crack open the vaults of the world's biggest money managers, and this quarter two billionaires with almost nothing in common landed on the exact same stock.",
+                "pubDate": "2026-08-15T16:25:53Z",
+                "displayTime": "2026-08-15T16:25:53Z",
+                "isHosted": true,
+                "bypassModal": false,
+                "previewUrl": null,
+                "thumbnail": {
+                    "originalUrl": "https://media.zenfs.com/en/24_7_wall_st__718/7b3a8056fad69101c9164c1a974d3175.jpg",
+                    "originalWidth": 1366,
+                    "originalHeight": 768,
+                    "caption": "",
+                    "resolutions": [
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/TqxHqgjezuf_ETsvmrALXg--~B/aD03Njg7dz0xMzY2O2FwcGlkPXl0YWNoeW9u/https://media.zenfs.com/en/24_7_wall_st__718/7b3a8056fad69101c9164c1a974d3175.jpg",
+                            "width": 1366,
+                            "height": 768,
+                            "tag": "original"
+                        },
+                        {
+                            "url": "https://s.yimg.com/uu/api/res/1.2/J4WZbaSIbQNhsdTA8bBZKw--~B/Zmk9c3RyaW07aD0xMjg7dz0xNzA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/24_7_wall_st__718/7b3a8056fad69101c9164c1a974d3175.jpg",
+                            "width": 170,
+                            "height": 128,
+                            "tag": "170x128"
+                        }
+                    ]
+                },
+                "provider": {
+                    "displayName": "24/7 Wall St.",
+                    "url": "https://247wallst.com/",
+                    "sourceId": "24_7_wall_st__718"
+                },
+                "canonicalUrl": {
+                    "url": "https://247wallst.com/investing/2026/08/15/warren-buffett-wasnt-the-only-billionaire-buying-alphabet-stock-in-q2/",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "clickThroughUrl": {
+                    "url": "https://finance.yahoo.com/markets/stocks/articles/warren-buffett-wasn-t-only-162553854.html",
+                    "site": "finance",
+                    "region": "US",
+                    "lang": "en-US"
+                },
+                "metadata": {
+                    "editorsPick": false
+                },
+                "finance": {
+                    "premiumFinance": {
+                        "isPremiumNews": false,
+                        "isPremiumFreeNews": false
+                    }
+                },
+                "storyline": null
+            }
+        }
+    ]
+}

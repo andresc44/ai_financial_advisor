@@ -23,15 +23,8 @@ def parse_date(date_str: str) -> Optional[datetime]:
 
 def sanitize_ticker_payload(symbol: str, raw_data: Dict[str, Any]) -> str:
     """Strips API noise and formats raw multi-source stock data into a compact Markdown text block."""
-    # Extract ALL CAPS parameter values directly from imported params_dict
-    FINANCIALS_MAX_DAYS = (
-        params_dict.get("FINANCIALS_REPORTED_MAX_DAYS")
-        or params_dict.get("financials_reported_max_days", 365)
-    )
-    SERIES_MAX_DAYS = (
-        params_dict.get("SERIES_MAX_DAYS")
-        or params_dict.get("series_max_days", 30)
-    )
+    FINANCIALS_MAX_DAYS = params_dict.get("FINANCIALS_REPORTED_MAX_DAYS", 365)
+    SERIES_MAX_DAYS = params_dict.get("SERIES_MAX_DAYS", 30)
 
     # Unwrap nested payload if keyed by ticker symbol
     if symbol in raw_data and isinstance(raw_data[symbol], dict):
@@ -40,13 +33,16 @@ def sanitize_ticker_payload(symbol: str, raw_data: Dict[str, Any]) -> str:
     yahoo = raw_data.get("yahoo") or {}
     finnhub = raw_data.get("finnhub") or {}
     twelvedata = raw_data.get("twelvedata") or {}
-    series_data = raw_data.get("series") or {}
     news = raw_data.get("news") or []
 
     fh_profile = finnhub.get("profile") or {}
     fh_quote = finnhub.get("quote") or {}
     fh_financials = finnhub.get("basic_financials") or {}
-    fh_reported = finnhub.get("financials_reported") or {}
+    fh_earnings_calendar = finnhub.get("earnings_calendar", {}).get("earningsCalendar", [])
+    fh_recommendation_trends = finnhub.get("recommendation_trends", [])
+    fh_earnings_surprise = finnhub.get("earnings_surprise", [])
+    fh_insider_sentiment = finnhub.get("insider_sentiment", {}).get("data", [])
+    fh_financials_reported_data = finnhub.get("financials_reported", {}).get("data", [])
 
     now = datetime.now()
 
@@ -55,10 +51,74 @@ def sanitize_ticker_payload(symbol: str, raw_data: Dict[str, Any]) -> str:
     day_high = fh_quote.get("h") or yahoo.get("regularMarketDayHigh") or yahoo.get("dayHigh") or "N/A"
     day_low = fh_quote.get("l") or yahoo.get("regularMarketDayLow") or yahoo.get("dayLow") or "N/A"
 
-    # Filter Financials Reported (Finnhub)
+    output_parts = [f"### CANDIDATE EVALUATION DATA: {symbol}"]
+
+    # Company Profile & Overview
+    output_parts.append(f"**Company Profile & Overview:**")
+    output_parts.append(f"- Name: {fh_profile.get('name', yahoo.get('longName', symbol))}")
+    output_parts.append(f"- Industry: {fh_profile.get('finnhubIndustry', yahoo.get('industry', 'N/A'))}")
+    output_parts.append(f"- Sector: {yahoo.get('sector', 'N/A')}")
+    output_parts.append(f"- Country: {fh_profile.get('country', yahoo.get('country', 'N/A'))}")
+    output_parts.append(f"- Website: {fh_profile.get('weburl', yahoo.get('website', 'N/A'))}")
+    output_parts.append(f"- Market Cap: ${fh_profile.get('marketCapitalization', yahoo.get('marketCap', 'N/A'))}M")
+    if yahoo.get('longBusinessSummary'):
+        output_parts.append(f"- Business Summary: {yahoo['longBusinessSummary'][:500]}...") # Truncate for brevity
+
+    # Price Action & Volatility
+    output_parts.append(f"\n**Price Action & Volatility:**")
+    output_parts.append(f"- Current Price: ${curr_price} (Change: {fh_quote.get('dp', 'N/A')}% daily)")
+    output_parts.append(f"- Day Range: ${day_low} - ${day_high}")
+    output_parts.append(f"- 52-Week Range: ${fh_financials.get('52WeekLow', yahoo.get('fiftyTwoWeekLow', 'N/A'))} - ${fh_financials.get('52WeekHigh', yahoo.get('fiftyTwoWeekHigh', 'N/A'))}")
+    output_parts.append(f"- Beta: {fh_financials.get('beta', yahoo.get('beta', 'N/A'))}")
+    output_parts.append(f"- Avg Volume (10-day): {yahoo.get('averageVolume10days', 'N/A')}")
+
+    # Key Fundamentals
+    output_parts.append(f"\n**Key Fundamentals:**")
+    output_parts.append(f"- P/E (TTM): {fh_financials.get('peTTM', yahoo.get('trailingPE', 'N/A'))} | Forward P/E: {fh_financials.get('forwardPE', yahoo.get('forwardPE', 'N/A'))}")
+    output_parts.append(f"- EPS (TTM): {fh_financials.get('epsTTM', yahoo.get('trailingEps', 'N/A'))} | Forward EPS: {fh_financials.get('epsForward', yahoo.get('forwardEps', 'N/A'))}")
+    output_parts.append(f"- PEG Ratio: {fh_financials.get('pegTTM', yahoo.get('pegRatio', 'N/A'))}")
+    output_parts.append(f"- ROE: {fh_financials.get('roeTTM', yahoo.get('returnOnEquity', 'N/A'))}% | ROA: {fh_financials.get('roaTTM', yahoo.get('returnOnAssets', 'N/A'))}%")
+    output_parts.append(f"- Profit Margin: {fh_financials.get('netProfitMarginTTM', yahoo.get('profitMargins', 'N/A'))}% | Operating Margin: {fh_financials.get('operatingMarginTTM', yahoo.get('operatingMargins', 'N/A'))}%")
+    output_parts.append(f"- Gross Margin: {fh_financials.get('grossMarginTTM', yahoo.get('grossMargins', 'N/A'))}%")
+    output_parts.append(f"- Revenue (TTM): ${yahoo.get('totalRevenue', 'N/A')} | Revenue Growth (YoY): {fh_financials.get('revenueGrowthTTMYoy', 'N/A')}%")
+    output_parts.append(f"- Current Ratio: {fh_financials.get('currentRatioQuarterly', yahoo.get('currentRatio', 'N/A'))} | Quick Ratio: {fh_financials.get('quickRatioQuarterly', yahoo.get('quickRatio', 'N/A'))}")
+    output_parts.append(f"- Debt/Equity: {fh_financials.get('totalDebt/totalEquityQuarterly', yahoo.get('debtToEquity', 'N/A'))}")
+    output_parts.append(f"- Book Value Per Share: {fh_financials.get('bookValuePerShareQuarterly', yahoo.get('bookValue', 'N/A'))}")
+
+    # Analyst Ratings
+    output_parts.append(f"\n**Analyst Ratings:**")
+    output_parts.append(f"- Recommendation: {yahoo.get('recommendationKey', 'N/A')} ({yahoo.get('recommendationMean', 'N/A')} average)")
+    output_parts.append(f"- Target Price: ${yahoo.get('targetMeanPrice', 'N/A')} (High: ${yahoo.get('targetHighPrice', 'N/A')} | Low: ${yahoo.get('targetLowPrice', 'N/A')})")
+    output_parts.append(f"- Number of Opinions: {yahoo.get('numberOfAnalystOpinions', 'N/A')}")
+    
+    # Recommendation Trends (Finnhub)
+    if fh_recommendation_trends:
+        output_parts.append(f"\n**Recent Recommendation Trends (Last 4 Periods):**")
+        for trend in fh_recommendation_trends[:4]:
+            output_parts.append(f"- {trend.get('period')}: Strong Buy={trend.get('strongBuy')}, Buy={trend.get('buy')}, Hold={trend.get('hold')}, Sell={trend.get('sell')}, Strong Sell={trend.get('strongSell')}")
+
+    # Earnings Calendar
+    if fh_earnings_calendar:
+        output_parts.append(f"\n**Upcoming Earnings (Next 2):**")
+        for entry in fh_earnings_calendar[:2]:
+            output_parts.append(f"- Date: {entry.get('date')} (Q{entry.get('quarter')} {entry.get('year')}) | Est EPS: {entry.get('epsEstimate')} | Est Revenue: ${entry.get('revenueEstimate')}")
+
+    # Earnings Surprise (Finnhub)
+    if fh_earnings_surprise:
+        output_parts.append(f"\n**Recent Earnings Surprises (Last 4 Quarters):**")
+        for surprise in fh_earnings_surprise[:4]:
+            output_parts.append(f"- {surprise.get('period')}: Actual EPS={surprise.get('actual')}, Est EPS={surprise.get('estimate')}, Surprise={surprise.get('surprise')}, Surprise%={surprise.get('surprisePercent')}%")
+
+    # Insider Sentiment (Finnhub)
+    if fh_insider_sentiment:
+        output_parts.append(f"\n**Recent Insider Activity (Last 4 Months):**")
+        for sentiment in fh_insider_sentiment[:4]:
+            output_parts.append(f"- {sentiment.get('year')}-{sentiment.get('month')}: Change={sentiment.get('change')} shares, MSPR={sentiment.get('mspr')}")
+
+    # Recent Financial Filings (Finnhub)
     reported_items = []
-    if isinstance(fh_reported, dict) and isinstance(fh_reported.get("data"), list):
-        for rep in fh_reported["data"]:
+    if isinstance(fh_financials_reported_data, list):
+        for rep in fh_financials_reported_data:
             filed_str = rep.get("filedDate") or rep.get("acceptedDate") or ""
             filed_dt = parse_date(filed_str)
 
@@ -69,80 +129,45 @@ def sanitize_ticker_payload(symbol: str, raw_data: Dict[str, Any]) -> str:
                 q_label = f"Q{quarter}" if quarter else "FY"
                 reported_items.append(f"- [{filed_str[:10]}] Form {form} ({year} {q_label})")
 
-    financials_formatted = (
-        "\n".join(reported_items[:5])
-        if reported_items
-        else f"No financial filings within the last {FINANCIALS_MAX_DAYS} days."
-    )
+    if reported_items:
+        output_parts.append(f"\n**Recent Financial Filings (Last {FINANCIALS_MAX_DAYS} days):**")
+        output_parts.extend(reported_items)
+    else:
+        output_parts.append(f"\nNo financial filings within the last {FINANCIALS_MAX_DAYS} days.")
 
-    # Filter Series & Technical Data
+    # Technical & Series Metrics (twelvedata)
     tech_indicators = []
+    
+    # Consolidate twelvedata's MACD and Time Series
+    if twelvedata.get("macd_1day") and twelvedata["macd_1day"].get("values"):
+        latest_macd = twelvedata["macd_1day"]["values"][0]
+        tech_indicators.append(f"- **MACD**: MACD={latest_macd.get('macd')}, Signal={latest_macd.get('macd_signal')}, Hist={latest_macd.get('macd_hist')} (as of {latest_macd.get('datetime')})")
+    
+    if twelvedata.get("time_series_1day") and twelvedata["time_series_1day"].get("values"):
+        latest_ts = twelvedata["time_series_1day"]["values"][0]
+        tech_indicators.append(f"- **Latest Trade**: Open={latest_ts.get('open')}, High={latest_ts.get('high')}, Low={latest_ts.get('low')}, Close={latest_ts.get('close')}, Volume={latest_ts.get('volume')} (as of {latest_ts.get('datetime')})")
 
-    if isinstance(twelvedata, dict):
-        for metric, val in twelvedata.items():
-            if isinstance(val, dict) and "values" in val:
-                filtered_vals = []
-                for entry in val.get("values", []):
-                    entry_dt = parse_date(entry.get("datetime") or entry.get("date"))
-                    if entry_dt and (now - entry_dt).days <= SERIES_MAX_DAYS:
-                        filtered_vals.append(entry)
 
-                latest_val = filtered_vals[0] if filtered_vals else "Out of date range"
-                tech_indicators.append(f"- **{metric}**: {latest_val}")
-            else:
-                tech_indicators.append(f"- **{metric}**: {val}")
+    if tech_indicators:
+        output_parts.append(f"\n**Technical & Series Metrics (Latest Available):**")
+        output_parts.extend(tech_indicators)
+    else:
+        output_parts.append(f"\nNo recent technical metrics available from twelvedata.")
 
-    if isinstance(series_data, list):
-        filtered_series = [
-            s
-            for s in series_data
-            if (dt := parse_date(s.get("datetime") or s.get("date")))
-            and (now - dt).days <= SERIES_MAX_DAYS
-        ]
-        if filtered_series:
-            tech_indicators.append(
-                f"- **Series Data**: {len(filtered_series)} entries within {SERIES_MAX_DAYS} days."
-            )
 
-    tech_formatted = (
-        "\n".join(tech_indicators)
-        if tech_indicators
-        else "No recent technical metrics available."
-    )
-
-    # Process News Headlines
+    # Recent Headlines & Catalysts
     news_items = []
     if isinstance(news, list):
-        for article in news[:4]:
+        for article in news: # Include all news for higher density
             date_str = article.get("date_str", "Unknown Date")
             summary = article.get("summary", "").strip()
             if summary:
-                news_items.append(f"- [{date_str}] {summary[:250]}...")
+                news_items.append(f"- [{date_str}] {summary}") # No truncation for higher density
 
-    news_formatted = "\n".join(news_items) if news_items else "No recent news available."
+    if news_items:
+        output_parts.append(f"\n**Recent Headlines & Catalysts:**")
+        output_parts.extend(news_items)
+    else:
+        output_parts.append(f"\nNo recent news available.")
 
-    return f"""
-### CANDIDATE EVALUATION DATA: {symbol}
-
-**Company Profile & Overview:**
-- Name: {fh_profile.get('name', yahoo.get('longName', symbol))} | Industry: {fh_profile.get('finnhubIndustry', yahoo.get('industry', 'N/A'))}
-- Market Cap: ${fh_profile.get('marketCapitalization', yahoo.get('marketCap', 'N/A'))}M
-
-**Price Action & Volatility:**
-- Current Price: ${curr_price} | Day High: ${day_high} | Day Low: ${day_low}
-- 52-Week High/Low: ${fh_financials.get('52WeekHigh', yahoo.get('fiftyTwoWeekHigh', 'N/A'))} / ${fh_financials.get('52WeekLow', yahoo.get('fiftyTwoWeekLow', 'N/A'))}
-- Beta: {fh_financials.get('beta', yahoo.get('beta', 'N/A'))}
-
-**Key Fundamentals:**
-- P/E (TTM): {fh_financials.get('peTTM', yahoo.get('trailingPE', 'N/A'))} | EPS (TTM): {fh_financials.get('epsTTM', yahoo.get('trailingEps', 'N/A'))}
-- ROE: {fh_financials.get('roeTTM', yahoo.get('returnOnEquity', 'N/A'))}% | Profit Margin: {fh_financials.get('netProfitMarginTTM', yahoo.get('profitMargins', 'N/A'))}%
-
-**Recent Financial Filings (<= {FINANCIALS_MAX_DAYS} days):**
-{financials_formatted}
-
-**Technical & Series Metrics (<= {SERIES_MAX_DAYS} days):**
-{tech_formatted}
-
-**Recent Headlines & Catalysts:**
-{news_formatted}
-""".strip()
+    return "\n".join(output_parts).strip()

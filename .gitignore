@@ -158,7 +158,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-*.json
+# *.json files are ignored by default
 
 # Spyder project settings
 .spyderproject
@@ -234,3 +234,6 @@ snaptrade-recovery-codes.txt
 #Telegram alerts timestamped CSV
 telegram_alerts_timestamped.csv
 cron_test_results.csv
+
+# aider
+.aider*
