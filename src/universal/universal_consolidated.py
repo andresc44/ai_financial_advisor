@@ -14,6 +14,7 @@ from src.parameters import params_dict
 from recommendations.ticker_fetcher import Tickers
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 from src.universal.recommendations.scorer import select_top_candidates
+from src.universal.recommendations.enriched_rec import enrich_recommendations
 
 def get_universal_content():
     """
@@ -67,19 +68,16 @@ def get_universal_content():
         long_n=params_dict["LONG_TERM_N_AMOUNT"],
         swing_n=params_dict["SWING_TERM_N_AMOUNT"]
     )
-    print(f"Generated_recommendations:/n{generated_recommendations}")
-
+    print(f"Generated_recommendations:\n{generated_recommendations}")
+    recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)
     
     # IMPORTANT but not required for recommendations development
     # headline_news = fetch_live_macro_stories()
+    headline_news = {}
     # market_data = get_market_dashboard_data()
+    market_data = {}
     
-    
-    
-    
-    
-    
-    return True
+    return {"recommendations": recs_w_data, "market_data": market_data, "headline_news": headline_news}
 
 if __name__ == "__main__":
     universal_content = get_universal_content()
