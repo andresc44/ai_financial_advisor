@@ -12,8 +12,8 @@ if str(project_root) not in sys.path:
     
 from src.parameters import params_dict
 from recommendations.ticker_fetcher import Tickers
-from src.universal.recommendations.LLM_recommendation import run_llm_evaluation
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
+from src.universal.recommendations.scorer import select_top_candidates
 
 def get_universal_content():
     """
@@ -48,21 +48,27 @@ def get_universal_content():
     print(f"Testing filter_all() for {fetcher.all_tickers} ---")
     filtered_tickers = fetcher.filter_all()
     llm_packets = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
-    # output_filename = "LLM_input.json"
-
-    # with open(output_filename, "w", encoding="utf-8") as f:
-    #     json.dump(llm_packets, f, indent=4, default=str)
-
-    # print(f"✓ Saved output to {output_filename}")
+    sanitized_LLM_inputs = {}
     
     for ticker in llm_packets.keys():
         raw_data = llm_packets[ticker]
         sanitized_payload = sanitize_ticker_payload(ticker, raw_data)
-        print(sanitized_payload)
-        
+        sanitized_LLM_inputs[ticker] = sanitized_payload
+        # output_filename = "LLM_input_sanitized.json"
+
+        # with open(output_filename, "w", encoding="utf-8") as f:
+        #     json.dump(sanitized_payload, f, indent=4, default=str)
+
+        # print(f"✓ Saved output to {output_filename}")        
     print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
     
-    # generated_recommendations = run_llm_evaluation(llm_packets) #LLM pipeline
+    generated_recommendations = select_top_candidates(
+        sanitized_inputs=sanitized_LLM_inputs,
+        long_n=params_dict["LONG_TERM_N_AMOUNT"],
+        swing_n=params_dict["SWING_TERM_N_AMOUNT"]
+    )
+    print(f"Generated_recommendations:/n{generated_recommendations}")
+
     
     # IMPORTANT but not required for recommendations development
     # headline_news = fetch_live_macro_stories()

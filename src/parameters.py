@@ -1,7 +1,17 @@
+outputs_twelvedata_context = 20
 params_dict = {
     # Lookback and Lookahead Windows (Days)
-    "COMPANY_NEWS_LOOKBACK_DAYS": 60,
-    "EARNINGS_FUTURE_LOOKAHEAD_DAYS": 180,
+    "COMPANY_NEWS_LOOKBACK_DAYS": 30,
+    "EARNINGS_FUTURE_LOOKAHEAD_DAYS": 100,
+    "FUNDAMENTAL_MONTHS_LOOKBACK": 12, # int: Number of months to look back for fundamental data
+    "EARNINGS_SURPRISE": {
+        "LIMIT": 3 # int: Number of past quarters (e.g. 4, 8, 12)
+    },
+    # 3. Insider Sentiment (Monthly MSPR and transaction scores window)
+    "INSIDER_SENTIMENT": {
+        "DAYS_BACK": 365
+    },
+
     # API Settings
     "FINNHUB_RATE_LIMIT_SLEEP": 0.05,
     # Stage 1 Ticker Filter Parameters
@@ -16,6 +26,7 @@ params_dict = {
     "SECTOR": None,  # Takes priority over 'industry'
     "INDUSTRY": "Software",  # Ignored when sector is defined
     "CLEAR_EXISTING_DATA": True,  # Deletes previous CSV exports in output dir
+    "MAX_NEWS_ARTICLES": 10,  # Maximum number of news articles to include per ticker
     
     #Stage 2 Yahoo Filter Parameters
     "YAHOO_FILTERS": [ #["<", "<=", ">", ">=", "==", "=", "!="]
@@ -122,29 +133,24 @@ params_dict = {
     "TWELVEDATA_FILTERS": [
         # --- Category A: Standalone Bounded Momentum ---
         # ("rsi", "1day", "<=", 70),                                            # Standard 14-period RSI
-        ("rsi", "1day", "<=", 80, {"time_period": 9}),                        # Custom 9-period RSI
-        # ("mfi", "1day", "<=", 80),                                            # Money Flow Index (Volume-backed)
-        # ("willr", "1day", ">=", -80),                                         # Williams %R
-        # ("stochrsi", "1day", "<=", 80),                                       # Stochastic RSI
-        # ("cci", "1day", ">=", -100),                                          # Commodity Channel Index
-        # ("ultosc", "1day", ">=", 40),                                         # Ultimate Oscillator
-        # ("cmo", "1day", ">=", -50),                                           # Chande Momentum Oscillator
+        # ("rsi", "1day", "<=", 35, {"time_period": 14}),                       # 14-period Daily RSI Exhaustion (Oversold Hard-Deck), the 45-30 (strict) 
 
-        # --- Category A: Standalone Trend & Volatility ---
-        ("adx", "1day", ">=", 10),                                            # Trend strength
-        # ("aroonosc", "1day", ">=", 20),                                       # Aroon Oscillator (Uptrend check)
-        # ("roc", "1day", ">=", 0, {"time_period": 10}),                        # 10-day Rate of Change (%)
-        # ("beta", "1day", "<=", 1.5),                                          # Volatility vs. market index
+        # --- Category B: Trend Strength & Directional Index ---
+        # ("adx", "1day", ">=", 25, {"time_period": 14}),                       # 14-period Daily ADX (Ensures Active Strong Trend)
+        ("adx", "1day", "<=", 45, {"time_period": 14}),                       # 14-period Daily ADX (Ensures Active Strong Trend)
 
-        # --- Category B: Context-Dependent Examples (Fixed Level Approximations) ---
-        # ("sma", "1day", ">=", 200, {"time_period": 300}),                      # Absolute level threshold check
-        # ("ema", "1day", ">=", 50,  {"time_period": 50, "series_type": "open"}),# 50-period EMA on Open price
-        # Syntax: (endpoint, interval, extra_params)
+        # --- Category C: Relative Volume Ratio --- #For Pro Twelvedata plan
+        ## ("rvol", "1day", ">=", 1.5),                                          # Relative Volume (Confirms High Liquidity Absorption) 1.2 to 2.0 (strict)
+
+        # --- Category D: Market Volatility & Sensitivity ---
+        # ("beta", "1week", ">=", 1.2, {"time_period": 52}),                    # 52-Week Weekly Beta (Selects High-Responsiveness Swing Candidates) 1.05 to 1.5 (strict)
+
         
     ],
     # Context/time-series indicators fetched for data enrichment (No comparison operators or thresholds)
+    
     "TWELVEDATA_CONTEXT": [
-        ("macd", "1day", {"fast_period": 12, "slow_period": 26, "signal_period": 9}),
+        # ("macd", "1day", {"fast_period": 12, "slow_period": 26, "signal_period": 9}),
         # ("bbands", "1day", {"time_period": 20}),
         # ("stoch", "1day", {"fastkperiod": 14, "slowkperiod": 3}),
         # ("sma", "1day", {"time_period": 200}),
@@ -168,33 +174,65 @@ params_dict = {
                 #   - "timezone":   (str, 'Exchange' | 'UTC' | 'America/New_York' etc.) Timezone of timestamps
                 # -----------------------------------------------------------------------------------------
                 # 1. Standard daily candlestick history (last 30 trading days)
-        ("time_series", "1day", {"outputsize": 60}),
+        # ("time_series", "1day", {"outputsize": 60}),
+        # ("atr", "1day", {"time_period": 14, "outputsize": 1}),
+    # -----------------------------------------------------------------------------------------
+        # Determined Metrics for Maximized LLM context
+        # 1. BOLLINGER BANDS (BBANDS)
+        # Question Answered: "Is the stock unusually cheap right now?"
+        # Multi-week Setup: Identifies macro oversold extremes at the lower band on the daily chart.
+        # -----------------------------------------------------------------------------------------
+        ("bbands", "1day", {"time_period": 20, "sd": 2, "outputsize": outputs_twelvedata_context}),
+
+        # -----------------------------------------------------------------------------------------
+        # 2. EXPONENTIAL MOVING AVERAGE (EMA)
+        # Question Answered: "Has the price actually started to turn around?"
+        # Multi-week Setup: Confirms structural trend direction and momentum shifts over several weeks.
+        # -----------------------------------------------------------------------------------------
+        ("ema", "1day", {"time_period": 9, "outputsize": outputs_twelvedata_context}),
+        ("ema", "1day", {"time_period": 21, "outputsize": outputs_twelvedata_context}),
+
+        # -----------------------------------------------------------------------------------------
+        # 3. PARABOLIC SAR (SAR)
+        # Question Answered: "Where exactly do we exit if the trade goes wrong?"
+        # Multi-week Setup: Provides dynamic daily trailing stops suitable for holding positions weeks/months.
+        # -----------------------------------------------------------------------------------------
+        ("sar", "1day", {"acceleration": 0.02, "maximum": 0.2, "outputsize": outputs_twelvedata_context}),
+
+        # -----------------------------------------------------------------------------------------
+        # 4. RELATIVE STRENGTH INDEX (RSI)
+        # Question Answered: "Has the panic selling completely exhausted itself?"
+        # Multi-week Setup: Detects daily momentum exhaustion and multi-week bullish divergence.
+        # -----------------------------------------------------------------------------------------
+        ("rsi", "1day", {"time_period": 14, "outputsize": outputs_twelvedata_context}),
+
+        # -----------------------------------------------------------------------------------------
+        # 5. BETA
+        # Question Answered: "Will this bounce hard and fast enough to be worth our time?"
+        # Multi-week Setup: Evaluates relative market sensitivity calculated over a 1-year weekly window.
+        # -----------------------------------------------------------------------------------------
+        ("beta", "1week", {"time_period": 52, "outputsize": outputs_twelvedata_context}),
     ],
     # 1. Recommendation Trends (SDK only accepts 'symbol')
-    "RECOMMENDATION_TRENDS": {},
+    # "RECOMMENDATION_TRENDS": {},
     # 2. Earnings Surprise (Historical quarterly EPS surprise count)
-    "EARNINGS_SURPRISE": {
-        "LIMIT": 4 # int: Number of past quarters (e.g. 4, 8, 12)
-    },
-    # 3. Insider Sentiment (Monthly MSPR and transaction scores window)
-    "INSIDER_SENTIMENT": {
-        "DAYS_BACK": 365
-    },
-    # 4. Financials Reported (As-reported SEC filings)
-    "FINANCIALS_REPORTED": {
-        "FREQ": "annual", # str: 'annual' or 'quarterly'
-        "ID": None, # str | None: Specific statement ID filter
-        "ACCESS_NUMBER": None, # str | None: SEC filing access number
-    },
+
+    # 4. Financials Reported (As-reported SEC filings) UNNECESSARY SEC-filing data, waste of tokens
+    # "FINANCIALS_REPORTED": {
+    #     "FREQ": "annual", # str: 'annual' or 'quarterly'
+    #     "ID": None, # str | None: Specific statement ID filter
+    #     "ACCESS_NUMBER": None, # str | None: SEC filing access number
+    # },
     # 5. Company Basic Financials (Time-series metrics filter)
     "COMPANY_BASIC_FINANCIALS": {
         "METRIC": "all" # str: 'all', 'margin', 'valuation', 'price', etc.
     },
     
     "CLAUDE_CONFIG": {
-        "model": "claude-3-5-sonnet-20241022",
-        "max_tokens": 1000,
-        "temperature": 0.0,            # Deterministic output for quantitative evaluation
+        "model": "claude-opus-5",
+        "max_tokens": 16000,           # Caps thinking + tool output together, so leave headroom
+        "effort": "high",              # low | medium | high | xhigh | max - primary cost/latency lever
+        # No temperature: sampling params are rejected by current models
         "max_concurrency": 15,         # Controls API rate limits & parallel throughput
         "system_prompt": (
             "You are an expert quantitative trader and equity analyst for Finnbot. "
@@ -203,8 +241,9 @@ params_dict = {
             "You MUST invoke the `record_stock_recommendation` tool to output your final analysis."
         ),
     },
-    #Sanitize
-    "FINANCIALS_REPORTED_MAX_DAYS": 365, # int: Maximum age of reported financials to consider (in days)
-    "SERIES_MAX_DAYS": 30,               # int: Maximum age of historical series data to consider (in days)
-    
+    "LONG_TERM_N_AMOUNT": 2,
+    "SWING_TERM_N_AMOUNT": 5,
+    "MAX_NEWS_ARTICLES": 20,
+    "MIN_LONG_SCORE": 10.0,
+    "MIN_SWING_SCORE": 15.0,
 }

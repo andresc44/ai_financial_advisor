@@ -55,6 +55,8 @@ class DataFetcher:
         self.all_tickers = self.__load_ticker_df()["ticker"].dropna().tolist()
         self.twelvedata_api_key = os.getenv("TWELVEDATA_API_KEY", "")
         self.session = requests.Session()
+        fundamental_days_back = params_dict["FUNDAMENTAL_MONTHS_LOOKBACK"]*31
+        self.cutoff_date = (datetime.now() - timedelta(days=fundamental_days_back)).strftime("%Y-%m-%d")
 
     # ==========================================
     # INITIALIZATION & PATH HELPERS
@@ -458,33 +460,62 @@ class DataFetcher:
                     kwargs["to"] = today.strftime("%Y-%m-%d")
                     kwargs["_from"] = from_date.strftime("%Y-%m-%d")
 
-                ticker_data["insider_sentiment"] = (
-                    self.finnhub_client.stock_insider_sentiment(
-                        symbol=symbol, **kwargs
-                    )
+                raw_sentiment = self.finnhub_client.stock_insider_sentiment(
+                    symbol=symbol, **kwargs
                 )
+                
+                if isinstance(raw_sentiment, dict) and isinstance(raw_sentiment.get("data"), list):
+                    raw_sentiment["data"].sort(
+                        key=lambda x: (x.get("year", 0), x.get("month", 0)), 
+                        reverse=True
+                    )
+                
+                ticker_data["insider_sentiment"] = raw_sentiment
+                
                 print(f"✓ Successfully fetched insider sentiment data for {symbol}.")
+                
             except Exception as e:
                 ticker_data["insider_sentiment"] = {"error": str(e)}
 
-            # 4. Financials Reported
-            try:
-                kwargs = {}
-                if "FREQ" in fin_reported_cfg:
-                    kwargs["freq"] = fin_reported_cfg["FREQ"]
-                if fin_reported_cfg.get("ID"):
-                    kwargs["id"] = fin_reported_cfg["ID"]
-                if fin_reported_cfg.get("ACCESS_NUMBER"):
-                    kwargs["access_number"] = fin_reported_cfg["ACCESS_NUMBER"]
+            # # 4. Financials Reported UNNECESSARY SEC-filing data, waste of tokens
+            # try:
+            #     kwargs = {}
+            #     if "FREQ" in fin_reported_cfg:
+            #         kwargs["freq"] = fin_reported_cfg["FREQ"]
+            #     if fin_reported_cfg.get("ID"):
+            #         kwargs["id"] = fin_reported_cfg["ID"]
+            #     if fin_reported_cfg.get("ACCESS_NUMBER"):
+            #         kwargs["access_number"] = fin_reported_cfg["ACCESS_NUMBER"]
 
-                ticker_data["financials_reported"] = (
-                    self.finnhub_client.financials_reported(
-                        symbol=symbol, **kwargs
-                    )
-                )
-                print(f"✓ Successfully fetched financials reported data for {symbol}.")
-            except Exception as e:
-                ticker_data["financials_reported"] = {"error": str(e)}
+            #     # Fetch raw data from Finnhub API
+            #     raw_response = self.finnhub_client.financials_reported(
+            #         symbol=symbol, **kwargs
+            #     )
+
+            #     reports = raw_response.get("data", [])
+
+            #     # Filter reports to only include those filed/reported in the current year or later
+            #     valid_reports = [
+            #         r for r in reports if r.get("year", 0) >= self.current_year
+            #     ]
+
+            #     # Sort descending by year and filedDate to guarantee the most recent report comes first
+            #     valid_reports.sort(
+            #         key=lambda x: (x.get("year", 0), x.get("filedDate", "")),
+            #         reverse=True
+            #     )
+
+            #     # Reconstruct dictionary payload containing only the 1 most recent report
+            #     ticker_data["financials_reported"] = {
+            #         "cik": raw_response.get("cik", ""),
+            #         "symbol": raw_response.get("symbol", symbol),
+            #         "data": valid_reports[:1]  # Restrict array to exactly 1 report
+            #     }
+
+            #     print(f"✓ Successfully fetched most recent financials reported data for {symbol}.")
+            # except Exception as e:
+            #     ticker_data["financials_reported"] = {"error": str(e)}
+
 
             # 5. Company Basic Financials ('series' key only)
             try:
@@ -492,13 +523,36 @@ class DataFetcher:
                 if "METRIC" in basic_fin_cfg:
                     kwargs["metric"] = basic_fin_cfg["METRIC"]
 
+                # Fetch the raw data; Finnhub does not support date filtering kwargs for this endpoint
                 raw_basic = self.finnhub_client.company_basic_financials(
                     symbol=symbol, **kwargs
                 )
-                if isinstance(raw_basic, dict):
-                    ticker_data["series_financials"] = raw_basic.get("series", {})
+                    
+                if isinstance(raw_basic, dict) and "series" in raw_basic:
+                    series = raw_basic.get("series", {})
+                    quarterly_raw = series.get("quarterly", {})
+                    
+                    filtered_quarterly = {}
+                    
+                    for metric_name, data_points in quarterly_raw.items():
+                        # String comparison works perfectly for YYYY-MM-DD formats
+                        filtered_points = [
+                            dp for dp in data_points 
+                            if dp.get("period", "") >= self.cutoff_date
+                        ]
+                        
+                        # Only add the metric if there is data within the last 24 months
+                        if filtered_points:
+                            filtered_quarterly[metric_name] = filtered_points
+                    
+                    # Rebuild the series_financials dict with the filtered quarterly data
+                    ticker_data["series_financials"] = {
+                        "quarterly": filtered_quarterly,
+                        # "annual": series.get("annual", {}) # Keeps annual data intact (remove if unneeded)
+                    }
                 else:
                     ticker_data["series_financials"] = {}
+                        
             except Exception as e:
                 ticker_data["series_financials"] = {"error": str(e)}
 

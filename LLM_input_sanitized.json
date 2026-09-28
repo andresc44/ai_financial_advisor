@@ -1,0 +1,639 @@
+{
+    "symbol": "SNPS",
+    "profile": {
+        "name": "Synopsys, Inc.",
+        "sector": "Technology",
+        "industry": "Software - Infrastructure",
+        "business_summary": "Synopsys, Inc. provides design IP solutions in the semiconductor and electronics industries. It operates in two segments, Design Automation and Design IP. The company offers Digital and Custom IC Design solution that provides digital design implementation solutions; Verification solution that offers virtual prototyping, static and formal verification, simulation, emulation, field programmable gate array (FPGA)-based prototyping, and debug solutions; FPGA design products that are programmed to perform specific functions; synopsys technology computer-aided design (TCAD), mask synthesis, and manufacturing analytic solutions; and AI-driven EDA solutions. It also provides pre-verified and silicon-proven IP solutions, logic libraries and embedded memories, processor and security solutions, IP Offerings for the automotive market, SOC infrastructure IP, data path and building block IP, and mathematical and floating-point components. Synopsys, Inc. has a strategic collaboration with Arm Holdings plc for development of AGI CPU that provides solutions across its full-stack design portfolio including EDA, interface IP, and hardware-assisted verification (HAV). The company was incorporated in 1986 and is headquartered in Sunnyvale, California.",
+        "full_time_employees": 28000,
+        "ipo_date": "1992-02-26"
+    },
+    "price_action": {
+        "current_price": 413.06,
+        "previous_close": 409.24,
+        "open": 409.44,
+        "day_low": 408.5,
+        "day_high": 420.88,
+        "52_week_low": 362.55,
+        "52_week_high": 539.48,
+        "52_week_change_percent": -0.11756289,
+        "50_day_average": 400.5374,
+        "200_day_average": 445.70105,
+        "volume": 2095142,
+        "average_volume_10d": 1934960,
+        "average_volume_3m": 1886842,
+        "beta": 1.227
+    },
+    "valuation_and_fundamentals": {
+        "market_cap": 79157428224,
+        "enterprise_value": 86390390784,
+        "pe_trailing": 71.46366,
+        "pe_forward": 23.56856,
+        "peg_ratio": 2.19,
+        "price_to_book": 2.5405474,
+        "price_to_sales": 8.406279,
+        "enterprise_to_ebitda": 41.624,
+        "enterprise_to_revenue": 9.174,
+        "revenue_total": 9416465408,
+        "revenue_growth_yoy": 0.424,
+        "revenue_growth_3y_cagr": 15.19,
+        "revenue_growth_5y_cagr": 13.87,
+        "gross_margin": 0.82921,
+        "ebitda_margin": 0.22041,
+        "operating_margin": 0.14521,
+        "profit_margin": 0.11432999,
+        "earnings_growth_yoy": 0.893,
+        "eps_trailing": 5.78,
+        "eps_forward": 17.52589,
+        "free_cash_flow": 3425542400,
+        "operating_cash_flow": 2938341120,
+        "total_cash": 3607668992,
+        "total_debt": 10841789440,
+        "debt_to_equity": 34.804,
+        "current_ratio": 1.337,
+        "quick_ratio": 1.166,
+        "return_on_assets": 0.01353,
+        "return_on_equity": 0.03661,
+        "return_on_invested_capital": 2.62
+    },
+    "sentiment_and_analysts": {
+        "recommendation_key": "strong_buy",
+        "recommendation_mean": 1.48,
+        "target_mean_price": 545.93384,
+        "target_high_price": 633.0,
+        "target_low_price": 414.77,
+        "analyst_opinions_count": 26,
+        "short_percent_of_float": 0.0273,
+        "short_ratio": 3.12,
+        "held_percent_insiders": 0.029860001,
+        "held_percent_institutions": 0.93059,
+        "insider_sentiment_series": [
+            {
+                "period": "2026-08",
+                "mspr": -33.333332,
+                "change": -25000
+            },
+            {
+                "period": "2026-06",
+                "mspr": -28.661276,
+                "change": -22330
+            },
+            {
+                "period": "2026-05",
+                "mspr": -17.905405,
+                "change": -318
+            },
+            {
+                "period": "2026-04",
+                "mspr": 100,
+                "change": 3624
+            },
+            {
+                "period": "2026-03",
+                "mspr": -15.574443,
+                "change": -2089
+            },
+            {
+                "period": "2026-02",
+                "mspr": 1.5057113,
+                "change": 116
+            },
+            {
+                "period": "2026-01",
+                "mspr": -100,
+                "change": -500
+            },
+            {
+                "period": "2025-12",
+                "mspr": 41.14415,
+                "change": 54516
+            },
+            {
+                "period": "2025-09",
+                "mspr": -20.89234,
+                "change": -21849
+            }
+        ]
+    },
+    "catalysts_and_earnings": {
+        "upcoming_earnings": [
+            {
+                "symbol": "SNPS",
+                "date": "2026-12-08",
+                "hour": "amc",
+                "quarter": 4,
+                "year": 2026,
+                "epsEstimate": 4.2069,
+                "epsActual": null,
+                "revenueEstimate": 2609472568,
+                "revenueActual": null
+            }
+        ],
+        "past_earnings_surprises": [
+            {
+                "quarter": "2026 Q3",
+                "estimate": 3.7394,
+                "actual": 3.91,
+                "surprise_percent": 4.5622
+            },
+            {
+                "quarter": "2026 Q2",
+                "estimate": 3.2167,
+                "actual": 3.35,
+                "surprise_percent": 4.144
+            },
+            {
+                "quarter": "2026 Q1",
+                "estimate": 3.6279,
+                "actual": 3.77,
+                "surprise_percent": 3.9169
+            },
+            {
+                "quarter": "2025 Q4",
+                "estimate": 2.8331,
+                "actual": 2.9,
+                "surprise_percent": 2.3614
+            }
+        ]
+    },
+    "quarterly_financial_trends": {
+        "eps": [
+            {
+                "period": "2026-07-31",
+                "value": 2.838
+            },
+            {
+                "period": "2026-04-30",
+                "value": 0.089
+            },
+            {
+                "period": "2026-01-31",
+                "value": 0.3405
+            },
+            {
+                "period": "2025-10-31",
+                "value": 2.3855
+            }
+        ],
+        "revenue_per_share": [
+            {
+                "period": "2026-07-31",
+                "value": 12.8787
+            },
+            {
+                "period": "2026-04-30",
+                "value": 11.8452
+            },
+            {
+                "period": "2026-01-31",
+                "value": 12.6272
+            },
+            {
+                "period": "2025-10-31",
+                "value": 11.9878
+            }
+        ],
+        "operating_margin": [
+            {
+                "period": "2026-07-31",
+                "value": 0.3161
+            },
+            {
+                "period": "2026-04-30",
+                "value": 0.0529
+            },
+            {
+                "period": "2026-01-31",
+                "value": 0.0843
+            },
+            {
+                "period": "2025-10-31",
+                "value": 0.2973
+            }
+        ],
+        "net_margin": [
+            {
+                "period": "2026-07-31",
+                "value": 0.2204
+            },
+            {
+                "period": "2026-04-30",
+                "value": 0.0075
+            },
+            {
+                "period": "2026-01-31",
+                "value": 0.027
+            },
+            {
+                "period": "2025-10-31",
+                "value": 0.199
+            }
+        ],
+        "free_cash_flow_margin": [
+            {
+                "period": "2026-07-31",
+                "value": 0.3013
+            },
+            {
+                "period": "2026-04-30",
+                "value": 0.2525
+            },
+            {
+                "period": "2026-01-31",
+                "value": 0.341
+            },
+            {
+                "period": "2025-10-31",
+                "value": 0.2684
+            }
+        ]
+    },
+    "technical_indicators": {
+        "rsi_14_1day": [
+            {
+                "date": "2026-09-23",
+                "rsi": 55.1954
+            },
+            {
+                "date": "2026-09-22",
+                "rsi": 53.7175
+            },
+            {
+                "date": "2026-09-21",
+                "rsi": 50.8022
+            },
+            {
+                "date": "2026-09-18",
+                "rsi": 43.2159
+            },
+            {
+                "date": "2026-09-17",
+                "rsi": 41.3246
+            },
+            {
+                "date": "2026-09-16",
+                "rsi": 40.0062
+            },
+            {
+                "date": "2026-09-15",
+                "rsi": 34.56
+            },
+            {
+                "date": "2026-09-14",
+                "rsi": 38.7211
+            },
+            {
+                "date": "2026-09-11",
+                "rsi": 44.5008
+            },
+            {
+                "date": "2026-09-10",
+                "rsi": 44.3994
+            }
+        ],
+        "ema_9_1day": [
+            {
+                "date": "2026-09-23",
+                "ema": 397.9727
+            },
+            {
+                "date": "2026-09-22",
+                "ema": 394.2009
+            },
+            {
+                "date": "2026-09-21",
+                "ema": 390.4411
+            },
+            {
+                "date": "2026-09-18",
+                "ema": 387.5889
+            },
+            {
+                "date": "2026-09-17",
+                "ema": 388.2436
+            },
+            {
+                "date": "2026-09-16",
+                "ema": 390.012
+            },
+            {
+                "date": "2026-09-15",
+                "ema": 392.8975
+            },
+            {
+                "date": "2026-09-14",
+                "ema": 399.1969
+            },
+            {
+                "date": "2026-09-11",
+                "ema": 403.6386
+            },
+            {
+                "date": "2026-09-10",
+                "ema": 405.2032
+            }
+        ],
+        "ema_21_1day": [
+            {
+                "date": "2026-09-23",
+                "ema": 399.8843
+            },
+            {
+                "date": "2026-09-22",
+                "ema": 398.5667
+            },
+            {
+                "date": "2026-09-21",
+                "ema": 397.4994
+            },
+            {
+                "date": "2026-09-18",
+                "ema": 397.0643
+            },
+            {
+                "date": "2026-09-17",
+                "ema": 398.2737
+            },
+            {
+                "date": "2026-09-16",
+                "ema": 399.9841
+            },
+            {
+                "date": "2026-09-15",
+                "ema": 402.1355
+            },
+            {
+                "date": "2026-09-14",
+                "ema": 405.5791
+            },
+            {
+                "date": "2026-09-11",
+                "ema": 407.994
+            },
+            {
+                "date": "2026-09-10",
+                "ema": 409.0554
+            }
+        ],
+        "bbands_20_1day": [
+            {
+                "date": "2026-09-23",
+                "upper_band": 451.3265,
+                "middle_band": 404.786,
+                "lower_band": 358.2455
+            },
+            {
+                "date": "2026-09-22",
+                "upper_band": 450.9982,
+                "middle_band": 404.5725,
+                "lower_band": 358.1468
+            },
+            {
+                "date": "2026-09-21",
+                "upper_band": 450.4093,
+                "middle_band": 403.836,
+                "lower_band": 357.2627
+            },
+            {
+                "date": "2026-09-18",
+                "upper_band": 450.2765,
+                "middle_band": 403.637,
+                "lower_band": 356.9975
+            },
+            {
+                "date": "2026-09-17",
+                "upper_band": 450.2237,
+                "middle_band": 404.2845,
+                "lower_band": 358.3453
+            },
+            {
+                "date": "2026-09-16",
+                "upper_band": 450.0248,
+                "middle_band": 405.288,
+                "lower_band": 360.5512
+            },
+            {
+                "date": "2026-09-15",
+                "upper_band": 449.6079,
+                "middle_band": 406.585,
+                "lower_band": 363.5621
+            },
+            {
+                "date": "2026-09-14",
+                "upper_band": 448.061,
+                "middle_band": 408.861,
+                "lower_band": 369.661
+            },
+            {
+                "date": "2026-09-11",
+                "upper_band": 448.3084,
+                "middle_band": 410.8645,
+                "lower_band": 373.4206
+            },
+            {
+                "date": "2026-09-10",
+                "upper_band": 448.5122,
+                "middle_band": 411.583,
+                "lower_band": 374.6538
+            }
+        ],
+        "sar_1day": [
+            {
+                "date": "2026-09-23",
+                "sar": 425.4721
+            },
+            {
+                "date": "2026-09-22",
+                "sar": 429.4884
+            },
+            {
+                "date": "2026-09-21",
+                "sar": 433.761
+            },
+            {
+                "date": "2026-09-18",
+                "sar": 438.3064
+            },
+            {
+                "date": "2026-09-17",
+                "sar": 443.1419
+            },
+            {
+                "date": "2026-09-16",
+                "sar": 448.2861
+            },
+            {
+                "date": "2026-09-15",
+                "sar": 453.7586
+            },
+            {
+                "date": "2026-09-14",
+                "sar": 456.8469
+            },
+            {
+                "date": "2026-09-11",
+                "sar": 458.4085
+            },
+            {
+                "date": "2026-09-10",
+                "sar": 460.0019
+            }
+        ],
+        "beta_52_1week": [
+            {
+                "date": "2026-09-21",
+                "beta": 0.0212
+            },
+            {
+                "date": "2026-09-14",
+                "beta": 0.0157
+            },
+            {
+                "date": "2026-09-07",
+                "beta": -0.1562
+            },
+            {
+                "date": "2026-08-31",
+                "beta": -0.1825
+            },
+            {
+                "date": "2026-08-24",
+                "beta": -0.1444
+            },
+            {
+                "date": "2026-08-17",
+                "beta": -0.1234
+            },
+            {
+                "date": "2026-08-10",
+                "beta": -0.1217
+            },
+            {
+                "date": "2026-08-03",
+                "beta": -0.1278
+            },
+            {
+                "date": "2026-07-27",
+                "beta": -0.1364
+            },
+            {
+                "date": "2026-07-20",
+                "beta": -0.1331
+            }
+        ]
+    },
+    "recent_headlines_and_catalysts": [
+        "- [2026-09-23 19:01:00 UTC] Synopsys (Nasdaq: SNPS) today announced new innovations with TSMC that accelerate the development of next-generation AI, high-performance computing (HPC), and advanced semiconductor systems. Through AI-powered EDA flows, multiphysics-aware signoff methodologies, multi-die design flows, and silicon-proven Interface and Foundation IP, Synopsys and TSMC are helping customers address growing design complexity while accelerating adoption of TSMC's latest process and advanced packaging technologies.",
+        "- [2026-09-23 13:58:00 UTC] CDNS' new RTL Generation Agent automates chip design and optimization, delivering 24% lower area and 18% lower power in early evaluations.",
+        "- [2026-09-22 20:10:14 UTC] Synopsys (SNPS) sells the electronic design automation software and design IP that chipmakers use to build new chips. Its stock has lost 16.3% over the past year, while the S&P 500 gained 18.5%. A Needham analyst said on the fiscal Q3 2026 earnings call that the question investors keep asking is whether AI could learn to design chips without those tools. The biggest risk is not a sudden break. It is that Ansys revenue could hide the threat inside the headline totals while it builds.",
+        "- [2026-09-22 18:30:28 UTC] Rambus sits inside nearly every next-generation server memory module yet trades at a fraction of its flashier chip rivals, and its roadmap through 2027 could force the market to finally pay attention.",
+        "- [2026-09-22 15:00:58 UTC] Chip design complexity is hitting levels only a handful of software vendors can handle, and one under-the-radar name keeps collecting a toll on every advanced design that ships. The question is whether Wall Street has already priced in its edge or is still sleeping on it.",
+        "- [2026-09-22 13:55:02 UTC] The mean of analysts' price targets for Synopsys (SNPS) points to a 37.4% upside in the stock. While this highly sought-after metric has not proven reasonably effective, strong agreement among analysts in raising earnings estimates does indicate an upside in the stock.",
+        "- [2026-09-22 12:31:00 UTC] IONQ and Synopsys' integrated quantum algorithms can accelerate engineering simulations by up to 14.6%, potentially cutting complex workloads by a day.",
+        "- [2026-09-21 17:11:37 UTC] Autodesk (ADSK) trades near $217, about 32% lower than a year ago. Investors fear AI tools could disrupt its software, and the shares dropped after the late-August report. Yet revenue over the past twelve months reached $7.8 billion, up 17.9%. A three-year scenario on its own numbers shows how much of that growth could reach the stock.",
+        "- [2026-09-18 22:37:35 UTC] IonQ (IONQ) shares rose 9.5% on Thursday, closing at $40.34 after six sessions that had mostly gone the other way. The reason on offer was research: quantum algorithms running inside mainstream engineering software, developed with Synopsys, sped up complex industrial design by up to 14.6%. That is genuine progress. It is also not a sale, and the price you pay for IonQ already assumes a great many sales.",
+        "- [2026-09-18 18:33:09 UTC] Two years of Synopsys (SNPS) earnings calls show management changing what it explains. The company used to open on problems, some outside its control and some its own. The August 2026 call is built around a joint product with Ansys, agentic AI, and a new way to charge for its design IP. Most of that switch is earned, but parts of it are still a promise.",
+        "- [2026-09-18 15:59:00 UTC] CDNS is benefiting from rising AI complexity, driving demand for advanced packaging, 3D-IC and differentiated IP.",
+        "- [2026-09-17 23:19:07 UTC] Synopsys has seen its share price come under pressure this year, which puts a sharper spotlight on whether the current market value lines up with the cash the business is expected to generate. With the stock now trading well below where it started the year, investors are increasingly asking if the recent slide has reset expectations or if the price is still leaning on optimistic assumptions about future cash flows. The share price is down about 20.7% year to date, which makes the link...",
+        "- [2026-09-17 20:54:03 UTC] Autodesk (ADSK) stock has 23.6% of room above it before it meets a ceiling that has turned it back three times, and 5% below it before the reason to be there stops being true. In dollars: $272.34 overhead, $220.31 Wednesday, $209.29 underneath. The stock has lost about 31% over the past twelve months, so the easy read is that the business broke. Its own numbers say it did not.",
+        "- [2026-09-17 19:38:17 UTC] Shares of quantum computing company IonQ (NYSE:IONQ) jumped 10.1% in the afternoon session after the company announced joint research with Synopsys showing that quantum algorithms accelerated industrial design simulations by up to 14.6%. According to a company press release, the work embedded an advanced quantum algorithm into Synopsys\u2019s Ansys LS-DYNA simulation software to reorganize equations more efficiently and cut calculation time for complex automotive and jet-engine simulations. IonQ said",
+        "- [2026-09-17 17:08:15 UTC] IonQ made a breakthrough. It doesn't make IonQ stock a buy, however.",
+        "- [2026-09-17 14:11:42 UTC] IonQ (NYSE: IONQ) surged 9% following award-winning quantum research with NVIDIA and Synopsys. Read the full analysis.",
+        "- [2026-09-17 13:30:03 UTC] Based on the average brokerage recommendation (ABR), Synopsys (SNPS) should be added to one's portfolio. Wall Street analysts' overly optimistic recommendations cast doubt on the effectiveness of this highly sought-after metric. So, is the stock worth buying?",
+        "- [2026-09-17 13:00:05 UTC] Synopsys (SNPS) has been one of the stocks most watched by Zacks.com users lately. So, it is worth exploring what lies ahead for the stock.",
+        "- [2026-09-17 13:00:00 UTC] COLLEGE PARK, Md. & TORONTO, September 17, 2026--IonQ (NYSE: IONQ), the world\u2019s leading full-stack quantum platform and foundry, today detailed research conducted with Synopsys. The publication shows early results that quantum algorithms integrated into mainstream engineering software can accelerate complex industrial design by up to 14.6%. The research illustrates hybrid quantum computing can address major computational bottlenecks for classical supercomputers. It also earned a 1st Place Best P",
+        "- [2026-09-17 01:26:49 UTC] Synopsys (SNPS) sells the design software and the interface IP that chip makers need to get AI silicon built, and its stock has still gone backwards over the past year. At about $370 the shares sit at their 52-week low. Reported margins have fallen sharply over the past year. Free cash flow tells a different story, and the gap between cash and reported profit is the case worth arguing here.",
+        "- [2026-09-16 19:43:32 UTC] Cadence Design Systems (CDNS) trades at 54.5 times trailing earnings. A multiple that high is a requirement rather than an opinion. The price only works if the business grows into it, and you can work out exactly how much growth it takes. The harder question is whether that calculation deserves your trust here.",
+        "- [2026-09-16 17:05:57 UTC] Key Stats for Synopsys Stock 52-Week Range: $362. 55 to $539.",
+        "- [2026-09-16 14:03:00 UTC] Micron stock was reacting to news that Intel and SK Hynix are discussing U.S. memory-chip manufacturing.",
+        "- [2026-09-15 14:49:23 UTC] IonQ received four Best Paper Awards ahead of IEEE Quantum Week 2026, highlighting research with commercial and institutional partners across artificial intelligence, engineering and life sciences. Key Investor TakeawaysIonQ (NYSE:IONQ) received four Best Paper Awards from 857 global research submissions ahead of IEEE Quantum Week 2026.",
+        "- [2026-09-15 13:00:00 UTC] COLLEGE PARK, Md., September 15, 2026--IonQ (NYSE: IONQ), the world\u2019s leading full-stack quantum platform and foundry, today announced it has received four Best Paper Awards ahead of IEEE Quantum Week (QCE 2026; Sept. 13-18). IEEE is the premier international flagship conference for quantum computing and engineering. Selected from 857 global research submissions, IonQ\u2019s four winning papers represent a significant portion of the conference's 27 Best Paper honors.",
+        "- [2026-09-14 23:50:39 UTC] Synopsys (SNPS) trades near $400, and the options market has already drawn the boundaries it expects the stock to hold over roughly the next twelve months: about $251 at the floor and about $630 at the ceiling. That is a very wide year to be holding a single name. What matters is that for this stock, a range that wide is ordinary.",
+        "- [2026-09-14 14:43:52 UTC] IonQ is presenting nine peer-reviewed papers at IEEE Quantum Week 2026, including four Best Paper Award recipients, with research spanning quantum machine learning, industrial simulation, protein folding, logistics and quantum error reduction. Key Investor TakeawaysIonQ (NYSE:IONQ) has nine peer-reviewed papers accepted for QCE26, with four receiving Best Paper Awards.",
+        "- [2026-09-14 14:00:29 UTC] Arm sits underneath nearly every hyperscaler custom CPU program, collecting royalty checks as AI infrastructure spending accelerates, but its 120x forward multiple means a single stumble could trigger violent downside for a stock already swinging between $223 and $420.",
+        "- [2026-09-14 13:42:00 UTC] SNPS stands out over CEVA as AI-driven EDA growth, recurring revenues, strong cash flow and better price performance strengthen its investment case.",
+        "- [2026-09-14 13:30:00 UTC] COLLEGE PARK, Md., September 14, 2026--IonQ (NYSE: IONQ), the world\u2019s leading full-stack quantum platform and foundry, today announced it will take part in the 2026 IEEE International Conference on Quantum Computing and Engineering (QCE26) meeting. IEEE is the premier international flagship conference for quantum computing and engineering. IonQ will present nine peer-reviewed research papers and participate in six additional events throughout this week's IEEE Quantum program at the Metro Toronto",
+        "- [2026-09-12 15:00:16 UTC] Synopsys has taken a beating this year while its fundamentals moved sharply in the opposite direction, and that gap between price and earnings power is exactly where our model tends to find its best setups.",
+        "- [2026-09-11 19:30:18 UTC] Synopsys (NASDAQ:SNPS) has outperformed the market over the past 10 years by 7.57% on an annualized basis producing an average annual return of 21.14%. Currently, Synopsys has a market capitalization of $76.19 billion.",
+        "- [2026-09-11 15:45:12 UTC] Synopsys (SNPS) trades about 26% below its 52-week high after falling about 34% over the past year. You can be paid now to agree to buy it well below today's price, and you keep that payment either way. The catch is that you must want the business. One analyst says investors constantly ask whether AI could disrupt the kind of software Synopsys sells, and that a school of thought asks whether AI could design chips end to end without it.",
+        "- [2026-09-11 01:12:41 UTC] Synopsys (SNPS) sells chip design and verification software, and its revenue is now growing more than four times faster than its own long-run pace. The share price has done the opposite. For anyone holding it, one question is worth settling: is this new speed the pace you now own the company for.",
+        "- [2026-09-11 01:00:11 UTC] Autodesk (ADSK) shares fell 16.6% in the eight days from their Sep 1 close to Wednesday, Sep 9, ending at $206.62 while the S&P 500 gained 0.1%. The drop came less than two weeks after the software company reported revenue and earnings per share above the top of its guidance and raised its full-year outlook for billings and revenue. For a shareholder, the live question is what Autodesk's growth looks like without a one-time boost to fiscal 2027 revenue.",
+        "- [2026-09-10 20:09:32 UTC] Wells Fargo raises price target on Synopsys stock to $475. Here\u2019s what made analyst Joe Quatrochi upgrade SNPS shares today.",
+        "- [2026-09-10 13:52:16 UTC] Meta Platforms upgraded, Okta downgraded: Wall Street's top analyst calls",
+        "- [2026-09-10 08:53:43 UTC] Analysts upgraded SFNC, OBIO, and more.",
+        "- [2026-09-10 08:28:26 UTC] Wells Fargo  analyst Joe Quatrochi   upgrades Synopsys (NASDAQ:SNPS) from Equal-Weight to Overweight and raises the price target from $450 to $475.",
+        "- [2026-09-09 16:33:44 UTC] Morgan Stanley upgrades Synopsys stock to \"Overweight.\" Here\u2019s why analyst Lee Simpson sees significant upside in SNPS shares from current levels.",
+        "- [2026-09-08 20:40:28 UTC] The chip design giant is pushing into a new, more lucrative business model, and while its stock has a strong record of bouncing back, there's a catch you can't ignore.",
+        "- [2026-09-08 15:23:43 UTC] Investing.com -- Morgan Stanley has taken a more selective stance on European semiconductor stocks, staying positive on the sector overall while adjusting ratings and price targets as the memory cycle nears a turn and valuations diverge.",
+        "- [2026-09-08 13:53:56 UTC] Morgan Stanley  analyst Lee Simpson   upgrades Synopsys (NASDAQ:SNPS) from Equal-Weight to Overweight and maintains the price target from $500 to $500.",
+        "- [2026-09-08 13:38:18 UTC] Intel upgraded, Reddit initiated: Wall Street's top analyst calls",
+        "- [2026-09-08 12:46:07 UTC] Investing.com -- Morgan Stanley has upgraded Synopsys to Overweight and turned more selective on European semiconductor stocks, citing widening valuation dispersion and signs that the memory cycle is nearing a late-cycle turn.",
+        "- [2026-09-08 12:35:00 UTC] Stay updated with the S&P500 stocks that are on the move in today's pre-market session.",
+        "- [2026-09-08 12:15:28 UTC] Wall Street returns from summer vacation to a market suddenly bracing for a rate hike, with fresh analyst calls on Intel, Lockheed Martin, Amgen, and SpaceX adding more pressure points to an already tense week.",
+        "- [2026-09-06 19:30:02 UTC] Synopsys is facing restructuring pressure, but resilient results and AI-driven demand could keep its investment prospects solid.",
+        "- [2026-09-04 19:05:01 UTC] Let's have a look at the top S&P500 gainers and losers one hour before the close of the markets of today's session.",
+        "- [2026-09-04 18:44:02 UTC] The design software giant is betting on a new strategy, and its stock history offers a strong blueprint for buying on weakness.",
+        "- [2026-09-04 16:35:01 UTC] Stay updated with the movements of the S&P500 index in the middle of the day on Friday. Discover which stocks are leading as top gainers and losers in today's session.",
+        "- [2026-09-04 14:35:01 UTC] Wondering which stocks are making significant price gaps? Explore the S&P500 index on Friday to find the gap up and gap down stocks in today's session.",
+        "- [2026-09-04 14:29:56 UTC] Synopsys powers nearly every advanced chip on the planet, yet its stock has cratered while the broader market surged, and Wall Street analysts are betting that gap closes in a hurry.",
+        "- [2026-09-04 13:32:31 UTC] A blowout August jobs report pushed traders to price a coin-flip chance of a Federal Reserve rate hike this month, dragging the S&amp;P 500 and Dow lower by midday Friday.",
+        "- [2026-09-03 22:47:53 UTC] Synopsys (SNPS) booked revenue of $2.477 billion in fiscal Q3 2026, up about 42% year over year, and the shares have still lost about 30% over the past twelve months. Look past that headline at the line underneath it: EDA grew 8.5%. That single-digit number is the pace of the design tools business Synopsys had before the Ansys deal.",
+        "- [2026-09-03 13:47:10 UTC] Though Synopsys has lagged behind the broader Nasdaq Composite over the past year, Wall Street analysts remain strongly optimistic about the stock\u2019s prospects.",
+        "- [2026-09-03 13:22:12 UTC] Marvell and Synopsys both profit from the AI chip boom, but one company is quietly handing hyperscalers the tools to cut the other out entirely. The tension between them reveals something uncomfortable about where custom silicon money actually flows.",
+        "- [2026-09-02 18:08:47 UTC] Synopsys stock presents a clear valuation split for investors. The intrinsic value estimate from a Discounted Cash Flow (DCF) approach points to a discount to current trading levels, while market based multiples and a low overall value score suggest the shares are not obviously cheap. Over the past 1 year the share price has fallen 29.9%, which means investors are assessing Synopsys after a meaningful reset rather than at a recent peak. Stronger demand for Synopsys tools linked to AI and...",
+        "- [2026-09-02 17:14:16 UTC] Imagine two very different futures for your Autodesk (ADSK) stock a year from now. In one, it\u2019s trading near $165. In the other, it\u2019s pushing past $402.44. The options market isn\u2019t picking a winner; it\u2019s telling you that both are plausible destinations. For a shareholder, that\u2019s not a theoretical exercise. It\u2019s the risk you already own.",
+        "- [2026-09-02 15:28:00 UTC] AI's memory crunch could extend through 2027, driving chipmakers while pressuring electronics firms. Which ETFs could emerge as winners?",
+        "- [2026-09-01 18:44:25 UTC] Jensen Huang turned a modest chip startup into the backbone of the global AI arms race, and his personal fortune now rivals the biggest names in tech. But three mounting challenges could test whether Nvidia's reign at the top is as unshakeable as it appears.",
+        "- [2026-09-01 17:03:00 UTC] Ceva has fallen nearly 19% in a month despite Q2 beats and solid growth, but its premium valuation suggests investors may want to wait before buying.",
+        "- [2026-09-01 15:00:51 UTC] Synopsys just posted explosive revenue growth that dwarfs its closest EDA rival, yet the market prices it at a fraction of that rival's multiple. Something in that gap tells a story most investors are missing.",
+        "- [2026-09-01 14:55:02 UTC] The mean of analysts' price targets for Synopsys (SNPS) points to a 25.4% upside in the stock. While this highly sought-after metric has not proven reasonably effective, strong agreement among analysts in raising earnings estimates does indicate an upside in the stock.",
+        "- [2026-09-01 14:30:02 UTC] According to the average brokerage recommendation (ABR), one should invest in Synopsys (SNPS). It is debatable whether this highly sought-after metric is effective because Wall Street analysts' recommendations tend to be overly optimistic. Would it be worth investing in the stock?",
+        "- [2026-09-01 13:30:02 UTC] Why investing for the long run, especially if you buy certain popular stocks, could reap huge rewards.",
+        "- [2026-09-01 12:51:36 UTC] The 10-year Treasury yield hit a 19-month high and crude jumped above $88 as traders lifted Fed rate-hike odds to 68%, cracking high-multiple software stocks.",
+        "- [2026-08-31 22:23:27 UTC] The chip-design software maker wants to add a royalty on the custom AI chips its biggest customers build, on top of the interface IP license fees it already charges them.",
+        "- [2026-08-31 16:57:00 UTC] CDNS' rising cash flow, 2026 buyback plans and strategic investments test whether it can fund growth while rewarding shareholders.",
+        "- [2026-08-31 14:50:19 UTC] Revenue hit $2.477 billion with 42% growth as Ansys integration accelerated.",
+        "- [2026-08-31 12:42:19 UTC] AI trade shifts from chips to software: learn why IGV/XSW are leading and see top picks like Salesforce, CrowdStrike, Datadog, PANW & ServiceNow\u00e2\u0080\u0094read now.",
+        "- [2026-08-30 06:29:08 UTC] Synopsys Q3 beats guidance as EDA growth accelerates, AI demand rises, and Ansys synergies emerge\u00e2\u0080\u0094yet valuation prompts a Hold. Click for more on SNPS stock.",
+        "- [2026-08-29 06:37:14 UTC] U.S. stocks ended the week higher amid Nvidia (NVDA) earnings, policy signals from the Fed, and latest GDP data. Read more about this week's major events on Wall Street.",
+        "- [2026-08-29 03:44:21 UTC] Synopsys, Inc. (NASDAQ:SNPS) delivered a stronger-than-expected fiscal third quarter, but its results present two different views of profitability. Revenue rose 42% year over year to $2.477 billion, ahead of consensus estimates of $2.44 billion. Company-defined non-GAAP earnings reached $3.91 per diluted share, above consensus estimates of $3.67, while GAAP earnings were $2.84 per share. The [\u2026]",
+        "- [2026-08-28 19:05:01 UTC] Curious about the S&P500 stocks that are in motion on Friday? Join us as we explore the top movers within the S&P500 index during today's session.",
+        "- [2026-08-28 17:06:00 UTC] Opening Bid Host Brooke DiPalma is joined by the panel of Prime Capital Financial chief investment officer Will McGough, Slatestone Wealth chief market strategist Kenny Polcari, and F.L. Putnam Investment Management co-chief market strategist & portfolio manager Ellen Hazen to weigh whether now is the time to buy into software stocks.",
+        "- [2026-08-28 16:00:00 UTC] PDF Solutions outpaces Synopsys with stronger revenue growth, improving margins, major customer wins and a 20% growth target.",
+        "- [2026-08-28 14:35:01 UTC] Stay updated with the S&P500 gap up and gap down stocks on Friday. Get a glimpse of the market's movement during today's session.",
+        "- [2026-08-28 10:08:03 UTC] Synopsys (SNPS) is back in focus after its third quarter fiscal 2026 report on 26 August, which showed stronger than expected revenue and earnings, as well as a raised full year outlook supported by AI driven demand. The Q3 surprise and higher guidance triggered a sharp short term rebound in Synopsys, with a 1 day share price return of 13.39% and a 30 day share price return of 21.12%. However, the total shareholder return over one year is still down 24.06%, so recent momentum is picking up...",
+        "- [2026-08-28 00:13:20 UTC] Synopsys, Inc. recently reported past third-quarter fiscal 2026 results, with revenue rising to US$2.48 billion and GAAP diluted EPS from continuing operations reaching US$2.84, alongside a year-on-year increase in quarterly net income to US$545.8 million. Despite this strong quarter, net income for the first nine months of fiscal 2026 was US$627.86 million versus US$883.52 million a year earlier, highlighting how integration costs, portfolio shifts, or other expenses can weigh on...",
+        "- [2026-08-27 18:27:00 UTC] Synopsys raises its 2026 outlook as EDA demand accelerates, Design IP rebounds and Ansys integration opens growth opportunities for fiscal 2027.",
+        "- [2026-08-27 18:25:44 UTC] The chip design software company reported $2.48 billion in quarterly revenue and lifted its full-year revenue target to $9.715 billion at the midpoint",
+        "- [2026-08-27 16:55:13 UTC] Don't be fooled by earnings. Synopsys just generated 3x more cash profit than it claimed.",
+        "- [2026-08-27 16:35:01 UTC] Stay informed about the performance of the S&P500 index in the middle of the day on Thursday. Uncover the top gainers and losers in today's session for valuable insights.",
+        "- [2026-08-27 16:11:00 UTC] Synopsys beats Q3 estimates as EDA and Ansys fuel strong growth, while higher margins and an upgraded fiscal 2026 outlook add momentum.",
+        "- [2026-08-27 15:33:39 UTC] Investing.com -- Synopsys is positioned for a stronger fiscal 2027 as demand for electronic design automation and chip-design intellectual property improves, Baird said, upgrading the semiconductor software provider to Outperform and raising its price target to $560.",
+        "- [2026-08-27 14:56:25 UTC] 13D Activist Fund is a mutual fund focusing on companies that are targeted by shareholder activists. Its Q2 2026 investor letter highlights a strong quarter driven by a more concentrated portfolio strategy and increased exposure to global activist opportunities. The letter can be downloaded here. In Q2 2026, the Fund\u2019s I Shares (DDDIX) returned 32.61%, [\u2026]",
+        "- [2026-08-27 14:36:10 UTC] Mizuho  analyst Siti Panigrahi   maintains Synopsys (NASDAQ:SNPS) with a Outperform and lowers the price target from $600 to $550.",
+        "- [2026-08-27 14:34:23 UTC] First Solar upgraded, Celsius downgraded: Wall Street's top analyst calls",
+        "- [2026-08-27 13:48:08 UTC] Baird  analyst Joe Vruwink   upgrades Synopsys (NASDAQ:SNPS) from Neutral to Outperform and raises the price target from $558 to $560.",
+        "- [2026-08-27 11:34:42 UTC] Sassine Ghazi, Synopsys CEO, joins 'Squawk on the Street' to discuss the company's latest earnings report and partnership with Nvidia.",
+        "- [2026-08-27 11:30:50 UTC] Synopsys (NASDAQ:SNPS) has outperformed the market over the past 15 years by 8.12% on an annualized basis producing an average annual return of 21.46%. Currently, Synopsys has a market capitalization of $80.23 billion.",
+        "- [2026-08-27 11:25:08 UTC] SNPS shares rallied on Thursday after upbeat Q3 results. Analysts maintain Buy ratings on strength in Ansys acquisition, AI.",
+        "- [2026-08-27 10:15:55 UTC] U.S. stocks mostly higher, Nasdaq up 1%. Synopsys Inc. reports strong Q3 results and raises outlook. Other gainers include Okta, Veeva, Salesforce, Ooma, Crowdstrike, Sailpoint, Hyperliquid, Tenable, Palo Alto Networks, and Zscaler.",
+        "- [2026-08-27 09:04:46 UTC] Benchmark  analyst Gary Mobley   reiterates Synopsys (NASDAQ:SNPS) with a Buy and maintains $570 price target.",
+        "- [2026-08-27 08:20:42 UTC] Needham  analyst Charles Shi   reiterates Synopsys (NASDAQ:SNPS) with a Buy and maintains $580 price target.",
+        "- [2026-08-27 08:12:15 UTC] Synopsys reported strong third-quarter results, with revenue up 42%, AI-driven demand accelerating and FY2026 revenue and EPS guidance raised.",
+        "- [2026-08-27 08:10:00 UTC] Synopsys remains a Buy despite a 14% stock decline and recent underperformance versus the benchmark. Click here to read an analysis of SNPS stock now.",
+        "- [2026-08-27 03:00:42 UTC] 2026-08-27. The following slide deck was published by Synopsys, Inc.",
+        "- [2026-08-27 01:29:14 UTC] Synopsys, Inc. (SNPS) Q3 2026 Earnings Call August 26, 2026 5:00 PM EDTCompany ParticipantsTushar Jain - Head of Investor RelationsSassine Ghazi - CEO,...",
+        "- [2026-08-26 18:06:49 UTC] Synopsys (NASDAQ:SNPS) released third-quarter financial results and hosted an earnings call on Wednesday. Read the complete transcript below.\nThis content is powered by Benzinga APIs. For comprehensive financial data",
+        "- [2026-08-26 17:24:24 UTC] These are the stocks posting the largest moves in after-hour trading.",
+        "- [2026-08-26 16:36:05 UTC] Here&#39;s a detailed look inside the Q3 earnings report from Synopsys.",
+        "- [2026-08-26 16:30:28 UTC] Synopsys (NASDAQ:SNPS) raises FY2026 GAAP EPS guidance from $2.49-$2.91 to $3.84-$4.08 vs $2.64 analyst estimate..",
+        "- [2026-08-26 16:28:48 UTC] Synopsys (NASDAQ:SNPS) raises FY2026 Adj EPS guidance from $14.72-$14.80 to $15.04-$15.10 vs $14.76 analyst estimate. Raises FY2026 sales outlook from $9.625 billion-$9.705 billion to $9.690 billion-$9.740 billion vs",
+        "- [2026-08-26 16:24:27 UTC] Synopsys (NASDAQ:SNPS) is looking for Q4 Adj EPS of $4.10-$4.16 vs $4.00 analyst estimate. sees sales of $2.530 billion-$2.580 billion vs $2.552 billion analyst estimate.",
+        "- [2026-08-26 16:06:24 UTC] Synopsys (NASDAQ:SNPS) reported quarterly earnings of $3.91 per share which beat the analyst consensus estimate of $3.67 by 6.54 percent. This is a 15.34 percent increase over earnings of $3.39 per share from the same",
+        "- [2026-08-26 14:05:09 UTC] Synopsys says AI is evolving beyond assistants into autonomous engineering systems that manage end-to-end workflows.",
+        "- [2026-08-26 12:18:00 UTC] Synopsys says customers are already seeing up to 6X productivity gains as AI compresses weeks of engineering work into hours.",
+        "- [2026-08-26 11:32:41 UTC] Synopsys says Nvidia&#39;s $2 billion investment reflects a shared vision for AI-powered engineering and simulation.",
+        "- [2026-08-25 15:31:06 UTC] Options markets are pricing major post-earnings moves for Nvidia, Salesforce, CrowdStrike, Okta, Kohls and Abercrombie &amp; Fitch, with implied volatility reaching 13.26%.",
+        "- [2026-08-25 11:14:26 UTC] SNPS shares jump ahead of Q3 results on Aug 26. Analyst reiterates Buy rating. Expects company to post in-line results."
+    ]
+}
