@@ -9,3 +9,7 @@ AI-powered assistant to recommend new stocks to explore and alert when it's time
 2. Print the `.env` lines to fill in: `venv/bin/python -m src.check_config --template <Name>`. Each user's keys are named `<NAME>_<SETTING>`; `.env.example` shows every shared and per-user key.
 3. Check nothing required is missing: `venv/bin/python -m src.check_config` (exit code 1 if something is missing or invalid; secret values are never printed).
 
+
+## Tests
+
+`venv/bin/pip install -r requirements-dev.txt`, then `venv/bin/python -m pytest` from the project root. Every API (Anthropic, Gemini, SnapTrade, Yahoo, Telegram) is mocked and every file the code writes goes to a temporary folder, so the tests cost nothing, need no keys, and never touch real users or data.
