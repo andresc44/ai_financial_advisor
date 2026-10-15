@@ -257,3 +257,9 @@ logs/
 test_output/
 *_interactive_chart.html
 *_news.csv
+
+# Claude-authored (2026-10-16): estimated API spend per user (see src/usage_tracking.py), and market-data dumps
+# written by the universal pipeline's debugging scripts (test_import.py, sanitizer.py). The dumps are large and
+# regenerated on demand, so they don't belong in history.
+data/usage/
+LLM_input*.json
