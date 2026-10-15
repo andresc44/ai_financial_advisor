@@ -30,6 +30,18 @@ from src.personalized.digest_fields import add_digest_fields, portfolio_beta
 from src.market_session import exchange_calendar_code, latest_regular_session
 
 
+def portfolio_weights(holdings: pd.DataFrame) -> pd.Series:
+    """
+    Claude-authored (2026-10-15): each row's stock weight (% of total market value, all lots of the stock combined),
+    computed over every holding passed in. NaN when the portfolio's total market value isn't positive.
+    """
+    market_value = pd.to_numeric(holdings["market_value"], errors="coerce").fillna(0.0)
+    total = market_value.sum()
+    if total <= 0:
+        return pd.Series(float("nan"), index=holdings.index)
+    return (market_value.groupby(holdings["symbol"]).transform("sum") / total * 100).round(2)
+
+
 def _price_column(data: pd.DataFrame, field: str, symbol: str) -> Optional[pd.Series]:
     """
     Claude-authored (2026-10-15): one symbol's column (e.g. "Close") from a yf.download frame. yfinance 1.x returns
@@ -723,6 +735,7 @@ class PortfolioFetcher:
                 "daily_pnl",
                 "daily_pnl_pct",
                 "daily_pnl_session",  # Date the daily P/L covers (pre-market: the previous trading day)
+                "portfolio_weight_pct",  # Stock's share of the whole portfolio's market value
                 "last_close",  # Close before that session; previous portfolio value = sum(last_close x shares)
                 "unrealized_pnl",
                 "unrealized_pnl_pct",
@@ -741,6 +754,11 @@ class PortfolioFetcher:
             ]
 
         holdings = self.full_data
+        if not holdings.empty:
+            # Claude-authored (2026-10-15): weights come from the whole portfolio, before narrowing to `symbols`.
+            # The watchdog evaluates only the stocks that changed, and weights computed over that subset made a
+            # single re-checked stock look like 100% of the portfolio to Claude.
+            holdings = holdings.assign(portfolio_weight_pct=portfolio_weights(holdings))
         if symbols is not None and not holdings.empty:
             holdings = holdings[holdings["symbol"].isin(symbols)]
 

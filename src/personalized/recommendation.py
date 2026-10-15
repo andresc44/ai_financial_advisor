@@ -60,6 +60,7 @@ logger = logging.getLogger("Finnbot.HoldingEvaluator")
 # Holdings columns that are internal identifiers and add no signal for the LLM
 EXCLUDED_POSITION_COLUMNS = {
     "market_context",
+    "portfolio_weight_pct",  # Sent once per stock at the payload's top level
     "account_name",
     "exchange",
     "account_id",
@@ -266,20 +267,26 @@ def resolve_anthropic_key(user_name: Optional[str]) -> str:
 
 
 def build_holding_payloads(holdings_df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
-    """Groups holdings by symbol into LLM payloads: every lot's position data plus the shared market context."""
+    """
+    Groups holdings by symbol into LLM payloads: every lot's position data plus the shared market context.
+
+    Claude-authored (2026-10-15): uses the 'portfolio_weight_pct' column when present. get_holdings_digest_payload
+    computes it over the whole portfolio before the watchdog narrows to the stocks being re-checked; computing it
+    here would measure each stock against only that subset.
+    """
     position_cols = [c for c in holdings_df.columns if c not in EXCLUDED_POSITION_COLUMNS]
     total_market_value = holdings_df["market_value"].sum()
 
     payloads: Dict[str, Dict[str, Any]] = {}
     for symbol, group in holdings_df.groupby("symbol"):
         symbol_market_value = group["market_value"].sum()
+        if "portfolio_weight_pct" in group.columns and pd.notna(group["portfolio_weight_pct"].iloc[0]):
+            weight = float(group["portfolio_weight_pct"].iloc[0])
+        else:
+            weight = round(symbol_market_value / total_market_value * 100, 2) if total_market_value > 0 else None
         payloads[symbol] = {
             "symbol": symbol,
-            "portfolio_weight_pct": (
-                round(symbol_market_value / total_market_value * 100, 2)
-                if total_market_value > 0
-                else None
-            ),
+            "portfolio_weight_pct": weight,
             "positions": group[position_cols].to_dict(orient="records"),
             "market_context": (
                 group["market_context"].iloc[0] if "market_context" in group.columns else None
