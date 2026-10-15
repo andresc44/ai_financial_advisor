@@ -250,6 +250,11 @@ params_dict = {
     # watchdog_interval_hours > 0). Remove a name here to pause both for that user.
     "ACTIVE_USERS": ["Andres", "Mauricio", "Steven"],
 
+    # Claude-authored (2026-10-15): holdings source health (src/personalized/pull_holdings_data.py)
+    "HOLDINGS": {
+        "STALE_SYNC_HOURS": 96,  # Notify the user when SnapTrade hasn't synced an account's holdings for this long
+    },
+
     # ==============================================================================================
     # Claude-authored (2026-10-13): holdings watchdog scheduling + per-user Claude model selection.
     # Why: lets each user choose how often their holdings are re-evaluated, during which market

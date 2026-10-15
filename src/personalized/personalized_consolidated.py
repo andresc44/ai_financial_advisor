@@ -17,6 +17,7 @@ from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.portfolio_review import review_portfolio
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
 from src.personalized.user_settings import get_gemini_api_key
+from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
 
 def _holding_companies(full_data: pd.DataFrame) -> dict[str, Optional[str]]:
     """
@@ -134,6 +135,10 @@ def get_personal_content(user_name: str = "Andres"):
         raise ValueError(f"Home timezone for '{user_name}' not found.")
 
     portfolio = PortfolioFetcher(user_name=user_name)
+    # Claude-authored (2026-10-15): tell the user when their holdings source has a problem (shares the watchdog's
+    # cooldown, so the same problem isn't sent twice), and include it in the payload for the email
+    for issue in portfolio.holdings_issues:
+        send_notice_now(user_name, holdings_issue_subject(issue), issue["reason"], holdings_issue_body(issue))
     # Claude-authored (2026-10-15): Gemini news only needs each stock's symbol and name, so it runs in a background
     # thread while market data and Claude run below. The portfolio review then waits for both. Evaluations the
     # watchdog made in the last hour are reused instead of calling Claude again.
@@ -155,4 +160,5 @@ def get_personal_content(user_name: str = "Andres"):
         "portfolio_review": portfolio_review,
         # Claude-authored (2026-10-15): why parts of the digest are empty, e.g. an expired or out-of-credit key
         "api_key_issues": _key_issue_notices(holdings_dict, news_key_error, review_key_error),
+        "data_source_issues": portfolio.holdings_issues,  # Claude-authored (2026-10-15): e.g. a disabled connection
     }

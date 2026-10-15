@@ -73,6 +73,17 @@ If the chosen model doesn't support the effort, the user's effort is ignored and
 
 The API keys are the only settings with no default: they never fall back to the shared `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` used for the universal content. If a user's Anthropic key is unset, their holdings get no recommendation; if their Gemini key is unset, their holding cards get no news bullets. Either way an `[ERROR]` line is printed and other users are unaffected.
 
+#### When holdings can't be read (`PortfolioFetcher.holdings_issues`)
+
+A broken holdings source used to look exactly like an empty portfolio. Now each problem is recorded as `{source, reason, message}` and sent to the user's Telegram once per `ALERT_COOLDOWN_HOURS` (the watchdog and digest share the cooldown), and the digest payload lists it under `data_source_issues`:
+
+| Source | Reasons |
+|---|---|
+| SnapTrade | `api_error` (unreachable or keys rejected), `no_accounts`, `connection_disabled` (the brokerage needs the user to log in again through SnapTrade), `positions_error` (one account's positions failed), `stale_sync` (holdings not synced for `HOLDINGS.STALE_SYNC_HOURS`, default 96) |
+| Google Sheets | `sheet_unavailable` (wrong ID or not shared with the service account), `sheet_empty`, `sheet_invalid` (missing `symbol`, `shares_qty`, or `avg_purchase_price`) |
+
+Holdings that could still be read are evaluated as usual.
+
 #### When a key stops working (`src/personalized/api_errors.py`)
 
 Missing, invalid, revoked, expired, unpermitted, out-of-credit, spend-limited, and quota-exhausted keys are expected situations, not crashes:

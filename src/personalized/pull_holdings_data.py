@@ -22,6 +22,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.parameters import params_dict
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import add_metrics_to_holdings
 from src.personalized.recommendation import add_recommendations
@@ -78,6 +79,9 @@ class PortfolioFetcher:
         self.user_name = user_name
         self.claude_overrides = get_claude_overrides(user_name)
         self.claude_key_error = None  # Set by add_recommendations when the user's Anthropic key can't be used
+        # Claude-authored (2026-10-15): problems reading the holdings source, as {"source", "reason", "message"}.
+        # Without them a disabled brokerage connection or unreadable sheet looks the same as an empty portfolio.
+        self.holdings_issues: list[dict] = []
 
         holdings_source_value = user_profile.get("holdings_source")
         if holdings_source_value is None:
@@ -143,6 +147,50 @@ class PortfolioFetcher:
             return item.__dict__
         return {}
 
+    def _add_holdings_issue(self, source: str, reason: str, message: str) -> None:
+        """Claude-authored (2026-10-15): records one holdings source problem (see self.holdings_issues)."""
+        print(f"[ERROR] {source} holdings problem ({reason}): {message}")
+        self.holdings_issues.append({"source": source, "reason": reason, "message": message})
+
+    def _check_brokerage_connections(self) -> None:
+        """
+        Claude-authored (2026-10-15): records a holdings issue for each SnapTrade brokerage connection that is
+        disabled. Brokerages periodically require the user to log in again, and until they do SnapTrade returns
+        no (or stale) positions for those accounts.
+        """
+        try:
+            response = self.client.connections.list_brokerage_authorizations()
+        except Exception as e:  # SnapTrade being unreachable is already reported by fetch_user_accounts
+            print(f"[WARNING] Could not list SnapTrade connections: {e}")
+            return
+        raw = response.body if hasattr(response, "body") else response
+        for authorization in raw if isinstance(raw, (list, tuple)) else []:
+            auth = self._to_dict(authorization)
+            if not auth.get("disabled"):
+                continue
+            name = self._to_dict(auth.get("brokerage")).get("name") or auth.get("name") or "brokerage"
+            since = f" since {str(auth['disabled_date'])[:10]}" if auth.get("disabled_date") else ""
+            self._add_holdings_issue(
+                "SnapTrade",
+                "connection_disabled",
+                f"Your {name} connection has been disabled{since}. Reconnect it through SnapTrade so holdings sync again.",
+            )
+
+    def _check_holdings_sync(self, acc_dict: dict, account_label: str) -> None:
+        """Claude-authored (2026-10-15): records a holdings issue when an account's holdings haven't synced recently."""
+        holdings_sync = self._to_dict(self._to_dict(acc_dict.get("sync_status")).get("holdings"))
+        last_sync = pd.to_datetime(holdings_sync.get("last_successful_sync"), utc=True, errors="coerce")
+        if pd.isna(last_sync):
+            return
+        age_hours = (pd.Timestamp.now(tz="UTC") - last_sync).total_seconds() / 3600
+        if age_hours > params_dict["HOLDINGS"]["STALE_SYNC_HOURS"]:
+            self._add_holdings_issue(
+                "SnapTrade",
+                "stale_sync",
+                f"Holdings for account {account_label} last synced {last_sync:%Y-%m-%d} ({age_hours / 24:.0f} days ago), "
+                "so prices and positions may be out of date. Reconnecting the brokerage in SnapTrade usually fixes this.",
+            )
+
     def fetch_user_accounts(self) -> list:
         try:
             response = self.client.account_information.list_user_accounts()
@@ -154,6 +202,12 @@ class PortfolioFetcher:
             return accounts
         except Exception as e:
             print(f"[ERROR] Failed to fetch accounts: {e}")
+            self._add_holdings_issue(  # Claude-authored (2026-10-15)
+                "SnapTrade",
+                "api_error",
+                f"SnapTrade could not be reached or rejected this user's keys ({str(e)[:200]}). "
+                "Check the SnapTrade client ID and consumer key in .env.",
+            )
             return []
 
     def fetch_positions_for_account(self, account_id: str) -> tuple:
@@ -176,12 +230,24 @@ class PortfolioFetcher:
                 "[ERROR] Failed fetching positions for account ID"
                 f" {account_id}: {e}"
             )
+            self._add_holdings_issue(  # Claude-authored (2026-10-15)
+                "SnapTrade",
+                "positions_error",
+                f"Positions for one account could not be fetched ({str(e)[:200]}), so its holdings are missing.",
+            )
             return [], {}
 
     def get_holdings_df(self) -> pd.DataFrame:
         """Retrieves position metrics from SnapTrade as a pandas DataFrame."""
         accounts = self.fetch_user_accounts()
         records = []
+        # Claude-authored (2026-10-15): report connection problems instead of returning a silently empty portfolio
+        if not accounts and not self.holdings_issues:
+            self._add_holdings_issue(
+                "SnapTrade", "no_accounts", "SnapTrade returned no brokerage accounts. Connect one through SnapTrade."
+            )
+        if accounts:
+            self._check_brokerage_connections()
 
         for acc in accounts:
             acc_dict = self._to_dict(acc)
@@ -193,6 +259,7 @@ class PortfolioFetcher:
 
             if not account_id:
                 continue
+            self._check_holdings_sync(acc_dict, account_label)
 
             print(f"Processing Account: {account_label}")
 
@@ -612,19 +679,31 @@ class PortfolioFetcher:
 
         except Exception as e:
             print(f"[ERROR] Failed to download or parse Google Sheet: {e}")
+            self._add_holdings_issue(  # Claude-authored (2026-10-15)
+                "Google Sheets",
+                "sheet_unavailable",
+                f"The holdings sheet could not be read ({str(e)[:200]}). Check the sheet ID in .env and that the "
+                "sheet is shared with the service account.",
+            )
             return pd.DataFrame()
 
         if raw_df.empty:
             print("[WARNING] Google Sheet returned no data.")
+            self._add_holdings_issue("Google Sheets", "sheet_empty", "The holdings sheet has no rows.")
             return pd.DataFrame()
 
         # Validate required columns
         required_cols = ["symbol", "shares_qty", "avg_purchase_price"]
         missing_cols = [c for c in required_cols if c not in raw_df.columns]
         if missing_cols:
-            raise ValueError(
-                f"[ERROR] Google Sheet is missing required columns: {missing_cols}"
+            # Claude-authored (2026-10-15): reported to the user instead of crashing their whole run
+            self._add_holdings_issue(
+                "Google Sheets",
+                "sheet_invalid",
+                f"The holdings sheet is missing the required column(s) {missing_cols} "
+                "(needed: symbol, shares_qty, avg_purchase_price).",
             )
+            return pd.DataFrame()
 
         # Map Google Sheet inputs to internal DataFrame schema
         df = pd.DataFrame()

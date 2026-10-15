@@ -4,7 +4,8 @@ Holdings watchdog: re-evaluates each user's holdings on their own schedule and s
 
 Authorship:
 - Original version by Andres: hourly cron design, Telegram eligibility rules, alert-log pruning
-  (load_and_prune_alert_logs) and cooldown check (is_alert_suppressed) - both kept unchanged below.
+  (load_and_prune_alert_logs) and cooldown check (is_alert_suppressed) - both kept unchanged, and moved to
+  src/telegram_alert/notices.py on 2026-10-15 so the digest and failure alerts can share them.
 - Per-user flow rewritten by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-13, at Andres's request, to add:
   * per-user check intervals and market sessions ("regular" / "extended" / "24_7") from one hourly cron job,
   * "only when needed" gates so Finnhub / Twelve Data / Claude run only for stocks that changed,
@@ -17,6 +18,8 @@ Authorship:
   nor marked done, and the user gets one Telegram notice per cooldown explaining what to fix.
 - 2026-10-15 (Claude): users are checked in parallel threads (WATCHDOG.MAX_PARALLEL_USERS), so alerts for later
   users aren't delayed by earlier users' Claude evaluations as the number of users grows.
+- 2026-10-15 (Claude): a holdings source problem (SnapTrade connection disabled or unreachable, stale sync,
+  unreadable Google Sheet) is sent to the user as a Telegram notice instead of looking like an empty portfolio.
 See docs/watchdog.md for the full flow, settings, and crontab lines.
 
 Usage (from the project root):
@@ -27,7 +30,6 @@ A dry run still reads holdings and free price/news data, but makes no Claude cal
 """
 import argparse
 import html
-import json
 import os
 import sys
 import traceback
@@ -37,7 +39,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import pandas as pd
-import requests
 
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
@@ -59,95 +60,30 @@ from src.personalized.recommendation import resolve_anthropic_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
 from src.shared_locks import MARKET_DATA_LOCK
+from src.telegram_alert import notices
+from src.telegram_alert.notices import (  # Shared alert log; names kept importable from this module
+    COOLDOWN_HOURS,
+    RETENTION_DAYS,
+    alert_key,
+    holdings_issue_body,
+    holdings_issue_subject,
+    is_alert_suppressed,
+    load_and_prune_alert_logs,
+    merge_and_save_alert_logs,
+    send_user_notice,
+)
 from src.telegram_alert.send_telegram import send_telegram_message
 
 WATCHDOG_PARAMS = params_dict["WATCHDOG"]
-
-CSV_DIR = project_root / "data" / "alerts_sent"
-CSV_PATH = CSV_DIR / "telegram_alerts_timestamped.csv"
-RETENTION_DAYS = WATCHDOG_PARAMS["ALERT_LOG_RETENTION_DAYS"]  # Number of days to keep alert logs
-COOLDOWN_HOURS = WATCHDOG_PARAMS["ALERT_COOLDOWN_HOURS"]  # Number of hours to suppress repeated alerts
 
 # Claude-authored: when the daily Claude cap is hit, stocks whose last recommendation was most severe go first.
 # Never-evaluated stocks (None) rank just below risk_alert because their risk is unknown.
 SEVERITY_RANK = {"urgent_sell": 4, "risk_alert": 3, None: 2, "trim": 1, "hold": 0}
 
 
-def load_and_prune_alert_logs(
-    csv_path: Path, retention_days: int = RETENTION_DAYS
-) -> pd.DataFrame:
-    """Reads the CSV log, prunes entries older than retention_days, and returns the cleaned DataFrame."""
-    cols = ["user", "alerts", "timestamp"]
-    if not csv_path.exists():
-        return pd.DataFrame(columns=cols)
-
-    try:
-        df = pd.read_csv(csv_path)
-        if df.empty or not set(cols).issubset(df.columns):
-            return pd.DataFrame(columns=cols)
-
-        df["timestamp_dt"] = pd.to_datetime(
-            df["timestamp"], utc=True, errors="coerce"
-        )
-        df = df.dropna(subset=["timestamp_dt"])
-
-        # Preserve only rows within the retention window
-        cutoff_date = datetime.now(timezone.utc) - timedelta(
-            days=retention_days
-        )
-        pruned_df = df[df["timestamp_dt"] >= cutoff_date].copy()
-
-        pruned_df["timestamp"] = pruned_df["timestamp_dt"].dt.strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
-        return pruned_df[cols]
-    except Exception as e:
-        print(f"[WARNING] Failed to parse existing alert CSV: {e}")
-        return pd.DataFrame(columns=cols)
-
-
-def is_alert_suppressed(
-    df_logs: pd.DataFrame,
-    user: str,
-    serialized_alerts: str,
-    cooldown_hours: int = COOLDOWN_HOURS,
-) -> bool:
-    """Returns True if an identical alert set was sent to the user within cooldown_hours."""
-    if df_logs.empty:
-        return False
-
-    matches = df_logs[
-        (df_logs["user"] == user) & (df_logs["alerts"] == serialized_alerts)
-    ]
-    if matches.empty:
-        return False
-
-    timestamps = pd.to_datetime(
-        matches["timestamp"], utc=True, errors="coerce"
-    )
-    last_sent = timestamps.max()
-
-    if pd.isna(last_sent):
-        return False
-
-    return (datetime.now(timezone.utc) - last_sent) < timedelta(
-        hours=cooldown_hours
-    )
-
-
 # ==============================================================================================
 # Claude-authored (2026-10-13) from here down: per-user scheduling, change detection, and alerting.
 # ==============================================================================================
-
-def alert_key(symbol: str, recommendation: str) -> str:
-    """Stable identity of one alert, stored in the log's `alerts` column and passed to is_alert_suppressed.
-
-    Why: the old key was the whole holding row as JSON, which includes prices that change every hour,
-    so the cooldown never matched. A new key per (symbol, recommendation) also lets an escalation
-    (e.g. a new alert level) through immediately.
-    """
-    return json.dumps({"symbol": symbol, "recommendation": recommendation}, sort_keys=True)
-
 
 def is_user_eligible(user_name: str) -> bool:
     """A user is watched when they have a SNAPTRADE/SHEETS holdings source and a Telegram chat ID in .env."""
@@ -333,25 +269,26 @@ def send_key_notice(
     their API key stopped holdings evaluations, so a missing, expired, or out-of-credit key never fails silently.
     A failed send is only a warning (and is retried next run), so it can't undo the alerts already sent.
     """
-    key = alert_key(f"{key_error.provider} API key", key_error.reason)
-    if is_alert_suppressed(alert_logs, user_name, key, cooldown_hours=cooldown_hours):
-        print(f"[SUPPRESSED] {key_error.provider} key notice ({key_error.reason}) already sent to {user_name}.")
-        return alert_logs
-
     body = (
         f"⚠️ Finnbot could not evaluate your holdings. {html.escape(str(key_error))}\n\n"
         "Holdings are not re-evaluated until this is fixed. Recommendations from the last "
         f"{WATCHDOG_PARAMS['MAX_EVALUATION_AGE_HOURS']}h can still trigger alerts."
     )
-    try:
-        send_telegram_message(user_name, body)
-    except (ValueError, requests.RequestException) as e:
-        print(f"[WARNING] Could not send the {key_error.provider} key notice to {user_name}: {e}")
-        return alert_logs
+    return send_user_notice(
+        user_name, f"{key_error.provider} API key", key_error.reason, body, alert_logs, cooldown_hours
+    )
 
-    sent_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    new_row = pd.DataFrame([{"user": user_name, "alerts": key, "timestamp": sent_at}])
-    return pd.concat([alert_logs, new_row], ignore_index=True)
+
+def send_holdings_notices(
+    user_name: str, issues: list[dict], alert_logs: pd.DataFrame, cooldown_hours: int = COOLDOWN_HOURS
+) -> pd.DataFrame:
+    """Claude-authored (2026-10-15): one notice per (source, reason) per cooldown, shared with the digest's notices."""
+    for issue in issues:
+        alert_logs = send_user_notice(
+            user_name, holdings_issue_subject(issue), issue["reason"], holdings_issue_body(issue), alert_logs,
+            cooldown_hours,
+        )
+    return alert_logs
 
 
 def check_user(
@@ -389,6 +326,11 @@ def check_user(
 
     # Cheap snapshot: holdings, P&L, RSI/NATR (no Finnhub / Twelve Data / Claude)
     fetcher = PortfolioFetcher(user_name=user_name)
+    # Claude-authored (2026-10-15): a broken connection or unreadable sheet is reported, not mistaken for no holdings
+    for issue in fetcher.holdings_issues:
+        print(f"{tag} [ERROR] {issue['source']} holdings problem ({issue['reason']}): {issue['message']}")
+    if fetcher.holdings_issues and not dry_run:
+        alert_logs = send_holdings_notices(user_name, fetcher.holdings_issues, alert_logs, cooldown_hours)
     if fetcher.full_data is None or fetcher.full_data.empty:
         # An outage looks the same as an empty portfolio, so don't mark this check as done
         print(f"{tag} [WARNING] No holdings returned (empty portfolio or data-source outage). Will retry next run.")
@@ -466,11 +408,11 @@ def process_user_alerts(
     parameters so the schedule can be tested without waiting for real market hours.
     """
     now = now or datetime.now(timezone.utc)
-    CSV_DIR.mkdir(parents=True, exist_ok=True)
+    notices.CSV_DIR.mkdir(parents=True, exist_ok=True)
 
     # Load log history and prune entries older than retention_days
     alert_logs = load_and_prune_alert_logs(
-        CSV_PATH, retention_days=retention_days
+        notices.CSV_PATH, retention_days=retention_days
     )
 
     def _check(user: str) -> pd.DataFrame:
@@ -500,9 +442,9 @@ def process_user_alerts(
         print("Dry run: alert log not written.")
         return
 
-    # Save cleaned history back to CSV
-    alert_logs.to_csv(CSV_PATH, index=False)
-    print(f"Alert log updated at: {CSV_PATH}")
+    # Save cleaned history back to CSV (Claude-authored 2026-10-15: merged with notices the run saved directly)
+    merge_and_save_alert_logs(alert_logs)
+    print(f"Alert log updated at: {notices.CSV_PATH}")
 
 
 if __name__ == "__main__":
