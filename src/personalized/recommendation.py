@@ -50,6 +50,7 @@ from src.personalized.LLM_hold_instr import (
     format_user_prompt,
 )
 from src.personalized.user_settings import get_anthropic_api_key
+from src.track_record import log_personal
 
 logging.basicConfig(
     level=logging.INFO,
@@ -371,5 +372,15 @@ def add_recommendations(
     # Claude-authored (2026-10-13): remember each evaluation so the watchdog can skip unchanged stocks.
     # 2026-10-15: only new evaluations; reused ones keep their original time so they still age out.
     if user_name and evaluations:
-        record_evaluations(user_name, df[df["symbol"].isin(evaluations)], evaluated_at=now)
+        evaluated = df[df["symbol"].isin(evaluations)]
+        record_evaluations(user_name, evaluated, evaluated_at=now)
+        # Claude-authored (2026-10-15): append to the long-term track record (src/track_record.py). Only the digest
+        # reuses recent evaluations, so the flag also tells which run made them.
+        log_personal(
+            user_name,
+            evaluated,
+            now,
+            source="digest" if reuse_recent_evaluations else "watchdog",
+            model=(getattr(self, "claude_overrides", None) or {}).get("model"),
+        )
     return df

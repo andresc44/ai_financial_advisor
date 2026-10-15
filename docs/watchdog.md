@@ -187,6 +187,17 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies for display. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list, which is downloaded once per morning and once per afternoon. |
 
+### Track record (`src/track_record.py`)
+
+Every new holding evaluation (digest or watchdog) is appended to `data/track_record/personal.jsonl`, and every universal pick to `data/track_record/universal.jsonl`, with the price at the time. The files are never rewritten. To see how the advice played out:
+
+```bash
+venv/bin/python -m src.track_record                 # all recommendations
+venv/bin/python -m src.track_record --since 2026-11-01
+```
+
+It prints, per recommendation (hold / trim / risk_alert / urgent_sell) and per universal list (long_term / swing): how many, the average return 1, 5, and 20 trading days later, the share that went up, the average return minus SPY's over the same days, and how many are still pending. A good `urgent_sell` record shows negative returns; a good `long_term` list beats SPY.
+
 ### Logs and failure alerts
 
 Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py`): one line per message with a timestamp and the user it belongs to, rotating at `OPS.LOG_MAX_MB` (5 MB) and keeping `OPS.LOG_BACKUPS` (5) old files. Under cron the output no longer also goes to `digest.log` / `watchdog.log` in the project root, which now only catch crashes before logging starts; set `FINNBOT_LOG_ECHO=1` to see the output when piping it. Each run ends with a summary line (who was sent or checked, who failed, how long it took).

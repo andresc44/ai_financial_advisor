@@ -17,6 +17,7 @@ from src.universal.recommendations.filter_tickers import DataFetcher
 from src.universal.market_news import fetch_live_macro_stories
 from src.universal.macro_indicators import get_market_dashboard_data
 from src.shared_locks import MARKET_DATA_LOCK
+from src.track_record import log_universal
 
 def get_universal_content():
     """
@@ -75,6 +76,7 @@ def get_universal_content():
         swing_n=params_dict["SWING_TERM_N_AMOUNT"]
     )
     print(f"Generated_recommendations:\n{generated_recommendations}")
+    log_universal(generated_recommendations, sanitized_LLM_inputs)  # Claude-authored (2026-10-15): track record
     recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)
     
     # IMPORTANT but not required for recommendations development
