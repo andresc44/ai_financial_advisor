@@ -29,6 +29,7 @@ from src.universal.recommendations.yahoo_filter_helper import filter_yahoo_ticke
 from src.universal.recommendations.finnhub_filter_helper import filter_finnhub_tickers
 from src.universal.recommendations.twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
 from src.parameters import params_dict
+from src.universal.recommendations.data_source_guard import DataSourceIssues, GuardedFinnhubClient, twelvedata_request
 
 class DataFetcher:
     """Handles fetching, processing, and exporting stock market data 
@@ -51,6 +52,10 @@ class DataFetcher:
             else self.project_root / ".env"
         )
         
+        # Claude-authored (2026-10-16): problems with the shared Finnhub / Twelve Data keys found this run
+        # (see data_source_guard.py); read by the universal content to alert the admins
+        self.data_source_issues = DataSourceIssues()
+        self._twelvedata_state: dict = {}
         self.finnhub_client = self.__init_finnhub_client()
         self.all_tickers = self.__load_ticker_df()["ticker"].dropna().tolist()
         self.twelvedata_api_key = os.getenv("TWELVEDATA_API_KEY", "")
@@ -77,7 +82,8 @@ class DataFetcher:
                 f"'FINNHUB_API_KEY' not found in environment or at '{self.env_path}'."
             )
 
-        return finnhub.Client(api_key=api_key)
+        # Claude-authored (2026-10-16): rate limits retried, a rejected key reported once (data_source_guard.py)
+        return GuardedFinnhubClient(finnhub.Client(api_key=api_key), self.data_source_issues)
 
     def __get_latest_ticker_file(self) -> Path:
         """Finds the ticker CSV file with the most recent date prefix."""
@@ -256,11 +262,12 @@ class DataFetcher:
             indicator_key = f"{indicator_name}{param_suffix}"
 
             try:
-                resp = self.session.get(url, params=params, timeout=10)
-                data = resp.json()
-
-                if isinstance(data, dict) and data.get("status") == "error":
-                    print(f"[DEBUG API Error] Twelve Data returned error: {data.get('message')}")
+                # Claude-authored (2026-10-16): rate limits waited out, a used-up allowance or rejected key reported
+                # once and not retried for the rest of the run (data_source_guard.py)
+                data = twelvedata_request(
+                    self.session.get, url, params, self.data_source_issues, self._twelvedata_state
+                )
+                if data is None:
                     continue
 
                 if len(symbols) == 1:

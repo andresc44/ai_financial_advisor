@@ -2,7 +2,8 @@
 Shared test setup. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-15, at Andres's request.
 
 Every test runs offline and touches nothing real:
-- files the code writes (market-context cache, alert log, FX cache, track record) go to a temporary folder;
+- files the code writes (market-context cache, alert log, FX cache, track record, usage ledger) go to a
+  temporary folder;
 - Telegram messages are captured in `telegram` instead of sent;
 - yfinance downloads fail loudly unless a test replaces them, so no test silently depends on live market data.
 Anthropic and Gemini calls go through mock HTTP transports inside the tests that need them.
@@ -38,6 +39,7 @@ def isolated(tmp_path, monkeypatch):
     import src.personalized.add_metrics as add_metrics
     import src.telegram_alert.notices as notices
     import src.track_record as track_record
+    import src.usage_tracking as usage_tracking
 
     monkeypatch.setattr(add_metrics, "CONTEXT_CACHE_PATH", tmp_path / "market_context_cache.json")
     monkeypatch.setattr(notices, "CSV_DIR", tmp_path / "alerts_sent")
@@ -45,6 +47,7 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(fx_rates, "CACHE_PATH", tmp_path / "fx_rates.json")
     monkeypatch.setattr(track_record, "PERSONAL_PATH", tmp_path / "track" / "personal.jsonl")
     monkeypatch.setattr(track_record, "UNIVERSAL_PATH", tmp_path / "track" / "universal.jsonl")
+    monkeypatch.setattr(usage_tracking, "LEDGER_PATH", tmp_path / "usage" / "api_usage.jsonl")
 
     def no_network(*args, **kwargs):
         raise RuntimeError("yfinance.download called in a test without a fake")

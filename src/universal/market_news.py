@@ -1,21 +1,38 @@
 #File to connect to Gemini API and fetch top 5 macroeconomic stories for daily digest, with Google Search grounding enabled.
+"""
+Claude-authored changes (Claude Opus 5.5 via Claude Code, 2026-10-16), at Andres's request, ahead of switching
+the macro news on:
+- The import no longer prints the first characters of the API key (logs get shared).
+- Retries use api_errors.GEMINI_RETRY like the per-stock news: only timeouts, per-minute rate limits, and 5xx are
+  retried; key, billing, and quota errors fail at once instead of being retried four times.
+- get_macro_stories() never raises: a key problem (invalid, expired, no credits, quota) or any other failure is
+  returned as an issue for universal_issues and sent to the admins. Usage is recorded under the shared key.
+"""
 import os
+import sys
 import time
+from pathlib import Path
+from typing import Optional
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 from pydantic import BaseModel
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry
+
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error, shared_api_key, shared_key_issue
+from src.usage_tracking import record_gemini_response
+
+MACRO_NEWS_MODEL = "gemini-3.6-flash"
 
 # 1. Load variables from .env file into environment
-print("[DIAGNOSTIC] Loading environment variables...")
 load_dotenv()
-
-api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-if api_key:
-    print(f"[DIAGNOSTIC] API Key detected (Prefix: {api_key[:6]}...)")
-else:
+if not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
     print("[DIAGNOSTIC] WARNING: No GEMINI_API_KEY or GOOGLE_API_KEY found in .env!")
 
 # 2. Define Pydantic Schema
@@ -48,23 +65,11 @@ Keep all fields extremely succinct and direct:
 - source_url: The direct URL link to the original article source.
 """
 
-# Helper function to print retry attempts for diagnostic tracking
-def log_retry_attempt(retry_state):
-    exception = retry_state.outcome.exception()
-    print(f"[DIAGNOSTIC] Attempt {retry_state.attempt_number} failed with error: {exception}")
-    print(f"[DIAGNOSTIC] Rate limit hit. Retrying in {retry_state.next_action.sleep} seconds...")
-
 # 4. Fetch Function using Chat interface to fix AFC warning
-@retry(
-    stop=stop_after_attempt(4),
-    wait=wait_exponential(multiplier=2, min=4, max=20),
-    retry=retry_if_exception_type(APIError),
-    before_sleep=log_retry_attempt,
-    reraise=True
-)
+@retry(**GEMINI_RETRY)  # Claude-authored (2026-10-16): retries only what can recover
 def fetch_live_macro_stories() -> DigestPayload:
     print("\n[DIAGNOSTIC] Initializing Gemini Client...")
-    client = genai.Client()
+    client = genai.Client(api_key=shared_api_key("Gemini"))
 
     prompt_text = (
         "Perform a web search for today's top global macroeconomic, central bank, "
@@ -74,7 +79,7 @@ def fetch_live_macro_stories() -> DigestPayload:
     print("[DIAGNOSTIC] Creating Chat session with Google Search grounding enabled...")
     # Using client.chats.create avoids the Automatic Function Calling warning
     chat = client.chats.create(
-        model="gemini-3.6-flash",
+        model=MACRO_NEWS_MODEL,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
             tools=[{"google_search": {}}],  # Enables Search Grounding
@@ -85,13 +90,35 @@ def fetch_live_macro_stories() -> DigestPayload:
 
     start_time = time.time()
     print("[DIAGNOSTIC] Sending request to Gemini API (Awaiting search grounding)...")
-    
+
     response = chat.send_message(prompt_text)
-    
+    record_gemini_response(None, "universal", MACRO_NEWS_MODEL, response)  # Claude-authored (2026-10-16): shared-key cost
+
     elapsed = round(time.time() - start_time, 2)
     print(f"[DIAGNOSTIC] Response received successfully in {elapsed}s.")
 
     return DigestPayload.model_validate_json(response.text)
+
+
+def get_macro_stories() -> tuple[Optional[DigestPayload], list[dict]]:
+    """
+    Claude-authored (2026-10-16): (stories, issues) for the universal content. Never raises: a missing or failing
+    shared Gemini key, or any other failure, comes back as an issue ({"source", "reason", "message"}) and alerts the
+    admins, so the digest still goes out without macro news.
+    """
+    from src.telegram_alert.notices import alert_admins  # Imported here: only needed when something fails
+
+    try:
+        return fetch_live_macro_stories(), []
+    except ApiKeyUnusable as e:  # Shared key not set
+        issue = shared_key_issue(e)
+    except Exception as e:
+        key_error = gemini_key_error(e, None)
+        issue = shared_key_issue(key_error) if key_error else {
+            "source": "Gemini (macro news)", "reason": "failed", "message": f"Macro news failed: {str(e)[:200]}",
+        }
+    alert_admins(f"universal content: {issue['source']} {issue['reason']}", issue["message"])
+    return None, [issue]
 
 # Execution block with detailed diagnostics
 if __name__ == "__main__":
@@ -103,7 +130,7 @@ if __name__ == "__main__":
             print(f"[{story.priority}] Event: {story.event_summary}")
             print(f"Impact: {story.market_impact}")
             print(f"Link: {story.source_url}\n")
-            
+
     except APIError as e:
         print("\n[DIAGNOSTIC ERROR DETAILED BREAKDOWN]")
         print(f"Status Code: {getattr(e, 'code', 'N/A')}")

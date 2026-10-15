@@ -19,7 +19,8 @@ def select_top_candidates(
     swing_n: int = 5,
     min_long_score: Optional[float] = None,
     min_swing_score: Optional[float] = None,
-    config: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] = None,
+    issues: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Evaluates candidate tickers and selects:
@@ -54,7 +55,8 @@ def select_top_candidates(
     # 1. Run LLM evaluation pipeline across all tickers
     scores_map: Dict[str, Dict[str, float]] = run_llm_evaluation(
         sanitized_inputs=sanitized_inputs, 
-        config=config
+        config=config,
+        issues=issues,  # Claude-authored (2026-10-16): collects a shared Anthropic key failure
     )
 
     if not scores_map:

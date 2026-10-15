@@ -140,7 +140,8 @@ def run_daily_digests(
 
         try:
             universal_ok = universal_future.result()
-        except (Exception, SystemExit) as e:  # get_universal_content calls sys.exit(1) if its data fetcher can't start
+        except (Exception, SystemExit) as e:  # Unexpected crashes only: missing keys and API failures now come back as
+            # universal_issues with empty picks (2026-10-16), and the digest still goes out
             print(f"[{stamp}] Universal content failed: {e!r}")
             traceback.print_exc()
             alert_admins(f"{period} digest aborted: universal content failed", repr(e))

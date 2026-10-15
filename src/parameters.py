@@ -255,6 +255,41 @@ params_dict = {
         "STALE_SYNC_HOURS": 96,  # Notify the user when SnapTrade hasn't synced an account's holdings for this long
     },
 
+    # Claude-authored (2026-10-16): the universal content alerts the admins when a data source is missing for more
+    # than this share of the screened tickers (src/universal/recommendations/data_source_guard.py)
+    "UNIVERSAL_DATA_QUALITY": {
+        "MAX_MISSING_PCT": 20,
+    },
+
+    # Claude-authored (2026-10-16): list prices for the cost estimates in each digest (src/usage_tracking.py).
+    # USD per 1M tokens. Each model has a schedule of {"from": date, ...} entries so a published price change applies
+    # from its date. Update AS_OF and the entries when prices change; models missing here are counted but not costed.
+    "API_PRICES": {
+        "AS_OF": "2026-10-16",
+        "SOURCES": ["https://platform.claude.com/docs/en/about-claude/pricing", "https://ai.google.dev/gemini-api/docs/pricing"],
+        "ANTHROPIC_CACHE_WRITE_MULTIPLIER": 1.25,  # 5-minute cache writes cost 1.25x the input price
+        "GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH": 5000,  # Google Search grounding, shared across Gemini 3+ models per key
+        "anthropic": {
+            "claude-fable-5-1": [{"from": "2026-01-01", "input": 10.0, "output": 50.0, "cache_read": 0.25}],
+            "claude-fable-5": [{"from": "2026-01-01", "input": 10.0, "output": 50.0, "cache_read": 1.0}],
+            "claude-opus-5-5": [{"from": "2026-01-01", "input": 4.0, "output": 20.0, "cache_read": 0.20}],
+            "claude-opus-5": [{"from": "2026-01-01", "input": 5.0, "output": 25.0, "cache_read": 0.50}],
+            "claude-opus-4-8": [{"from": "2026-01-01", "input": 5.0, "output": 25.0, "cache_read": 0.50}],
+            "claude-sonnet-5-5": [{"from": "2026-01-01", "input": 2.0, "output": 10.0, "cache_read": 0.20}],
+            "claude-sonnet-5": [{"from": "2026-01-01", "input": 2.0, "output": 10.0, "cache_read": 0.20}],
+            "claude-haiku-5-5": [{"from": "2026-01-01", "input": 0.10, "output": 0.50, "cache_read": 0.01,
+                                  # Prompts over 100K tokens are billed at higher rates (cache read assumed 0.1x input)
+                                  "above_tokens": 100_000, "above": {"input": 0.50, "output": 2.50, "cache_read": 0.05}}],
+        },
+        "gemini": {
+            # Output includes thinking tokens. Google's announced price change takes effect on 2027-01-01.
+            "gemini-3.6-flash": [
+                {"from": "2026-01-01", "input": 0.75, "output": 3.75, "cached_input": 0.075, "search_per_1000": 14.0},
+                {"from": "2027-01-01", "input": 1.50, "output": 7.50, "cached_input": 0.15, "search_per_1000": 14.0},
+            ],
+        },
+    },
+
     # Claude-authored (2026-10-15): failure alerts and run logs (src/telegram_alert/notices.py, src/run_logging.py)
     "OPS": {
         "ALERT_USERS": ["Andres"],     # Users (with a Telegram chat ID) told when a digest or watchdog run fails

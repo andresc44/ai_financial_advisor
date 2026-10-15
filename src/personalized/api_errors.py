@@ -6,6 +6,9 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   such errors were retried (Gemini: ~16 s of waiting per stock) and then repeated for every remaining stock, and
   the watchdog fetched market data and counted Claude calls for evaluations that could never run.
   Callers now stop at the first key error, skip the work that depends on it, and report one clear notice.
+- 2026-10-16: the same handling for the shared keys used by the universal content (ANTHROPIC_API_KEY for the
+  candidate scoring, GEMINI_API_KEY for the macro news): ApiKeyUnusable with user_name=None names the shared
+  variable, and shared_api_key() raises it when the key isn't set.
 
 Error formats (checked 2026-10-15):
 - Anthropic (platform.claude.com/docs/en/api/errors, /api/rate-limits): 401 invalid/revoked/expired key;
@@ -19,6 +22,7 @@ Error formats (checked 2026-10-15):
   The google-genai SDK does not retry by default, so GEMINI_RETRY below is the only retry layer.
 """
 import hashlib
+import os
 import re
 import sys
 from pathlib import Path
@@ -37,6 +41,7 @@ from src.personalized.user_profiles import USER_PROFILES
 
 PROFILE_KEYS = {"Anthropic": "anthropic_api_key", "Gemini": "gemini_api_key"}
 CONSOLES = {"Anthropic": "platform.claude.com", "Gemini": "Google AI Studio"}
+SHARED_ENV_KEYS = {"Anthropic": ("ANTHROPIC_API_KEY",), "Gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
 
 REASON_TEXT = {
     "missing": "is not set",
@@ -88,10 +93,15 @@ class ApiKeyUnusable(ValueError):
         return self.reason != "rate_limited"
 
     def _describe(self) -> str:
-        env_key = (USER_PROFILES.get(self.user_name) or {}).get(PROFILE_KEYS.get(self.provider, ""))
-        env_key = env_key or f"<USER>_{self.provider.upper()}_API_KEY"
+        if self.user_name is None:  # A shared key (universal content), not a user's own
+            env_key = SHARED_ENV_KEYS.get(self.provider, (f"{self.provider.upper()}_API_KEY",))[0]
+            owner = f"Shared {self.provider} API key ({env_key})"
+        else:
+            env_key = (USER_PROFILES.get(self.user_name) or {}).get(PROFILE_KEYS.get(self.provider, ""))
+            env_key = env_key or f"<USER>_{self.provider.upper()}_API_KEY"
+            owner = f"{self.provider} API key for '{self.user_name}'"
         hint = FIX_HINTS[self.reason].format(env_key=env_key, console=CONSOLES.get(self.provider, self.provider))
-        text = f"{self.provider} API key for '{self.user_name}' {REASON_TEXT[self.reason]}. {hint}"
+        text = f"{owner} {REASON_TEXT[self.reason]}. {hint}"
         return f"{text} (API said: {self.detail[:200]})" if self.detail else text
 
     def as_notice(self) -> dict:
@@ -102,6 +112,20 @@ class ApiKeyUnusable(ValueError):
 def _expired_or_invalid(message: str) -> str:
     """'expired' only when the API says so unambiguously ("missing, invalid, or expired" stays 'invalid')."""
     return "expired" if "expired" in message and "invalid" not in message else "invalid"
+
+
+def shared_api_key(provider: str) -> str:
+    """The shared key for `provider` from .env (the universal content's), or ApiKeyUnusable("missing") if unset."""
+    for env_key in SHARED_ENV_KEYS[provider]:
+        value = (os.environ.get(env_key) or "").strip()
+        if value:
+            return value
+    raise ApiKeyUnusable(provider, "missing")
+
+
+def shared_key_issue(error: ApiKeyUnusable) -> dict:
+    """A shared-key failure in the universal content's issue shape ({"source", "reason", "message"})."""
+    return {"source": f"{error.provider} (shared key)", "reason": error.reason, "message": str(error)}
 
 
 def key_fingerprint(api_key: str) -> str:

@@ -157,6 +157,7 @@ A full fetch costs about 9 Finnhub calls and 6 Twelve Data credits per stock. A 
 | `data/watchdog_state.json` | `holdings_state.py` (watchdog + digest) | Per user: last scheduled block, Claude calls today, and per stock the last evaluation (time, price, NATR, recommendation, rationale, SAR stop, next earnings date). Sold positions are dropped. |
 | `data/market_context_cache.json` | `add_metrics.py` | Shared daily market context per stock. |
 | `data/alerts_sent/telegram_alerts_timestamped.csv` | `hourly_watchdog.py` | Alert log used for the cooldown (kept 30 days). |
+| `data/usage/api_usage.jsonl` | `usage_tracking.py` (watchdog + digest + universal) | One line per Claude or Gemini call: user, source, model, tokens, estimated cost. Append-only. |
 
 The first two files are written atomically (temp file, then rename) and are gitignored.
 
@@ -214,6 +215,44 @@ venv/bin/python src/telegram_alert/hourly_watchdog.py --dry-run --now 2026-10-14
 A dry run reads holdings and free price data and prints which users are due and which stocks would be evaluated, with reasons. It makes no Claude calls, sends no Telegram messages, and writes no files. `--now` only works together with `--dry-run`.
 
 New dependency: `exchange_calendars` (pinned in `requirements.txt`, together with the previously missing `anthropic` and their dependencies). Run `pip install -r requirements.txt` on the VM.
+
+### When the universal content can't be built properly
+
+The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and Twelve Data key, not the users' keys. Before 2026-10-16 a bad shared key failed silently: every candidate's Claude call failed (so both lists came back empty with no alert), Finnhub and Twelve Data errors were printed and the picks were scored on partial data, and a missing Finnhub key called `sys.exit`, which stopped every user's digest. Now:
+
+| Problem | What happens |
+|---|---|
+| Shared Anthropic key missing, invalid, out of credits, or over its spend limit | A free check runs before any data is fetched. The digest goes out with empty picks. |
+| The key fails partway through scoring | Scoring stops; candidates already scored are kept. |
+| `FINNHUB_API_KEY` missing | The digest goes out with empty picks. |
+| Finnhub rate limit (429) | Retried after 2, 5, and 15 s. |
+| Finnhub rejects the key (401) | No more Finnhub calls this run. |
+| Twelve Data per-minute limit | Waits for the next minute, up to 2 times per request. |
+| Twelve Data daily credits used up, or key rejected | No more Twelve Data calls this run. |
+| More than `UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT` (20%) of tickers missing Yahoo, Finnhub, or Twelve Data data | Picks are still made, but flagged. |
+
+Each problem is added to the universal payload's `universal_issues` (`{"source", "reason", "message"}`), so the email can say why picks are missing or based on partial data. Each is also sent to `OPS.ALERT_USERS` by Telegram, once per cooldown. The macro news (`src/universal/market_news.get_macro_stories`, still disabled) works the same way with the shared `GEMINI_API_KEY`: on failure it returns no stories plus the issue, and never raises.
+
+### API cost tracking (`src/usage_tracking.py`)
+
+Every Claude and Gemini response is recorded in `data/usage/api_usage.jsonl`: holding evaluations (watchdog and digest), holding news, the portfolio review, and the universal scoring and macro news under the user `_shared`. Each user's digest payload gets an `api_usage` block with the estimated spend on their own keys:
+
+```json
+"api_usage": {
+  "currency": "USD",
+  "note": "Estimated from token counts at list prices as of 2026-10-16; ...",
+  "this_digest":   {"anthropic": {"calls": 12, "input_tokens": 41000, "output_tokens": 6100, "cache_write_tokens": 0,
+                                  "cache_read_tokens": 0, "cost_usd": 0.286},
+                    "gemini":    {"calls": 9, "...": "...", "search_queries": 22, "cost_usd": 0.0123},
+                    "total_cost_usd": 0.2983},
+  "today":         {"...": "this digest plus earlier runs today (US Eastern date), watchdog included"},
+  "month_to_date": {"...": "since the 1st (UTC calendar month, as the providers bill)"}
+}
+```
+
+These are estimates from token counts and list prices. They can't see credits, discounts, or use of the same key outside Finnbot. If a model has no price, its calls are still counted but cost $0, and it is listed under `unpriced_models`. Gemini's Google Search grounding is free for the first `GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH` (5,000) requests per key each month, so search cost only counts once a user passes that.
+
+**Keeping prices current:** prices are in `params_dict["API_PRICES"]` as dated lists. To add a price change, append an entry with its `"from"` date. Usage before that date keeps the old price, so past months don't change. For example, the gemini-3.6-flash entry already holds the doubled price that starts 2027-01-01. Update `AS_OF` when you check the price pages listed in `SOURCES`. Model ids match on the longest prefix, so `claude-opus-5-5` gets its own price, not `claude-opus-5`'s.
 
 ## Known limitations
 

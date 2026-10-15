@@ -36,6 +36,7 @@ if str(project_root) not in sys.path:
 
 from src.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
+from src.usage_tracking import record_gemini_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
 GEMINI_MODEL = "gemini-3.6-flash"  # Same model as market_news.py
@@ -118,7 +119,12 @@ def _verify_source_urls(items: list[SymbolNewsItem], grounded_urls: list[str]) -
 # 3. Fetch Function (one stock) using Chat interface to avoid the AFC warning
 @retry(**GEMINI_RETRY)  # Retries only what can recover; key, billing, and quota errors fail immediately
 def fetch_news_for_symbol(
-    client: genai.Client, symbol: str, company: str, max_items: int, lookback_days: int
+    client: genai.Client,
+    symbol: str,
+    company: str,
+    max_items: int,
+    lookback_days: int,
+    user_name: Optional[str] = None,
 ) -> SymbolNewsPayload:
     today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
@@ -139,6 +145,7 @@ def fetch_news_for_symbol(
     start_time = time.time()
     response = chat.send_message(prompt_text)
     elapsed = round(time.time() - start_time, 2)
+    record_gemini_response(user_name, "digest", GEMINI_MODEL, response)  # Claude-authored (2026-10-16): user's cost
 
     payload = SymbolNewsPayload.model_validate_json(response.text)
     _verify_source_urls(payload.news_items, _grounded_urls(response))
@@ -189,7 +196,7 @@ def fetch_symbol_news(
             skipped.append(symbol)
             return
         try:
-            payload = fetch_news_for_symbol(client, symbol, company or symbol, max_items, lookback_days)
+            payload = fetch_news_for_symbol(client, symbol, company or symbol, max_items, lookback_days, user_name)
         except Exception as e:  # News is optional: an API, network, or parsing failure must not stop the digest
             key_error = gemini_key_error(e, user_name)
             if key_error is None:

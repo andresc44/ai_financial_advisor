@@ -1,5 +1,6 @@
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 import os
@@ -18,6 +19,7 @@ from src.personalized.portfolio_review import review_portfolio
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
 from src.personalized.user_settings import get_gemini_api_key
 from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
+from src.usage_tracking import usage_summary
 
 def _holding_companies(full_data: pd.DataFrame) -> dict[str, Optional[str]]:
     """
@@ -107,6 +109,7 @@ def get_personal_content(user_name: str = "Andres"):
     This content is specific to the user and may include account information,
     watchlists, and other user-specific data.
     """
+    started_at = datetime.now(timezone.utc)  # Claude-authored (2026-10-16): start of this digest's API usage
     user_profile = USER_PROFILES.get(user_name)
     if not user_profile:
         raise ValueError(f"User profile for '{user_name}' not found.")
@@ -161,4 +164,7 @@ def get_personal_content(user_name: str = "Andres"):
         # Claude-authored (2026-10-15): why parts of the digest are empty, e.g. an expired or out-of-credit key
         "api_key_issues": _key_issue_notices(holdings_dict, news_key_error, review_key_error),
         "data_source_issues": portfolio.holdings_issues,  # Claude-authored (2026-10-15): e.g. a disabled connection
+        # Claude-authored (2026-10-16): estimated spend on this user's own Anthropic and Gemini keys - this digest,
+        # today, and the month so far (watchdog runs included); see src/usage_tracking.py
+        "api_usage": usage_summary(user_name, started_at),
     }

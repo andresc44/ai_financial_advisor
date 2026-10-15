@@ -31,6 +31,7 @@ from src.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
 from src.personalized.holdings_state import _clean_float
 from src.personalized.symbol_specific_news import GEMINI_MODEL
+from src.usage_tracking import record_gemini_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
 CATEGORIES = ("WATCH", "NOTE")
@@ -153,7 +154,9 @@ def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float
 
 # 4. Fetch Function using Chat interface, matching symbol_specific_news.py
 @retry(**GEMINI_RETRY)  # Retries only what can recover; key, billing, and quota errors fail immediately
-def fetch_portfolio_review(client: genai.Client, summary: dict, max_notes: int) -> PortfolioReview:
+def fetch_portfolio_review(
+    client: genai.Client, summary: dict, max_notes: int, user_name: Optional[str] = None
+) -> PortfolioReview:
     today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
         f"Today is {today:%Y-%m-%d}. Review this portfolio and give at most {max_notes} notes, "
@@ -172,6 +175,7 @@ def fetch_portfolio_review(client: genai.Client, summary: dict, max_notes: int) 
     start_time = time.time()
     response = chat.send_message(prompt_text)
     elapsed = round(time.time() - start_time, 2)
+    record_gemini_response(user_name, "digest", GEMINI_MODEL, response)  # Claude-authored (2026-10-16): user's cost
     print(f"[DIAGNOSTIC] Portfolio review received in {elapsed}s.")
 
     return PortfolioReview.model_validate_json(response.text)
@@ -197,7 +201,7 @@ def review_portfolio(
     print(f"\n[DIAGNOSTIC] Reviewing portfolio of {len(summary['holdings'])} stocks (max {max_notes} notes)...")
     client = genai.Client(api_key=api_key)  # The user's own key, never the shared GEMINI_API_KEY
     try:
-        review = fetch_portfolio_review(client, summary, max_notes)
+        review = fetch_portfolio_review(client, summary, max_notes, user_name)
     except Exception as e:  # The review is optional: an API, network, or parsing failure must not stop the digest
         key_error = gemini_key_error(e, user_name)
         print(f"[ERROR] Could not fetch portfolio review: {key_error or e}")

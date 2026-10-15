@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,6 +14,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.parameters import params_dict
+from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, shared_api_key, shared_key_issue
+from src.usage_tracking import record_anthropic_response
 from src.universal.recommendations.LLM_rec_instr import (
     VALUATION_SCORE_DESCRIPTION,
     FINANCIAL_HEALTH_SCORE_DESCRIPTION,
@@ -166,11 +167,10 @@ class ParallelStockEvaluator:
         # strict schema keeps its input valid.
         self.tool_choice = tool_choice or {"type": "auto"}
 
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError(
-                "ANTHROPIC_API_KEY not found in environment variables or .env file."
-            )
+        # Claude-authored (2026-10-16): the shared key, with the same failure handling as users' keys
+        # (src/personalized/api_errors.py). A missing key raises ApiKeyUnusable, which is a ValueError as before.
+        api_key = shared_api_key("Anthropic")
+        self.key_error: Optional[ApiKeyUnusable] = None  # First key failure; later tickers are skipped
 
         self.client = AsyncAnthropic(api_key=api_key)
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
@@ -179,6 +179,8 @@ class ParallelStockEvaluator:
         self, symbol: str, sanitized_payload: Dict[str, Any]
     ) -> Optional[StockEvaluationBreakdown]:
         async with self.semaphore:
+            if self.key_error is not None:  # Same key, same failure: don't send the remaining tickers
+                return None
             sanitized_prompt_data = json.dumps(
                 sanitized_payload, indent=2, default=str
             )
@@ -205,6 +207,7 @@ class ParallelStockEvaluator:
                     )
                 else:
                     response = await self.client.messages.create(**request)
+                record_anthropic_response(None, "universal", response)  # Claude-authored (2026-10-16): shared-key cost
 
                 if response.stop_reason == "refusal":
                     category = getattr(response.stop_details, "category", None)
@@ -242,7 +245,12 @@ class ParallelStockEvaluator:
                 # rejects them), so an out-of-range score is caught here and the ticker is skipped.
                 logger.error(f"[{symbol}] Sub-scores failed validation (e.g. outside rubric range): {e}")
             except APIError as e:
-                logger.error(f"[{symbol}] Anthropic API Error: {e.message}")
+                key_error = anthropic_key_error(e, None)
+                if key_error is None:
+                    logger.error(f"[{symbol}] Anthropic API Error: {e.message}")
+                elif self.key_error is None:
+                    self.key_error = key_error
+                    logger.error(f"[{symbol}] {key_error}")
             except Exception as e:
                 logger.error(
                     f"[{symbol}] Unexpected Error during evaluation: {str(e)}"
@@ -288,7 +296,16 @@ def run_llm_evaluation(
     sanitized_inputs: Dict[str, Dict[str, Any]],
     config: Optional[Dict[str, Any]] = None,
     tool_spec: Optional[Dict[str, Any]] = None,
+    issues: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
-    """Synchronous entry point to run the async Claude scoring pipeline."""
+    """
+    Synchronous entry point to run the async Claude scoring pipeline.
+
+    Claude-authored (2026-10-16): a shared-key failure (invalid, expired, out of credits, spend limit) stops the
+    remaining requests and is appended to `issues` (when given) as {"source", "reason", "message"}.
+    """
     evaluator = ParallelStockEvaluator(config=config, tool_spec=tool_spec)
-    return asyncio.run(evaluator.evaluate_candidates(sanitized_inputs))
+    evaluations = asyncio.run(evaluator.evaluate_candidates(sanitized_inputs))
+    if evaluator.key_error is not None and issues is not None:
+        issues.append(shared_key_issue(evaluator.key_error))
+    return evaluations

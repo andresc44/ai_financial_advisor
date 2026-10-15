@@ -1,4 +1,13 @@
 #File to consolidate universal content for the daily digest, including market data, news, and recommendations, into a single structured dictionary for easy access and display.
+"""
+Claude-authored changes (Claude Opus 5.5 via Claude Code), at Andres's request:
+- 2026-10-15: market-data fetching takes shared_locks.MARKET_DATA_LOCK; each pick is logged to the track record.
+- 2026-10-16: no more silent failures. The shared Anthropic key is checked (free) before any data is fetched;
+  shared-key failures during scoring, Finnhub / Twelve Data rate limits and rejected keys, and sources missing for
+  too many tickers (UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT) are returned as `universal_issues` and sent to the
+  admins. When recommendations can't be produced (no Anthropic or Finnhub key), the digest still goes out with
+  empty picks and the issue, instead of sys.exit aborting every user's digest.
+"""
 from pathlib import Path
 
 import sys
@@ -7,23 +16,54 @@ import json
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-    
+
 from src.parameters import params_dict
+from src.personalized.api_errors import ApiKeyUnusable, shared_api_key, shared_key_issue, verify_anthropic_key
 from src.universal.recommendations.ticker_fetcher import Tickers
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 from src.universal.recommendations.scorer import select_top_candidates
 from src.universal.recommendations.enriched_rec import enrich_recommendations
 from src.universal.recommendations.filter_tickers import DataFetcher
-from src.universal.market_news import fetch_live_macro_stories
+from src.universal.recommendations.data_source_guard import missing_data_issues
+from src.universal.market_news import get_macro_stories
 from src.universal.macro_indicators import get_market_dashboard_data
 from src.shared_locks import MARKET_DATA_LOCK
+from src.telegram_alert.notices import alert_admins
 from src.track_record import log_universal
+
+NO_RECOMMENDATIONS = {"top_long_term": [], "top_swing": []}
+
+
+def _report_issues(issues: list[dict]) -> None:
+    """Sends each universal-content problem to the admins (once per cooldown per problem)."""
+    for issue in issues:
+        alert_admins(f"universal content: {issue['source']} {issue['reason']}", issue["message"])
+
+
+def _without_recommendations(issues: list[dict]) -> dict:
+    """Universal content with no picks, when they can't be produced; the digest still goes out with the issue."""
+    _report_issues(issues)
+    return {
+        "recommendations": enrich_recommendations(NO_RECOMMENDATIONS, {}),
+        "market_data": {},
+        "headline_news": {},
+        "universal_issues": issues,
+    }
+
 
 def get_universal_content():
     """
     Returns a dictionary containing universal content for the daily digest.
     This content is not user-specific and can be shared across all users.
     """
+    issues: list[dict] = []
+    # Claude-authored (2026-10-16): a missing, invalid, expired, or unpermitted shared Anthropic key is found here,
+    # for free, before the screener and market data are fetched for scoring that couldn't run
+    try:
+        verify_anthropic_key(shared_api_key("Anthropic"), None)
+    except ApiKeyUnusable as e:
+        return _without_recommendations([shared_key_issue(e)])
+
     payload = {}
     ticker_client = Tickers()
     file_path = ticker_client.fetch_ticker_data(
@@ -49,15 +89,16 @@ def get_universal_content():
         except ValueError as e:
             print(f"Initialization Failed: {e}")
             print("Verify that your .env file exists and contains FINNHUB_API_KEY.")
-            sys.exit(1)
+            # Claude-authored (2026-10-16): reported instead of sys.exit(1), which aborted every user's digest
+            return _without_recommendations([{"source": "Finnhub", "reason": "missing_key", "message": str(e)}])
 
-    
+
         #Fetching all tickers and testing pipeline
         print(f"Testing filter_all() for {fetcher.all_tickers} ---")
         filtered_tickers = fetcher.filter_all()
         llm_packets = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
         sanitized_LLM_inputs = {}
-    
+
         for ticker in llm_packets.keys():
             raw_data = llm_packets[ticker]
             sanitized_payload = sanitize_ticker_payload(ticker, raw_data)
@@ -67,25 +108,38 @@ def get_universal_content():
             # with open(output_filename, "w", encoding="utf-8") as f:
             #     json.dump(sanitized_payload, f, indent=4, default=str)
 
-            # print(f"✓ Saved output to {output_filename}")        
+            # print(f"✓ Saved output to {output_filename}")
         print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
-    
+
+    # Claude-authored (2026-10-16): rate limits / rejected keys seen while fetching, and sources missing for too many
+    # tickers, which used to only print [DEBUG] lines
+    issues += fetcher.data_source_issues.items
+    issues += missing_data_issues(llm_packets, params_dict["UNIVERSAL_DATA_QUALITY"]["MAX_MISSING_PCT"])
+
     generated_recommendations = select_top_candidates(
         sanitized_inputs=sanitized_LLM_inputs,
         long_n=params_dict["LONG_TERM_N_AMOUNT"],
-        swing_n=params_dict["SWING_TERM_N_AMOUNT"]
+        swing_n=params_dict["SWING_TERM_N_AMOUNT"],
+        issues=issues,  # Claude-authored (2026-10-16): a shared Anthropic key failure during scoring
     )
     print(f"Generated_recommendations:\n{generated_recommendations}")
     log_universal(generated_recommendations, sanitized_LLM_inputs)  # Claude-authored (2026-10-15): track record
     recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)
-    
+
     # IMPORTANT but not required for recommendations development
-    # headline_news = fetch_live_macro_stories()
+    # To enable (Claude-authored 2026-10-16): get_macro_stories() returns (stories, issues) and never raises; add the
+    # issues to this run's, e.g.  headline_news, news_issues = get_macro_stories(); issues += news_issues
     headline_news = {}
     # market_data = get_market_dashboard_data()
     market_data = {}
-    
-    return {"recommendations": recs_w_data, "market_data": market_data, "headline_news": headline_news}
+
+    _report_issues(issues)
+    return {
+        "recommendations": recs_w_data,
+        "market_data": market_data,
+        "headline_news": headline_news,
+        "universal_issues": issues,  # Claude-authored (2026-10-16): why picks may be missing or based on partial data
+    }
 
 if __name__ == "__main__":
     universal_content = get_universal_content()

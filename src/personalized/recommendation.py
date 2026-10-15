@@ -51,6 +51,7 @@ from src.personalized.LLM_hold_instr import (
 )
 from src.personalized.user_settings import get_anthropic_api_key
 from src.track_record import log_personal
+from src.usage_tracking import record_anthropic_response
 
 logging.basicConfig(
     level=logging.INFO,
@@ -115,6 +116,7 @@ class ParallelHoldingEvaluator:
         config: Optional[Dict[str, Any]] = None,
         market_session: Optional[str] = None,
         user_name: Optional[str] = None,
+        source: str = "watchdog",
     ):
         # Reuse the shared model settings; prompts come only from LLM_hold_instr.py, never from CLAUDE_CONFIG.
         # `config` (e.g. a user's model/effort from user_settings.get_claude_overrides) is applied last.
@@ -132,6 +134,7 @@ class ParallelHoldingEvaluator:
 
         self.client = AsyncAnthropic(api_key=api_key)  # The evaluated user's own key (user_settings.get_anthropic_api_key)
         self.user_name = user_name
+        self.source = source  # "digest" or "watchdog", for the usage ledger (src/usage_tracking.py)
         self.key_error: Optional[ApiKeyUnusable] = None  # First key failure; later requests are skipped
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
         self.evaluated_at = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z")
@@ -170,6 +173,8 @@ class ParallelHoldingEvaluator:
 
             try:
                 response = await self._create_message(user_prompt)
+                # Claude-authored (2026-10-16): every answered request is billed, refusals and truncations included
+                record_anthropic_response(self.user_name, self.source, response)
 
                 if response.stop_reason == "refusal":
                     category = getattr(response.stop_details, "category", None)
@@ -250,13 +255,14 @@ def run_holding_evaluation(
     config: Optional[Dict[str, Any]] = None,
     market_session: Optional[str] = None,
     user_name: Optional[str] = None,
+    source: str = "watchdog",
 ) -> tuple[Dict[str, Dict[str, Any]], Optional[ApiKeyUnusable]]:
     """
     Synchronous entry point to run the async Claude holding evaluation pipeline. Returns the evaluations that
     succeeded and the key error that stopped the run, if any (evaluations finished before it are kept).
     """
     evaluator = ParallelHoldingEvaluator(
-        api_key=api_key, config=config, market_session=market_session, user_name=user_name
+        api_key=api_key, config=config, market_session=market_session, user_name=user_name, source=source
     )
     evaluations = asyncio.run(evaluator.evaluate_holdings(holding_payloads))
     return evaluations, evaluator.key_error
@@ -350,6 +356,7 @@ def add_recommendations(
                 config=getattr(self, "claude_overrides", None),
                 market_session=market_phase(now),
                 user_name=user_name,
+                source="digest" if reuse_recent_evaluations else "watchdog",  # Only the digest reuses evaluations
             )
         except ApiKeyUnusable as e:
             self.claude_key_error = e

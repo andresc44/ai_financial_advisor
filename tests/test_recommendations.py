@@ -82,7 +82,7 @@ def state_file(tmp_path, monkeypatch):
 def fake_claude(monkeypatch):
     sent = []
 
-    def evaluate(payloads, api_key, config=None, market_session=None, user_name=None):
+    def evaluate(payloads, api_key, config=None, market_session=None, user_name=None, source=None):
         sent.append(sorted(payloads))
         return {s: {"recommendation": "risk_alert", "sentiment": "Bearish", "rationale": "new"} for s in payloads}, None
 

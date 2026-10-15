@@ -157,6 +157,27 @@ def test_news_runs_while_claude_evaluates(personal_env):
     assert all(len(h["news_bullets"]) == 1 for h in content["holdings"])
 
 
+def test_payload_reports_only_this_users_api_spend(personal_env, monkeypatch):
+    import src.usage_tracking as usage
+
+    def call(user):
+        return usage.record_anthropic_response(user, "digest", SimpleNamespace(model="claude-opus-5-5", usage=SimpleNamespace(
+            input_tokens=1_000_000, output_tokens=0, cache_creation_input_tokens=0, cache_read_input_tokens=0, iterations=None)))
+
+    real_news = pc.fetch_symbol_news
+
+    def news_and_spend(companies, api_key, user_name=None):
+        call(user_name)
+        call("SomeoneElse")
+        return real_news(companies, api_key, user_name)
+
+    monkeypatch.setattr(pc, "fetch_symbol_news", news_and_spend)
+    spend = pc.get_personal_content("TestUser")["api_usage"]
+    assert spend["currency"] == "USD"
+    assert spend["this_digest"]["anthropic"]["calls"] == 1
+    assert spend["this_digest"]["total_cost_usd"] == pytest.approx(4.0)
+
+
 def test_missing_env_value_fails_before_any_api_work(personal_env):
     os.environ.pop("TESTUSER_EMAIL")
     with pytest.raises(ValueError):
