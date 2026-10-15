@@ -58,7 +58,7 @@ GROUNDING RULES:
 - This is a review, not a hunt for problems. If the portfolio is balanced or nothing stands out, say so plainly in a 'NOTE' instead of stretching for issues.
 - Return at most the requested number of notes. Fewer, stronger notes are better than padding with weak or repetitive points.
 - null means the value was unavailable: never treat it as zero or as a problem in itself.
-- When more than one currency is listed, totals and weights add them without conversion, so treat them as approximate.
+- All money amounts and totals are in USD; holdings listed in other currencies (see `currencies`) were converted at today's exchange rate.
 - `daily_pnl_pct` is the move over the trading session dated `daily_pnl_session`. Before the market opens that is the previous trading day, so describe it by that date, not as "today".
 
 FORMATTING REQUIREMENTS:
@@ -100,8 +100,11 @@ def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float
     daily_pnl = _total(holdings, "daily_pnl")
     # Claude-authored (2026-10-15): value at the previous close. Daily P/L stops at the session close while
     # market_value uses the latest broker price, so market_value - daily_pnl is only exact in regular hours.
+    # 2026-10-15: last_close_usd, because market_value and daily_pnl are in USD (last_close is in the listing currency)
     prior_value = sum(
-        (_clean_float(h.get("last_close")) or 0.0) * (_clean_float(h.get("shares")) or 0.0) for h in holdings
+        (_clean_float(h.get("last_close_usd")) or _clean_float(h.get("last_close")) or 0.0)
+        * (_clean_float(h.get("shares")) or 0.0)
+        for h in holdings
     )
     if prior_value <= 0:  # last_close / shares not in the payload
         prior_value = total_value - daily_pnl

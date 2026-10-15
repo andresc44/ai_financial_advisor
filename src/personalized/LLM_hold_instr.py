@@ -51,6 +51,7 @@ HOW THE OUTPUT IS USED:
 
 DATA PARSING & METRIC GUIDELINES:
 - `positions` lists every lot of this stock across the user's accounts. `unrealized_pnl_pct`, `daily_pnl_pct`, `natr` (14-day ATR as a % of price), and `annualized_vol` are already in percent (e.g. 12.5 means 12.5%). `rsi` is the 14-day RSI from daily closes.
+- Money amounts (`market_value`, `total_cost_basis`, `unrealized_pnl`, `daily_pnl`) are in USD, converted at today's rate (`fx_rate_to_usd`), so unrealized P/L excludes currency moves since purchase. Per-share prices (`current_price`, `avg_cost_basis`, `last_close`, `session_price`) are in the listing's `currency`, the same currency as `market_context`.
 - `daily_pnl` / `daily_pnl_pct` cover one regular trading session, dated `daily_pnl_session`: today's session (live) once the market has opened, otherwise the last completed session (before the open, overnight, weekends, and holidays it is the previous trading day's move, not today's). Extended-hours moves are not included; see `session_price` for those.
 - `portfolio_weight_pct` is the stock's share of total portfolio market value (approximate; ignores currency differences).
 - `market_context` uses the same structure as new-stock analysis: profile, price action, valuation and fundamentals, analyst sentiment and insider activity, upcoming earnings and past surprises, quarterly financial trends, technical indicator series (daily RSI 14, EMA 9/21, Bollinger Bands 20, Parabolic SAR; weekly 52-period beta), and recent headlines. Time series are ordered most recent first.

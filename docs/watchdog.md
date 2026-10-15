@@ -173,6 +173,7 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Market data for holdings (`data/market_context_cache.json`) | Quote and headlines are re-fetched when older than `FRESH_CONTEXT_MAX_AGE_MINUTES` (30). Fundamentals and daily indicators are re-fetched after each market open and close; the close only counts from 16:01 ET, hence the digest at close + 10 minutes. |
 | Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
 | Gemini news and portfolio review | Fresh every run (no cache). |
+| Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies for display. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list, which is downloaded once per morning and once per afternoon. |
 
 To test without spending anything:

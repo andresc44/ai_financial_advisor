@@ -28,6 +28,12 @@ from src.personalized.recommendation import add_recommendations
 from src.personalized.user_settings import get_claude_overrides
 from src.personalized.digest_fields import add_digest_fields, portfolio_beta
 from src.market_session import exchange_calendar_code, latest_regular_session
+from src.fx_rates import normalize_currency, usd_rates
+
+# Claude-authored (2026-10-15): convert_to_usd converts these money amounts to USD in place ...
+USD_MONEY_COLUMNS = ("market_value", "total_cost_basis", "unrealized_pnl", "daily_pnl")
+# ... and adds a <column>_usd display copy of these per-share prices, which otherwise stay in the listing's currency
+USD_PER_SHARE_COLUMNS = ("current_price", "avg_cost_basis", "last_close")
 
 
 def portfolio_weights(holdings: pd.DataFrame) -> pd.Series:
@@ -241,7 +247,7 @@ class PortfolioFetcher:
 
         records_df = pd.DataFrame(records)
         df_pnl = self.calculate_daily_pnl(records_df)
-        return self.add_technical_indicators(df_pnl)
+        return self.convert_to_usd(self.add_technical_indicators(df_pnl))  # Claude-authored (2026-10-15)
 
     def _fetch_yfinance_daily_closes(self, symbols: list) -> dict:
         """
@@ -342,10 +348,41 @@ class PortfolioFetcher:
         )
 
         print("\n================ DAILY P&L SUMMARY ================")
-        print(f"Total Portfolio Daily P&L ($): ${total_daily_pnl:+,.2f}")
+        print(f"Total Portfolio Daily P&L (listing currencies, before USD conversion): {total_daily_pnl:+,.2f}")
         print(f"Total Portfolio Daily P&L (%): {total_daily_pnl_pct:+.2f}%")
         print("====================================================\n")
 
+        return df
+
+    def convert_to_usd(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Claude-authored (2026-10-15): reports money in USD for the reader, whatever currency a holding trades in.
+        - `currency` becomes an ISO code (SnapTrade sends a dict; missing values follow the listing's suffix).
+        - market_value, total_cost_basis, unrealized_pnl, and daily_pnl are converted to USD in place, so totals,
+          portfolio weights, beta, and the portfolio review add like with like.
+        - current_price_usd, avg_cost_basis_usd, and last_close_usd are added for display. The per-share prices
+          themselves stay in the listing's currency, because they are compared with Yahoo / Twelve Data prices and
+          indicators and with prices the watchdog recorded, all of which are in the listing's currency.
+        - Everything uses today's rate (fx_rate_to_usd), so unrealized P/L excludes currency moves since purchase.
+          Percentages don't change.
+        """
+        if df is None or df.empty:
+            return df
+        df = df.copy()
+        currencies = df["currency"] if "currency" in df.columns else [None] * len(df)
+        df["currency"] = [normalize_currency(code, symbol) for code, symbol in zip(currencies, df["symbol"])]
+        rates = usd_rates(df["currency"].unique())
+        df["fx_rate_to_usd"] = pd.to_numeric(df["currency"].map(rates), errors="coerce")
+
+        known = df["fx_rate_to_usd"].notna()
+        for column in USD_MONEY_COLUMNS:
+            if column in df.columns:
+                df.loc[known, column] = pd.to_numeric(df.loc[known, column], errors="coerce") * df.loc[known, "fx_rate_to_usd"]
+        for column in USD_PER_SHARE_COLUMNS:
+            if column in df.columns:
+                df[f"{column}_usd"] = pd.to_numeric(df[column], errors="coerce") * df["fx_rate_to_usd"]
+        if not known.all():
+            print(f"[ERROR] Left unconverted (no rate): {sorted(df.loc[~known, 'currency'].unique())}")
         return df
 
     def add_technical_indicators(
@@ -530,6 +567,7 @@ class PortfolioFetcher:
                     "current_price": float(price),
                     "description": description,
                     "exchange": exchange,
+                    "currency": info.get("currency"),  # Claude-authored (2026-10-15): e.g. "CAD" for TSX listings
                 }
             except Exception as e:
                 print(
@@ -616,7 +654,13 @@ class PortfolioFetcher:
         df["account_name"] = raw_df.get("account_name", "Google Sheets Account")
         df["account_id"] = "SHEETS_ACC"
         df["asset_kind"] = "EQUITY"
-        df["currency"] = raw_df.get("currency", "USD")
+        # Claude-authored (2026-10-15): the sheet's currency column if it has one, otherwise Yahoo's currency for the
+        # symbol (it used to default to "USD", which was wrong for TSX listings); convert_to_usd fills any gaps.
+        sheet_currency = raw_df["currency"] if "currency" in raw_df.columns else [None] * len(raw_df)
+        df["currency"] = [
+            code if isinstance(code, str) and code.strip() else yf_meta.get(sym, {}).get("currency")
+            for sym, code in zip(df["symbol"], sheet_currency)
+        ]
         df["instrument_id"] = ""
         df["figi_code"] = ""
         df["figi_share_class"] = ""
@@ -636,7 +680,7 @@ class PortfolioFetcher:
         )
 
         df_pnl = self.calculate_daily_pnl(df)
-        return self.add_technical_indicators(df_pnl)
+        return self.convert_to_usd(self.add_technical_indicators(df_pnl))  # Claude-authored (2026-10-15)
 
     # ------------------------------------------------------------------------------------------
     # Claude-authored (2026-10-13): session-aware prices for the watchdog.
@@ -736,7 +780,11 @@ class PortfolioFetcher:
                 "daily_pnl_pct",
                 "daily_pnl_session",  # Date the daily P/L covers (pre-market: the previous trading day)
                 "portfolio_weight_pct",  # Stock's share of the whole portfolio's market value
-                "last_close",  # Close before that session; previous portfolio value = sum(last_close x shares)
+                "last_close",  # Close before that session, in the listing's currency
+                "last_close_usd",  # Same in USD; previous portfolio value = sum(last_close_usd x shares)
+                "current_price_usd",  # Per-share prices in USD for display (money columns above are already USD)
+                "avg_cost_basis_usd",
+                "fx_rate_to_usd",  # USD per unit of `currency` used for the conversion
                 "unrealized_pnl",
                 "unrealized_pnl_pct",
                 "recommendation",

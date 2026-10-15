@@ -61,6 +61,11 @@ logger = logging.getLogger("Finnbot.HoldingEvaluator")
 EXCLUDED_POSITION_COLUMNS = {
     "market_context",
     "portfolio_weight_pct",  # Sent once per stock at the payload's top level
+    # Claude-authored (2026-10-15): USD display copies of per-share prices; Claude gets the listing-currency prices
+    # (which match market_context) plus fx_rate_to_usd
+    "current_price_usd",
+    "avg_cost_basis_usd",
+    "last_close_usd",
     "account_name",
     "exchange",
     "account_id",
