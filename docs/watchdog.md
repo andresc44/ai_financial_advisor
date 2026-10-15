@@ -155,14 +155,13 @@ From the project root on the VM. The watchdog and the digest share one `flock` l
 
 ```cron
 45 * * * * cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/telegram_alert/hourly_watchdog.py >> watchdog.log 2>&1
-# The digest cron line should take the same lock once digest_payload.py is runnable:
-# Post-market at 16:10, not 16:00: cached daily data only counts as stale after 16:01 (see "Fresh data" below),
-# and the extra minutes let data providers finalize the day's closing bar.
-# 0 7 * * 1-5 cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/digest/digest_payload.py >> digest.log 2>&1
-# 10 16 * * 1-5 cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/digest/digest_payload.py >> digest.log 2>&1
+# Digest: every hour at :10, in any VM timezone. src/digest/digest_schedule.py decides from the exchange calendar
+# whether the Pre-Market (07:00 ET until the open) or Post-Market (close + 10 min, so 16:10 ET) digest is due, skips
+# days no configured exchange trades, and remembers who already received it. Daylight saving needs no changes.
+10 * * * * cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/digest/digest_payload.py >> digest.log 2>&1
 ```
 
-Digest times are US Eastern; adjust them if the VM's clock isn't on Eastern time.
+Check what the digest would do at any moment without sending anything: `venv/bin/python src/digest/digest_payload.py --check [--now 2026-10-15T16:10:00-04:00]`.
 
 ### Fresh data in each digest
 
@@ -171,7 +170,7 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Part | Freshness |
 |---|---|
 | Holdings, prices, daily P/L | Fetched every run. Daily P/L covers each stock's most recent regular session on its own exchange (`daily_pnl_session`): today's from the open (live, vs the previous close), otherwise the last completed session at its official close. So the 7:00 digest shows the previous trading day's move, and extended-hours prices never mix in. |
-| Market data for holdings (`data/market_context_cache.json`) | Quote and headlines are re-fetched when older than `FRESH_CONTEXT_MAX_AGE_MINUTES` (30). Fundamentals and daily indicators are re-fetched after each market open and close; the close only counts from 16:01 ET, hence the 16:10 digest. |
+| Market data for holdings (`data/market_context_cache.json`) | Quote and headlines are re-fetched when older than `FRESH_CONTEXT_MAX_AGE_MINUTES` (30). Fundamentals and daily indicators are re-fetched after each market open and close; the close only counts from 16:01 ET, hence the digest at close + 10 minutes. |
 | Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
 | Gemini news and portfolio review | Fresh every run (no cache). |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list, which is downloaded once per morning and once per afternoon. |

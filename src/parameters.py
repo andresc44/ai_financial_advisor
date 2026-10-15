@@ -293,6 +293,10 @@ params_dict = {
         "SYMBOL_NEWS_CONCURRENCY": 4,            # Gemini news requests in flight at once per user (each user has their own key)
         "MAX_PARALLEL_USERS": 4,                 # Users whose digest content is built at the same time (alongside the universal content)
         "REUSE_EVALUATION_MAX_AGE_MINUTES": 60,  # Reuse a watchdog evaluation this recent instead of calling Claude again (0 = off)
+        # Claude-authored (2026-10-15): when the digest is due (src/digest/digest_schedule.py). Cron runs it hourly at :10.
+        "PRE_MARKET_TIME_ET": "07:00",           # Pre-Market digest from this US Eastern time until the open
+        "POST_MARKET_DELAY_MINUTES": 10,         # Post-Market digest this long after the close (16:10 ET), so closing data is final
+        "POST_MARKET_SEND_WINDOW_MINUTES": 240,  # A missed Post-Market run is retried for this long after it was due
     },
     # Server-side refusal fallback (fallbacks="default") in both Claude evaluators: LLM_recommendation.py
     # (new-stock scoring) and src/personalized/recommendation.py (holdings). Only sent for the models listed below.

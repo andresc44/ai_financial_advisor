@@ -34,15 +34,18 @@ def get_digest_period(now: Optional[datetime] = None) -> str:
     return "Pre-Market" if abs(current_hour - 7) < abs(current_hour - 16) else "Post-Market"
 
 
-def determine_recipients(recipients):
+def determine_recipients(recipients, period: Optional[str] = None):
     """
     Checks the current Eastern time, determines if it's pre-market or post-market,
     and returns a list of users configured to receive a digest at this time.
-    """    
+
+    Claude-authored (2026-10-15): `period` ("Pre-Market" / "Post-Market") comes from digest_schedule.due_digest when
+    the digest is calendar-scheduled; without it, the current Eastern hour decides, as before.
+    """
     load_dotenv(dotenv_path=env_path, override=True)
     # Claude-authored (2026-10-13): the pre/post rule now lives only in get_digest_period, so the
     # recipient list and the email subject's Pre-Market / Post-Market label can never disagree.
-    is_pre_market = get_digest_period() == "Pre-Market"
+    is_pre_market = (period or get_digest_period()) == "Pre-Market"
 
     field = "Receive_Premarket_Digest" if is_pre_market else "Receive_Postmarket_Digest"
     send_digest_now = []
