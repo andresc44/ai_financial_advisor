@@ -1,0 +1,215 @@
+# Holdings watchdog and per-user model selection
+
+The watchdog re-evaluates each user's holdings on that user's own schedule and sends a Telegram alert when Claude recommends `urgent_sell`. Each user also picks which Claude model and effort level evaluates their holdings.
+
+> **Authorship:** this feature was designed with and written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-13, at Andres's request. [Authorship](#authorship) lists every file Claude wrote or changed and why. In code, Claude's work is marked with an `Authorship:` docstring (new files) or a `Claude-authored (2026-10-13)` comment (changes to existing files), so `grep -rn "Claude-authored\|Authorship:" src/` finds all of it.
+
+## How one run works
+
+Cron starts `src/telegram_alert/hourly_watchdog.py` every hour at :45. For each user in `ACTIVE_USERS` (`src/parameters.py`, the same list the digest uses) with a holdings source (`SNAPTRADE` or `SHEETS`) and a Telegram chat ID, it checks the gates below in order, cheapest first, and stops at the first one that says skip:
+
+1. **Watchdog on?** `watchdog_interval_hours` is above 0.
+2. **In session?** The time falls inside the user's session (`regular`, `extended` or `24_7`), using real exchange calendars, so holidays and 13:00 half-days are handled.
+3. **Due or tripwire?** The user is *due* when the current N-hour block differs from the block of their last successful scheduled check. If they aren't due and the tripwire is off, nothing happens this hour.
+4. **Cheap snapshot.** Holdings, P&L, RSI and NATR, plus a price suited to the market phase (see [Prices outside regular hours](#prices-outside-regular-hours)). No Finnhub, Twelve Data or Claude calls. If the brokerage returns nothing, the run stops without marking the check as done, because an outage looks the same as an empty portfolio.
+5. **Choose stocks.** Only stocks that changed get a new evaluation (see [When Claude is called](#when-claude-is-called)). Every other stock keeps its last recommendation.
+6. **Daily cap.** At most `MAX_CLAUDE_CALLS_PER_USER_DAY` watchdog evaluations per user per day. When the cap binds, the stocks whose last recommendation was most severe go first.
+7. **Evaluate.** Market context (from the daily cache) plus Claude, run only for the chosen stocks.
+8. **Alert.** One Telegram message covers every held stock whose latest recommendation is an alert level and isn't in cooldown.
+
+Errors are contained per user: one user's failure is printed with a traceback, and the other users still run.
+
+### Parallel users (watchdog and digest)
+
+Both the watchdog and the digest process several users at once (`MAX_PARALLEL_USERS`), and the digest also builds the universal content at the same time. Inside one user's digest, the Gemini news (several stocks at a time) runs while market data and Claude run, and the portfolio review waits for both. What keeps this safe:
+
+- **Shared data keys:** Finnhub and Twelve Data use one key each, so fetching from them is serialized by one lock (`src/shared_locks.py`). The request rate stays the same as a single-user run, and a user who waited finds symbols another user just fetched in the market-context cache.
+- **Shared files:** `data/watchdog_state.json` updates take an in-process lock, and the market-context cache is only read and written under the lock above. The crontab `flock` still keeps the watchdog and digest processes apart.
+- **Per-user keys:** Claude, Gemini, SnapTrade, and Telegram calls use each user's own credentials, so they run fully in parallel.
+- Log lines from different users interleave; watchdog lines start with `[user]`.
+
+## Settings
+
+### Global (`src/parameters.py`)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ACTIVE_USERS` | `["Andres", "Mauricio", "Steven"]` | Users the digest **and** the watchdog run for. Each needs a profile in `user_profiles.py`; unknown names are skipped with a warning. Their `.env` settings still decide which digests they get and whether the watchdog runs for them. |
+| `WATCHDOG.SESSION` | `"regular"` | Default session for all users. |
+| `WATCHDOG.SESSIONS` | see file | `pre_open_minutes` / `post_close_minutes` are measured from each day's actual open and close. `extended` = 330 / 240, which is 4:00–20:00 ET on a full day. Set `pre_open_minutes` to 150 to start at 7:00. |
+| `WATCHDOG.EXCHANGE_CALENDARS` | `["XNYS", "XTSE"]` | A day counts as a trading day if **any** listed exchange trades, so US Thanksgiving is a trading day because the TSX is open. |
+| `WATCHDOG.DEFAULT_INTERVAL_HOURS` | `4` | Hours between scheduled checks. |
+| `WATCHDOG.TRIPWIRE_DEFAULT` | `True` | Hourly price check between scheduled checks. |
+| `WATCHDOG.REEVAL_NATR_MULTIPLE` | `1.0` | On a scheduled check, re-evaluate a stock that moved at least this many NATRs since its last evaluation. |
+| `WATCHDOG.TRIPWIRE_NATR_MULTIPLE` | `2.0` | Between scheduled checks, force an evaluation at this many NATRs. |
+| `WATCHDOG.MAX_EVALUATION_AGE_HOURS` | `24` | On a scheduled check, re-evaluate anything older than this. Also the maximum age of an evaluation that can still trigger an alert. |
+| `WATCHDOG.EARNINGS_WINDOW_DAYS` | `7` | On a scheduled check, re-evaluate when earnings fall within this many days. |
+| `WATCHDOG.ALERT_RECOMMENDATIONS` | `["urgent_sell"]` | Recommendations that send Telegram alerts. |
+| `WATCHDOG.ALERT_COOLDOWN_HOURS` | `24` | No repeat alert for the same (user, symbol, recommendation) within this window. |
+| `WATCHDOG.MAX_CLAUDE_CALLS_PER_USER_DAY` | `40` | Cap on watchdog Claude calls per user per market day. Digest calls don't count. |
+| `WATCHDOG.FRESH_CONTEXT_MAX_AGE_MINUTES` | `30` | Cached quote and news older than this are re-fetched. |
+| `WATCHDOG.MAX_PARALLEL_USERS` | `4` | Users checked at the same time each hour. |
+| `DIGEST.MAX_PARALLEL_USERS` | `4` | Users whose digest content is built at the same time, alongside the universal content. |
+| `DIGEST.SYMBOL_NEWS_CONCURRENCY` | `4` | Gemini news requests in flight at once per user. Lower it if a free-tier Gemini key keeps hitting per-minute limits. |
+| `DIGEST.REUSE_EVALUATION_MAX_AGE_MINUTES` | `60` | The digest reuses an evaluation this recent (if the stock moved less than `REEVAL_NATR_MULTIPLE` NATRs since) instead of calling Claude again. `0` turns reuse off. |
+| `ALLOWED_CLAUDE_MODELS` | see file | Models a user may pick, each with the effort levels it accepts. |
+| `CLAUDE_REFUSAL_FALLBACK` | `True` | On models that support it, a request refused by a safety classifier is re-run server-side on a recommended model. |
+
+### Per user (`.env`, mapped through `src/personalized/user_profiles.py`)
+
+The profile maps each setting to an `.env` key, the same pattern as the existing keys. An unset value uses the global default. An invalid value prints a warning and uses the default, so it never crashes the run.
+
+| Profile key | `.env` example | Allowed values |
+|---|---|---|
+| `watchdog_interval_hours` | `ANDRES_WATCHDOG_INTERVAL_HOURS=4` | `0` (off) to `168` |
+| `watchdog_session` | `ANDRES_WATCHDOG_SESSION=extended` | `regular`, `extended`, `24_7` |
+| `watchdog_tripwire` | `ANDRES_WATCHDOG_TRIPWIRE=true` | `true` / `false` (also `yes`/`no`, `1`/`0`) |
+| `holdings_claude_model` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-opus-5` | any key of `ALLOWED_CLAUDE_MODELS` |
+| `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_EFFORT=high` | `low` `medium` `high` `xhigh` `max`, if the model supports it |
+| `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic API key (required) |
+| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the digest's per-holding news (required for news) |
+
+If the chosen model doesn't support the effort, the user's effort is ignored and the global `CLAUDE_CONFIG.effort` is used. If the model doesn't support that either, effort becomes `high`, which every allowed model supports. The model and effort apply wherever holdings are evaluated: watchdog runs and the digest.
+
+The API keys are the only settings with no default: they never fall back to the shared `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` used for the universal content. If a user's Anthropic key is unset, their holdings get no recommendation; if their Gemini key is unset, their holding cards get no news bullets. Either way an `[ERROR]` line is printed and other users are unaffected.
+
+#### When a key stops working (`src/personalized/api_errors.py`)
+
+Missing, invalid, revoked, expired, unpermitted, out-of-credit, spend-limited, and quota-exhausted keys are expected situations, not crashes:
+
+| Where | What happens |
+|---|---|
+| Watchdog | Before any Finnhub / Twelve Data / Claude spend, the Anthropic key gets a free check (lists one model). A missing, invalid, expired, or unpermitted key stops there. An empty credit balance or a spend limit is only detectable on the first Claude request; the remaining requests are then skipped. Only evaluations that actually ran count toward `MAX_CLAUDE_CALLS_PER_USER_DAY`, and the scheduled check is not marked done, so it is retried next hour. The user gets one Telegram notice per `ALERT_COOLDOWN_HOURS` saying what to fix. |
+| Digest | The same Claude handling (market data is still fetched, because the holding cards use it). For Gemini, the per-stock news loop stops at the first key failure (keeping news already fetched), and the portfolio review is skipped without a request. The payload's `api_key_issues` list says which key failed and why. |
+| Gemini retries | Only timeouts, connection errors, per-minute 429s (honoring the API's retry delay), and 5xx are retried, up to 4 attempts. Key, billing, daily-quota, and other 4xx errors fail immediately. A 429 that survives the retries stops the news loop for that run but still lets the review try. |
+
+## Schedules
+
+**Regular and extended:** blocks are counted from the session start and restart each trading day. **24_7:** blocks are counted continuously in UTC, so daylight-saving changes never shift them, and intervals like 5 or 48 hours stay evenly spaced. Changing a user's interval or session makes them due immediately.
+
+Check times with cron at :45 ET on a full trading day:
+
+| Interval | `regular` (9:30–16:00) | `extended` (4:00–20:00) |
+|---|---|---|
+| 1 | 9:45, 10:45 … 15:45 (7 checks) | 4:45 … 19:45 (16 checks) |
+| 2 | 9:45, 11:45, 13:45, 15:45 | 4:45, 6:45 … 18:45 |
+| 4 | 9:45, 13:45 | 4:45, 8:45, 12:45, 16:45 |
+| ≥ session length | 9:45 (once a day) | 4:45 (once a day) |
+
+With `24_7` and an interval of 4, blocks start at 00/04/08/12/16/20 UTC, every day including weekends.
+
+## When Claude is called
+
+**On a scheduled (due) check**, a stock is evaluated if any of these is true:
+- it has never been evaluated;
+- its last evaluation is older than `MAX_EVALUATION_AGE_HOURS`;
+- it moved at least `REEVAL_NATR_MULTIPLE` × NATR since its last evaluation;
+- earnings are within `EARNINGS_WINDOW_DAYS`;
+- **24_7 only**, while the market is overnight or closed: Finnhub has headlines newer than the last evaluation (one Finnhub call per stock).
+
+**On any run with the tripwire on**, a stock is evaluated if:
+- it moved at least `TRIPWIRE_NATR_MULTIPLE` × NATR; or
+- its price fell below the SAR stop recorded at its last evaluation.
+
+NATR is the stock's typical daily move as a % of price, so the thresholds adapt to each stock's volatility. Stocks with no NATR (no price history) can still be re-evaluated through the age and earnings triggers.
+
+A scheduled check where nothing changed evaluates nothing. That's intended, and it's what keeps costs bounded.
+
+## Prices outside regular hours
+
+| Market phase | Price used (`session_price`) |
+|---|---|
+| `pre_market`, `after_hours` | Latest extended-hours trade from 1-minute yfinance bars (`prepost=True`), with a timestamp |
+| `regular`, `overnight`, `closed` | `current_price` from SnapTrade or Sheets |
+
+`session_price`, `session_price_as_of` and `session_price_age_minutes` are passed to Claude together with the `market_session`. The prompt (`src/personalized/LLM_hold_instr.py`) tells Claude that outside regular hours, `urgent_sell` means "act at the next trading opportunity", and that thin after-hours moves alone don't justify it.
+
+## Daily market-context cache
+
+`add_metrics_to_holdings` caches each stock's sanitized market context in `data/market_context_cache.json`, shared across users:
+- **Slow-changing sections** (fundamentals, quarterly series, insider data, earnings history, Twelve Data indicators) are re-fetched only after the most recent market open or close. In practice that means the first check of each trading day, plus once after the close.
+- **Price action and headlines** are refreshed when older than `FRESH_CONTEXT_MAX_AGE_MINUTES`.
+
+A full fetch costs about 9 Finnhub calls and 6 Twelve Data credits per stock. A refresh costs one Yahoo quote plus Yahoo and Finnhub news.
+
+## Alerts
+
+- **Content:** each alert line names the stock, the recommendation, and Claude's rationale, HTML-escaped because Telegram uses HTML formatting.
+- **Duplicate key:** duplicates are identified by **(user, symbol, recommendation)**. The old key was the whole holding row, whose prices change every hour, so the cooldown never matched.
+- **Logging:** a send is logged only after Telegram accepts it, so a failed send is retried on the next run.
+- **Which recommendations alert:** the latest *recorded* recommendation, not only this run's evaluations, so an `urgent_sell` from the morning digest also alerts. Recommendations older than `MAX_EVALUATION_AGE_HOURS` never alert.
+
+## Files written
+
+| File | Written by | Contents |
+|---|---|---|
+| `data/watchdog_state.json` | `holdings_state.py` (watchdog + digest) | Per user: last scheduled block, Claude calls today, and per stock the last evaluation (time, price, NATR, recommendation, rationale, SAR stop, next earnings date). Sold positions are dropped. |
+| `data/market_context_cache.json` | `add_metrics.py` | Shared daily market context per stock. |
+| `data/alerts_sent/telegram_alerts_timestamped.csv` | `hourly_watchdog.py` | Alert log used for the cooldown (kept 30 days). |
+
+The first two files are written atomically (temp file, then rename) and are gitignored.
+
+## Running it
+
+From the project root on the VM. The watchdog and the digest share one `flock` lock, so they never write the state file at the same time. `-w 900` waits up to 15 minutes for the lock instead of skipping the run.
+
+```cron
+45 * * * * cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/telegram_alert/hourly_watchdog.py >> watchdog.log 2>&1
+# The digest cron line should take the same lock once digest_payload.py is runnable:
+# Post-market at 16:10, not 16:00: cached daily data only counts as stale after 16:01 (see "Fresh data" below),
+# and the extra minutes let data providers finalize the day's closing bar.
+# 0 7 * * 1-5 cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/digest/digest_payload.py >> digest.log 2>&1
+# 10 16 * * 1-5 cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/digest/digest_payload.py >> digest.log 2>&1
+```
+
+Digest times are US Eastern; adjust them if the VM's clock isn't on Eastern time.
+
+### Fresh data in each digest
+
+The pre- and post-market digests on the same day are built independently; nothing from the morning digest is copied into the afternoon one:
+
+| Part | Freshness |
+|---|---|
+| Holdings, prices, daily P/L | Fetched every run. Daily P/L covers each stock's most recent regular session on its own exchange (`daily_pnl_session`): today's from the open (live, vs the previous close), otherwise the last completed session at its official close. So the 7:00 digest shows the previous trading day's move, and extended-hours prices never mix in. |
+| Market data for holdings (`data/market_context_cache.json`) | Quote and headlines are re-fetched when older than `FRESH_CONTEXT_MAX_AGE_MINUTES` (30). Fundamentals and daily indicators are re-fetched after each market open and close; the close only counts from 16:01 ET, hence the 16:10 digest. |
+| Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
+| Gemini news and portfolio review | Fresh every run (no cache). |
+| Universal content | Fresh every run, except the NASDAQ screener's ticker list, which is downloaded once per morning and once per afternoon. |
+
+To test without spending anything:
+
+```bash
+venv/bin/python src/telegram_alert/hourly_watchdog.py --dry-run
+venv/bin/python src/telegram_alert/hourly_watchdog.py --dry-run --now 2026-10-14T13:45:00-04:00
+```
+
+A dry run reads holdings and free price data and prints which users are due and which stocks would be evaluated, with reasons. It makes no Claude calls, sends no Telegram messages, and writes no files. `--now` only works together with `--dry-run`.
+
+New dependency: `exchange_calendars` (pinned in `requirements.txt`, together with the previously missing `anthropic` and their dependencies). Run `pip install -r requirements.txt` on the VM.
+
+## Known limitations
+
+- **TSX symbol formats.** Some brokerage symbols don't match Yahoo's format; for example `DLR.U.TO` (Yahoo uses `DLR-U.TO`). Those stocks get no price history, no NATR and no extended-hours price, so only the age and earnings triggers re-evaluate them.
+- **Sheets timestamp.** The Sheets source records `data_as_of` as naive local time. The price age is clipped at 0 rather than corrected.
+- **Session windows** must stay within one market-local day. The default offsets do.
+- **Digest recording.** Evaluations from the digest are recorded automatically through `add_recommendations`, but `src/digest/digest_payload.py` itself still needs its own fixes before it can run.
+- **New-stock scoring.** `src/universal/recommendations/LLM_recommendation.py` doesn't use per-user models; it's shared across users and uses `CLAUDE_CONFIG`. Like the holdings evaluator, it sends a strict tool schema with `tool_choice: auto` and refusal fallbacks, so `CLAUDE_CONFIG.model` must be one of `ALLOWED_CLAUDE_MODELS`.
+
+## Authorship
+
+Everything below was written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-13, at Andres's request, following a plan agreed in the same session.
+
+| File | What Claude wrote | Why |
+|---|---|---|
+| `src/market_session.py` (new) | Market phases, session windows, N-hour block ids, cache refresh boundary | Lets one hourly cron serve per-user intervals and sessions, with holidays, half-days and DST handled by exchange calendars. Pure functions of `now` so they can be tested at fixed times. |
+| `src/personalized/user_settings.py` (new) | Reads, validates and defaults per-user settings | One place that turns `.env` values into settings, so a typo can't crash the run or send an invalid API request. |
+| `src/personalized/holdings_state.py` (new) | `data/watchdog_state.json` storage | The memory needed to evaluate "only when needed", shared by the watchdog and the digest. |
+| `src/personalized/add_metrics.py` | Whole file: market context for holdings, plus the daily cache | Gives the sell-side LLM the same evidence as the buy-side LLM, and keeps API use bounded at higher check frequencies. |
+| `src/personalized/recommendation.py` | Whole file: Claude hold/trim/risk_alert/urgent_sell evaluation, per-user model and effort, session context, refusal fallbacks, state recording | Replaced placeholder rules that referenced non-existent columns. |
+| `src/personalized/LLM_hold_instr.py` | Whole file: prompt and rubric | Keeps the sell-side prompt separate from the code, mirroring `LLM_rec_instr.py`. |
+| `src/telegram_alert/hourly_watchdog.py` | Everything below the `Claude-authored` banner, plus `--dry-run` / `--now`. `load_and_prune_alert_logs` and `is_alert_suppressed` are Andres's originals, unchanged. | Per-user scheduling and gates, plus fixes: alerts were sent before the cooldown check, the duplicate key could never match, and one user's failure stopped the loop. |
+| `src/personalized/pull_holdings_data.py` | `src.*` imports, `user_name` / `claude_overrides` in `__init__`, session-price methods, `symbols` parameter on `get_holdings_digest_payload`, guard for a missing `GOOGLE_APPLICATION_CREDENTIALS` | Needed by the watchdog. The guard fixes a `TypeError` crash. |
+| `src/telegram_alert/send_telegram.py` | Imports only | The watchdog couldn't import it from the project root. |
+| `src/personalized/user_profiles.py` | Five new profile keys per user | Per-user settings. |
+| `src/parameters.py` | `WATCHDOG`, `CLAUDE_REFUSAL_FALLBACK`, `ALLOWED_CLAUDE_MODELS` | Global defaults and limits. |
+| `requirements.txt`, `.gitignore`, this document | New pins and ignore rules; documentation | Reproducible installs, and no runtime state committed to the repo. |

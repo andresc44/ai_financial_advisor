@@ -1,20 +1,22 @@
 #File to consolidate universal content for the daily digest, including market data, news, and recommendations, into a single structured dictionary for easy access and display.
 from pathlib import Path
-from recommendations.filter_tickers import DataFetcher
-from market_news import fetch_live_macro_stories
-from macro_indicators import get_market_dashboard_data
+
 import sys
 import json
 
-project_root = Path(__file__).resolve().parents[3]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
     
 from src.parameters import params_dict
-from recommendations.ticker_fetcher import Tickers
+from src.universal.recommendations.ticker_fetcher import Tickers
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 from src.universal.recommendations.scorer import select_top_candidates
 from src.universal.recommendations.enriched_rec import enrich_recommendations
+from src.universal.recommendations.filter_tickers import DataFetcher
+from src.universal.market_news import fetch_live_macro_stories
+from src.universal.macro_indicators import get_market_dashboard_data
+from src.shared_locks import MARKET_DATA_LOCK
 
 def get_universal_content():
     """
@@ -36,32 +38,36 @@ def get_universal_content():
         industry=params_dict["INDUSTRY"],            # Ignored when sector is defined
         clear_existing_data=params_dict["CLEAR_EXISTING_DATA"],  # Deletes previous CSV exports in output dir
     )
-    print("Initializing DataFetcher instance...")
-    try:
-        fetcher = DataFetcher()
-    except ValueError as e:
-        print(f"Initialization Failed: {e}")
-        print("Verify that your .env file exists and contains FINNHUB_API_KEY.")
-        sys.exit(1)
+    # Claude-authored (2026-10-15): the digest now builds this universal content while users run in parallel.
+    # Finnhub / Twelve Data use one shared key, so this fetch takes the same lock as the holdings fetch
+    # (src/shared_locks.py); Claude scoring below runs outside it.
+    with MARKET_DATA_LOCK:
+        print("Initializing DataFetcher instance...")
+        try:
+            fetcher = DataFetcher()
+        except ValueError as e:
+            print(f"Initialization Failed: {e}")
+            print("Verify that your .env file exists and contains FINNHUB_API_KEY.")
+            sys.exit(1)
 
     
-    #Fetching all tickers and testing pipeline
-    print(f"Testing filter_all() for {fetcher.all_tickers} ---")
-    filtered_tickers = fetcher.filter_all()
-    llm_packets = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
-    sanitized_LLM_inputs = {}
+        #Fetching all tickers and testing pipeline
+        print(f"Testing filter_all() for {fetcher.all_tickers} ---")
+        filtered_tickers = fetcher.filter_all()
+        llm_packets = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
+        sanitized_LLM_inputs = {}
     
-    for ticker in llm_packets.keys():
-        raw_data = llm_packets[ticker]
-        sanitized_payload = sanitize_ticker_payload(ticker, raw_data)
-        sanitized_LLM_inputs[ticker] = sanitized_payload
-        # output_filename = "LLM_input_sanitized.json"
+        for ticker in llm_packets.keys():
+            raw_data = llm_packets[ticker]
+            sanitized_payload = sanitize_ticker_payload(ticker, raw_data)
+            sanitized_LLM_inputs[ticker] = sanitized_payload
+            # output_filename = "LLM_input_sanitized.json"
 
-        # with open(output_filename, "w", encoding="utf-8") as f:
-        #     json.dump(sanitized_payload, f, indent=4, default=str)
+            # with open(output_filename, "w", encoding="utf-8") as f:
+            #     json.dump(sanitized_payload, f, indent=4, default=str)
 
-        # print(f"✓ Saved output to {output_filename}")        
-    print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
+            # print(f"✓ Saved output to {output_filename}")        
+        print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
     
     generated_recommendations = select_top_candidates(
         sanitized_inputs=sanitized_LLM_inputs,

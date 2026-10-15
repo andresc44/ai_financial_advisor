@@ -1,9 +1,18 @@
 import os
+import sys
+from pathlib import Path
 import pandas as pd
 import requests
-from personalized.pull_holdings_data import PortfolioFetcher
 from dotenv import load_dotenv
-from personalized.user_profiles import USER_PROFILES
+
+# Claude-authored (2026-10-13): src.* imports with the project root on sys.path, so the watchdog can
+# import this module when run from the project root under cron (the old `personalized.*` form needed src/ on PYTHONPATH).
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.personalized.pull_holdings_data import PortfolioFetcher
+from src.personalized.user_profiles import USER_PROFILES
 
 
 load_dotenv()

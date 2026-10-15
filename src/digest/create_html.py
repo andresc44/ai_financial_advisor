@@ -17,7 +17,6 @@ Dependencies:
 """
 
 from __future__ import annotations
-from connect_questrade import QuestradePortfolioFetcher
 from datetime import datetime as _dt
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field, asdict
@@ -25,6 +24,11 @@ from pathlib import Path
 from typing import List, Literal, Optional
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
+import sys
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+from src.personalized.pull_holdings_data import PortfolioFetcher
 
 # ---------------------------------------------------------------------------
 # 1. TYPED DATA SCHEMA (one dataclass per zone / nested entity)

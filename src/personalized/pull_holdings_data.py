@@ -1,6 +1,10 @@
 # File to pull portfolio data using snaptrade api and convert to pandas dataframe for analysis and reporting.
 import math
 import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
 import pandas as pd
 import yfinance as yf
 import io
@@ -8,16 +12,41 @@ import requests
 from google.auth.transport.requests import Request
 from google.oauth2 import service_account
 from dotenv import load_dotenv
-from snaptrade_client import SnapTrade, SnapTradeAuth
-from user_profiles import USER_PROFILES
-from add_metrics import add_metrics_to_holdings
-from recommendation import add_recommendations
+from snaptrade_client.client import SnapTrade
+from snaptrade_client.auth import SnapTradeAuth
+
+# Claude-authored (2026-10-13): imports switched to the src.* convention used elsewhere in the repo.
+# Why: the bare `from user_profiles import ...` form only worked when run from src/personalized, so the
+# watchdog (src/telegram_alert) could not import this module from the project root under cron.
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.personalized.user_profiles import USER_PROFILES
+from src.personalized.add_metrics import add_metrics_to_holdings
+from src.personalized.recommendation import add_recommendations
+from src.personalized.user_settings import get_claude_overrides
+from src.personalized.digest_fields import add_digest_fields, portfolio_beta
+from src.market_session import exchange_calendar_code, latest_regular_session
+
+
+def _price_column(data: pd.DataFrame, field: str, symbol: str) -> Optional[pd.Series]:
+    """
+    Claude-authored (2026-10-15): one symbol's column (e.g. "Close") from a yf.download frame. yfinance 1.x returns
+    per-ticker columns even for a single ticker, and older versions a plain column; both are handled here.
+    """
+    if field not in data:
+        return None
+    column = data[field]
+    if isinstance(column, pd.Series):
+        return column
+    return column[symbol] if symbol in column.columns else None
 
 
 class PortfolioFetcher:
     add_metrics_to_holdings = add_metrics_to_holdings #method to append online data to the holdings dataframe
     add_recommendations = add_recommendations #method to evaluate hold positions and add recommendations to the holdings dataframe
-    
+
     def __init__(self, user_name: str = "Andres", env_path: str = ".env"):
         print("Searching for user snaptrade credentials in .env file...")
         load_dotenv(dotenv_path=env_path, override=True)
@@ -25,6 +54,12 @@ class PortfolioFetcher:
         user_profile = USER_PROFILES.get(user_name)
         if user_profile is None:
             raise ValueError(f"User '{user_name}' not found in USER_PROFILES.")
+
+        # Claude-authored (2026-10-13): remember who this is for, and their holdings-evaluation model/effort.
+        # add_recommendations reads both via `self` (it is bound as a method of this class).
+        self.user_name = user_name
+        self.claude_overrides = get_claude_overrides(user_name)
+        self.claude_key_error = None  # Set by add_recommendations when the user's Anthropic key can't be used
 
         holdings_source_value = user_profile.get("holdings_source")
         if holdings_source_value is None:
@@ -196,58 +231,56 @@ class PortfolioFetcher:
         df_pnl = self.calculate_daily_pnl(records_df)
         return self.add_technical_indicators(df_pnl)
 
-    def _fetch_yfinance_prev_closes(self, symbols: list) -> dict:
-        prev_closes = {}
-        if not symbols:
-            return prev_closes
-
+    def _fetch_yfinance_daily_closes(self, symbols: list) -> dict:
+        """
+        Claude-authored (2026-10-15): {symbol: daily closes indexed by session date} for the last ~2 weeks, from one
+        batch download. Replaces the old "second-to-last daily bar" lookup, which was only right when Yahoo had (or
+        hadn't yet) created today's bar at the right moment, and failed for a portfolio with a single symbol.
+        """
+        closes = {}
         sym_map = {
             s: s.replace(":", "-")
             for s in set(symbols)
             if isinstance(s, str) and s
         }
-        formatted_symbols = list(sym_map.values())
+        if not sym_map:
+            return closes
 
-        print(
-            f"Batch fetching previous closes for {len(formatted_symbols)}"
-            " symbols..."
-        )
-
+        print(f"Batch fetching daily closes for {len(sym_map)} symbols...")
         try:
             data = yf.download(
-                tickers=formatted_symbols,
-                period="5d",
+                tickers=sorted(set(sym_map.values())),
+                period="10d",  # Covers long weekends and holidays on either exchange
                 interval="1d",
                 progress=False,
                 threads=True,
             )
-
-            close_df = data["Close"] if "Close" in data else data
-
-            for orig_sym, sym in sym_map.items():
-                if (
-                    sym in close_df.columns
-                    if len(formatted_symbols) > 1
-                    else True
-                ):
-                    series = (
-                        close_df[sym]
-                        if len(formatted_symbols) > 1
-                        else close_df
-                    ).dropna()
-
-                    if len(series) >= 2:
-                        prev_closes[orig_sym] = float(series.iloc[-2])
-                    elif len(series) == 1:
-                        prev_closes[orig_sym] = float(series.iloc[-1])
-
         except Exception as e:
             print(f"[ERROR] Batch download failed: {e}")
+            return closes
 
-        return prev_closes
+        for orig_sym, sym in sym_map.items():
+            series = _price_column(data, "Close", sym)
+            if series is None:
+                continue
+            series = series.dropna()
+            if not series.empty:
+                series.index = pd.DatetimeIndex(series.index).date  # Exchange-local session dates
+                closes[orig_sym] = series
+        return closes
 
     def calculate_daily_pnl(self, df: pd.DataFrame = None) -> pd.DataFrame:
-        """Fetches last close prices from yfinance and calculates daily profit/loss."""
+        """
+        Fetches daily closes from yfinance and calculates daily profit/loss.
+
+        Claude-authored (2026-10-15): daily P/L is the move over each stock's most recent regular session on its
+        own exchange (XNYS, or XTSE for Canadian listings), and `daily_pnl_session` holds that session's date:
+        - from the open until the close: today's session, live current_price vs the previous session's close;
+        - after the close, overnight, pre-market, weekends, and holidays: the last completed session, measured at
+          its official close vs the close before it, so after-hours or pre-market broker prices never leak in
+          (the watchdog tracks extended-hours moves separately with session_price).
+        `last_close` is that session's previous close. Stocks without Yahoo data keep the old fallback of 0 P/L.
+        """
         if df is None:
             df = self.get_holdings_df()
 
@@ -262,21 +295,31 @@ class PortfolioFetcher:
         symbols = [
             s for s in df["symbol"].dropna().unique() if isinstance(s, str)
         ]
+        daily_closes = self._fetch_yfinance_daily_closes(symbols)
+        now = datetime.now(timezone.utc)
 
-        prev_closes = self._fetch_yfinance_prev_closes(symbols)
+        session_dates, prev_closes, session_closes = {}, {}, {}
+        for symbol in symbols:
+            session_date, in_progress = latest_regular_session(now, exchange_calendar_code(symbol))
+            session_dates[symbol] = session_date.isoformat()
+            closes = daily_closes.get(symbol)
+            if closes is None:
+                continue
+            earlier = closes[closes.index < session_date]
+            if not earlier.empty:
+                prev_closes[symbol] = float(earlier.iloc[-1])
+            if not in_progress and session_date in closes.index:
+                session_closes[symbol] = float(closes[session_date])
 
-        df["last_close"] = df["symbol"].map(prev_closes)
+        df["daily_pnl_session"] = df["symbol"].map(session_dates)
+        df["last_close"] = pd.to_numeric(df["symbol"].map(prev_closes), errors="coerce")
         df["last_close"] = df["last_close"].fillna(df["current_price"])
+        pnl_price = pd.to_numeric(df["symbol"].map(session_closes), errors="coerce").fillna(df["current_price"])
 
-        df["daily_pnl"] = (df["current_price"] - df["last_close"]) * df["shares"]
-        df["daily_pnl_pct"] = df.apply(
-            lambda r: (
-                ((r["current_price"] - r["last_close"]) / r["last_close"] * 100)
-                if r["last_close"] > 0
-                else 0.0
-            ),
-            axis=1,
-        )
+        df["daily_pnl"] = (pnl_price - df["last_close"]) * df["shares"]
+        df["daily_pnl_pct"] = (
+            (pnl_price - df["last_close"]) / df["last_close"] * 100
+        ).where(df["last_close"] > 0, 0.0)
 
         total_daily_pnl = df["daily_pnl"].sum()
         total_prev_market_value = (df["last_close"] * df["shares"]).sum()
@@ -336,16 +379,12 @@ class PortfolioFetcher:
 
             for orig_sym, sym in sym_map.items():
                 try:
-                    if len(formatted_symbols) == 1:
-                        ticker_df = hist_data.copy()
-                    else:
-                        ticker_df = pd.DataFrame(
-                            {
-                                "High": hist_data["High"][sym],
-                                "Low": hist_data["Low"][sym],
-                                "Close": hist_data["Close"][sym],
-                            }
-                        ).dropna()
+                    # Claude-authored (2026-10-15): one code path for one or many tickers. The old single-ticker
+                    # branch got per-ticker columns from yfinance 1.x and failed (RSI/NATR/volatility all NaN).
+                    columns = {field: _price_column(hist_data, field, sym) for field in ("High", "Low", "Close")}
+                    if any(column is None for column in columns.values()):
+                        continue
+                    ticker_df = pd.DataFrame(columns).dropna()
 
                     min_required = max(length_rsi, length_natr, length_vol)
                     if len(ticker_df) >= min_required:
@@ -499,7 +538,8 @@ class PortfolioFetcher:
         url = f"https://docs.google.com/spreadsheets/d/{sheets_id}/export?format=csv&gid={gid}"
         creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         print("creds_path:", creds_path)
-        print("os.path.exists(creds_path):", os.path.exists(creds_path))
+        # Claude-authored (2026-10-13): guard added - os.path.exists(None) raised TypeError when the env var was unset
+        print("os.path.exists(creds_path):", bool(creds_path) and os.path.exists(creds_path))
         try:
             if creds_path and os.path.exists(creds_path):
                 print(f"Authenticating via Google Service Account JSON: {creds_path}")
@@ -585,37 +625,146 @@ class PortfolioFetcher:
 
         df_pnl = self.calculate_daily_pnl(df)
         return self.add_technical_indicators(df_pnl)
-    
-    
-    def get_holdings_digest_payload(self, desired_columns: list[str] = None) -> dict:
-        """Return a dictionary payload containing the holdings data filtered to desired columns."""
+
+    # ------------------------------------------------------------------------------------------
+    # Claude-authored (2026-10-13): session-aware prices for the watchdog.
+    # Why: outside regular hours, current_price (SnapTrade / yfinance info) can be the last regular-session
+    # price, so the watchdog's change checks would compare a price to itself and never fire. In pre-market
+    # and after-hours we use the latest extended-hours trade instead, and record how old the price is.
+    # ------------------------------------------------------------------------------------------
+    def _fetch_extended_hours_prices(self, symbols: list) -> dict:
+        """Latest extended-hours trade per symbol from 1-minute yfinance bars: {symbol: (price, utc_timestamp)}."""
+        sym_map = {s: s.replace(":", "-") for s in set(symbols) if isinstance(s, str) and s}
+        if not sym_map:
+            return {}
+        formatted_symbols = sorted(set(sym_map.values()))
+
+        try:
+            data = yf.download(
+                tickers=formatted_symbols,
+                period="5d",
+                interval="1m",
+                prepost=True,
+                progress=False,
+                threads=True,
+            )
+            close_df = data["Close"]
+        except (KeyError, ValueError, OSError) as e:
+            print(f"[WARNING] Extended-hours price download failed: {e}")
+            return {}
+
+        if isinstance(close_df, pd.Series):
+            close_df = close_df.to_frame(name=formatted_symbols[0])
+
+        prices = {}
+        for orig_sym, sym in sym_map.items():
+            if sym not in close_df.columns:
+                continue
+            series = close_df[sym].dropna()
+            if series.empty:
+                continue
+            ts = pd.Timestamp(series.index[-1])
+            ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+            prices[orig_sym] = (float(series.iloc[-1]), ts)
+        return prices
+
+    def add_session_prices(self, df: pd.DataFrame, market_phase: str) -> pd.DataFrame:
+        """
+        Adds session_price, session_price_as_of (UTC), and session_price_age_minutes for the given
+        market phase (see src/market_session.py). Pre-market / after-hours use extended-hours trades;
+        regular, overnight, and closed phases use current_price. Falls back to current_price per symbol.
+        """
+        if df is None or df.empty:
+            return df
+
+        df = df.copy()
+        now_utc = pd.Timestamp.now(tz="UTC")
+        df["session_price"] = df["current_price"]
+        if "data_as_of" in df.columns:
+            df["session_price_as_of"] = pd.to_datetime(df["data_as_of"], utc=True, errors="coerce")
+        else:
+            df["session_price_as_of"] = pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
+
+        if market_phase in ("pre_market", "after_hours"):
+            extended = self._fetch_extended_hours_prices(df["symbol"].dropna().unique().tolist())
+            has_price = df["symbol"].isin(extended.keys())
+            df.loc[has_price, "session_price"] = df.loc[has_price, "symbol"].map(lambda s: extended[s][0])
+            df.loc[has_price, "session_price_as_of"] = df.loc[has_price, "symbol"].map(lambda s: extended[s][1])
+            print(f"Extended-hours prices found for {int(has_price.sum())}/{len(df)} positions.")
+
+        df["session_price_as_of"] = df["session_price_as_of"].fillna(now_utc)
+        df["session_price_age_minutes"] = (
+            (now_utc - df["session_price_as_of"]).dt.total_seconds() / 60
+        ).clip(lower=0).round(1)  # Sheets' data_as_of is naive local time, which can read as slightly "future"
+        return df
+
+    def get_holdings_digest_payload(
+        self,
+        desired_columns: list[str] = None,
+        symbols: list[str] = None,
+        reuse_recent_evaluations: bool = False,
+    ) -> dict:
+        """Return a dictionary payload containing the holdings data filtered to desired columns.
+
+        Claude-authored (2026-10-13): optional `symbols` limits enrichment and Claude evaluation to those
+        symbols (the watchdog passes only stocks that changed). None keeps the original behaviour (all holdings).
+        2026-10-15: `reuse_recent_evaluations` (used by the digest) keeps evaluations made within the last
+        DIGEST.REUSE_EVALUATION_MAX_AGE_MINUTES for stocks that haven't moved, instead of calling Claude again.
+        """
         if desired_columns is None:
             # Default fallback list if no custom columns are passed
             desired_columns = [
                 "symbol",
+                "description",
                 "shares",
                 "avg_cost_basis",
                 "current_price",
                 "market_value",
+                "daily_pnl",
+                "daily_pnl_pct",
+                "daily_pnl_session",  # Date the daily P/L covers (pre-market: the previous trading day)
+                "last_close",  # Close before that session; previous portfolio value = sum(last_close x shares)
                 "unrealized_pnl",
                 "unrealized_pnl_pct",
                 "recommendation",
+                "total_cost_basis",
+                "rsi",
+                "recommendation_rationale",
+                "natr",
+                "annualized_vol",
+                "currency",
+                "account_name",
+                "ma_status",
+                "sentiment",
+                "catalysts",
+                "sector",
             ]
 
-        holdings_with_metrics = self.add_metrics_to_holdings(self.full_data)
+        holdings = self.full_data
+        if symbols is not None and not holdings.empty:
+            holdings = holdings[holdings["symbol"].isin(symbols)]
+
+        holdings_with_metrics = self.add_metrics_to_holdings(holdings)
         holdings_with_recommendations = self.add_recommendations(
-            holdings_with_metrics
+            holdings_with_metrics, reuse_recent_evaluations=reuse_recent_evaluations
         )
+        # Claude-authored (2026-10-14): email-only display fields, added after the LLM step so Claude never sees them
+        holdings_for_digest = add_digest_fields(holdings_with_recommendations)
 
         # Safely filter columns (ignores any column name not present in the DataFrame)
         available_cols = [
             col
             for col in desired_columns
-            if col in holdings_with_recommendations.columns
+            if col in holdings_for_digest.columns
         ]
-        filtered_df = holdings_with_recommendations[available_cols]
+        filtered_df = holdings_for_digest[available_cols]
 
-        return {"holdings": filtered_df.to_dict(orient="records")}
+        return {
+            "holdings": filtered_df.to_dict(orient="records"),
+            "portfolio_beta": portfolio_beta(holdings_for_digest),
+            # Claude-authored (2026-10-15): why recommendations are missing, e.g. an expired or out-of-credit key
+            "api_key_issues": [self.claude_key_error.as_notice()] if self.claude_key_error else [],
+        }
         
         
 

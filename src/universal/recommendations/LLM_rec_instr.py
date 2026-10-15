@@ -61,9 +61,13 @@ EVALUATION_TOOL_DESCRIPTION = (
 )
 
 # System level instructions for LLM with explicit scoring rubrics
-SYSTEM_PROMPT = """
+# Claude-authored (2026-10-13): made an f-string and added the tool-call instruction. Why: the request now uses
+# tool_choice "auto" (forced tool_choice returns a 400 on Opus 5.5 / Sonnet 5.5 / Fable 5.1), so the prompt
+# itself must tell the model to record its scores with the tool.
+SYSTEM_PROMPT = f"""
 You are an expert quantitative equity strategist and technical analyst.
 Analyze the provided stock market context and evaluate the candidate stock by rating specific sub-criteria using strict, standardized rubrics.
+Record your sub-scores by calling the `{EVALUATION_TOOL_NAME}` tool exactly once, keeping every score within the range its rubric states.
 
 DATA PARSING & METRIC GUIDELINES:
 - Financial Ratios: Ratios such as `debt_to_equity` in the payload are scaled as percentages (e.g., 34.804 represents a 34.8% debt-to-equity ratio or ~0.35 D/E).

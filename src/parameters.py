@@ -231,19 +231,85 @@ params_dict = {
     "CLAUDE_CONFIG": {
         "model": "claude-opus-5",
         "max_tokens": 16000,           # Caps thinking + tool output together, so leave headroom
-        "effort": "high",              # low | medium | high | xhigh | max - primary cost/latency lever
+        "effort": "medium",              # low | medium | high | xhigh | max - primary cost/latency lever
         # No temperature: sampling params are rejected by current models
         "max_concurrency": 15,         # Controls API rate limits & parallel throughput
-        "system_prompt": (
-            "You are an expert quantitative trader and equity analyst for Finnbot. "
-            "Your objective is to evaluate the provided stock dataset under a strict trade strategy. "
-            "Analyze technical momentum, fundamental valuation, and recent news catalysts. "
-            "You MUST invoke the `record_stock_recommendation` tool to output your final analysis."
-        ),
+        # Claude-authored (2026-10-13): "system_prompt" removed from here. It overrode the scoring rubric in
+        # src/universal/recommendations/LLM_rec_instr.py and named a tool that doesn't exist. Prompts now live
+        # only in LLM_rec_instr.py (new-stock scoring) and src/personalized/LLM_hold_instr.py (holdings).
     },
     "LONG_TERM_N_AMOUNT": 2,
     "SWING_TERM_N_AMOUNT": 5,
     "MAX_NEWS_ARTICLES": 20,
     "MIN_LONG_SCORE": 10.0,
     "MIN_SWING_SCORE": 15.0,
+
+    # Claude-authored (2026-10-15): the users the digest and the watchdog run for, in this order. Each name needs a
+    # profile in src/personalized/user_profiles.py. Their .env settings still decide what they get: the
+    # pre-/post-market digest (Receive_*_Digest), and the watchdog (holdings source + Telegram chat ID, and
+    # watchdog_interval_hours > 0). Remove a name here to pause both for that user.
+    "ACTIVE_USERS": ["Andres", "Mauricio", "Steven"],
+
+    # ==============================================================================================
+    # Claude-authored (2026-10-13): holdings watchdog scheduling + per-user Claude model selection.
+    # Why: lets each user choose how often their holdings are re-evaluated, during which market
+    # session, and with which Claude model/effort, while keeping Finnhub / Twelve Data / Claude
+    # spend bounded by only re-evaluating stocks that changed. Full walkthrough: docs/watchdog.md
+    # ==============================================================================================
+    "WATCHDOG": {
+        "SESSION": "regular",                    # Default for all users: "regular" | "extended" | "24_7" (per-user override: watchdog_session)
+        "TIMEZONE": "America/New_York",          # Market-local timezone used for trading dates and the "evaluated at" time
+        "EXCHANGE_CALENDARS": ["XNYS", "XTSE"],  # exchange_calendars codes; a day is a trading day if ANY of these trades
+        "SESSIONS": {
+            # Offsets are measured from each day's actual open/close (not fixed clock times),
+            # so half-days (e.g. 13:00 closes) shorten the window automatically.
+            # The "extended" offsets also define the pre_market / after_hours phases reported to Claude.
+            "regular": {"pre_open_minutes": 0, "post_close_minutes": 0, "trading_days_only": True},
+            "extended": {"pre_open_minutes": 330, "post_close_minutes": 240, "trading_days_only": True},  # 4:00-20:00 ET on full days
+            "24_7": {"trading_days_only": False},
+        },
+        "DEFAULT_INTERVAL_HOURS": 4,             # Hours between scheduled checks (per-user override: watchdog_interval_hours; 0 = watchdog off)
+        "MAX_INTERVAL_HOURS": 168,               # Upper bound accepted from a user's setting (1 week)
+        "TRIPWIRE_DEFAULT": True,                # Hourly price check between scheduled checks (per-user override: watchdog_tripwire)
+        "REEVAL_NATR_MULTIPLE": 1.0,             # On a scheduled check, re-evaluate a stock that moved >= this many NATRs since its last evaluation
+        "TRIPWIRE_NATR_MULTIPLE": 2.0,           # Between scheduled checks, force an early evaluation at >= this many NATRs
+        "MAX_EVALUATION_AGE_HOURS": 24,          # On a scheduled check, re-evaluate anything older than this even if it hasn't moved
+        "EARNINGS_WINDOW_DAYS": 7,               # On a scheduled check, re-evaluate a stock whose next earnings date is within this many days
+        "ALERT_RECOMMENDATIONS": ["urgent_sell"],  # Recommendations that trigger a Telegram alert
+        "ALERT_COOLDOWN_HOURS": 24,              # Suppress a repeat alert for the same (user, symbol, recommendation)
+        "ALERT_LOG_RETENTION_DAYS": 30,          # Days of alert history kept in data/alerts_sent/
+        "MAX_CLAUDE_CALLS_PER_USER_DAY": 40,     # Cap on watchdog Claude calls per user per market-local day (digest calls not counted)
+        "FRESH_CONTEXT_MAX_AGE_MINUTES": 30,     # Quote + news in the cached market context older than this are re-fetched
+        "CONTEXT_CACHE_RETENTION_DAYS": 7,       # Drop cached market context for symbols not refreshed within this many days
+        "MAX_PARALLEL_USERS": 4,                 # Claude-authored (2026-10-15): users checked at the same time each hour
+    },
+    # Claude-authored (2026-10-14): email digest display fields (src/personalized/digest_fields.py)
+    "DIGEST": {
+        "CATALYST_WINDOW_DAYS": 14,              # Holding cards list upcoming earnings within this many days
+        "SYMBOL_NEWS_BULLETS": 3,                # News bullets per holding card (src/personalized/symbol_specific_news.py)
+        "SYMBOL_NEWS_LOOKBACK_DAYS": 7,          # How many days back Gemini searches for each holding's news
+        "PORTFOLIO_REVIEW_BULLETS": 5,           # Max notes in the whole-portfolio review (src/personalized/portfolio_review.py)
+        # Claude-authored (2026-10-15): parallelism and reuse
+        "SYMBOL_NEWS_CONCURRENCY": 4,            # Gemini news requests in flight at once per user (each user has their own key)
+        "MAX_PARALLEL_USERS": 4,                 # Users whose digest content is built at the same time (alongside the universal content)
+        "REUSE_EVALUATION_MAX_AGE_MINUTES": 60,  # Reuse a watchdog evaluation this recent instead of calling Claude again (0 = off)
+    },
+    # Server-side refusal fallback (fallbacks="default") in both Claude evaluators: LLM_recommendation.py
+    # (new-stock scoring) and src/personalized/recommendation.py (holdings). Only sent for the models listed below.
+    "CLAUDE_REFUSAL_FALLBACK": True,
+    "CLAUDE_FALLBACK_DEFAULT_MODELS": ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"],
+    # Models a user may select for holdings evaluation (holdings_claude_model), with the effort levels each accepts.
+    # Both evaluators send a strict tool schema with tool_choice "auto", so every model here must support strict
+    # tool use (2026-10-13: Opus 4.7, Opus 4.6, and Sonnet 4.6 removed because they don't). CLAUDE_CONFIG["model"]
+    # above should also be one of these.
+    "ALLOWED_CLAUDE_MODELS": {
+        "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
+        "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-opus-4-8": ["low", "medium", "high", "xhigh", "max"],
+        "claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
+        "claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
+    },
 }

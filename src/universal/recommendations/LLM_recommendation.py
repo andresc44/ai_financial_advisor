@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from anthropic import APIError, AsyncAnthropic
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
@@ -40,7 +40,11 @@ logger = logging.getLogger("Finnbot.LLMEvaluator")
 
 
 # Pydantic Sub-Score Schemas
+# Claude-authored (2026-10-13): extra="forbid" on every model emits additionalProperties: false, which strict tool
+# use requires at every object level. The ge/le ranges stay here and are enforced when the tool input is parsed.
 class LongTermSubScores(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     valuation_score: float = Field(
         ..., ge=0.0, le=25.0, description=VALUATION_SCORE_DESCRIPTION
     )
@@ -66,6 +70,8 @@ class LongTermSubScores(BaseModel):
 
 
 class SwingSubScores(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     technical_setup_score: float = Field(
         ..., ge=0.0, le=30.0, description=TECHNICAL_SETUP_SCORE_DESCRIPTION
     )
@@ -91,15 +97,39 @@ class SwingSubScores(BaseModel):
 
 
 class StockEvaluationBreakdown(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     long_term: LongTermSubScores
     swing: SwingSubScores
+
+
+# Claude-authored (2026-10-13): strict tool use rejects numeric/string constraints in the schema it is sent,
+# so they are stripped from the copy sent to the API. The score ranges are still stated in each field's
+# description (from LLM_rec_instr.py) and enforced by Pydantic when the tool input is parsed.
+_STRICT_UNSUPPORTED_KEYS = {
+    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength",
+}
+
+
+def _strict_schema(schema: Any) -> Any:
+    """Returns a copy of a JSON schema with keywords that strict tool use doesn't accept removed."""
+    if isinstance(schema, dict):
+        return {k: _strict_schema(v) for k, v in schema.items() if k not in _STRICT_UNSUPPORTED_KEYS}
+    if isinstance(schema, list):
+        return [_strict_schema(item) for item in schema]
+    return schema
 
 
 EVALUATION_TOOL_SPEC = {
     "name": EVALUATION_TOOL_NAME,
     "description": EVALUATION_TOOL_DESCRIPTION,
-    "input_schema": StockEvaluationBreakdown.model_json_schema(),
+    "strict": True,  # Guarantees schema-valid tool input on models that support strict tool use
+    "input_schema": _strict_schema(StockEvaluationBreakdown.model_json_schema()),
 }
+
+# Beta header for the server-side `fallbacks: "default"` parameter (models listed in
+# params_dict["CLAUDE_FALLBACK_DEFAULT_MODELS"]); same value as in src/personalized/recommendation.py.
+FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 class ParallelStockEvaluator:
@@ -117,16 +147,24 @@ class ParallelStockEvaluator:
         tool_spec: Optional[Dict[str, Any]] = None,
         tool_choice: Optional[Dict[str, Any]] = None,
     ):
+        # Claude-authored (2026-10-13): CLAUDE_CONFIG supplies model settings only. Its "system_prompt" key (if
+        # present) is ignored so the rubric in LLM_rec_instr.SYSTEM_PROMPT is always what Claude receives.
+        # A caller can still pass a different system_prompt explicitly via `config`.
+        model_settings = {
+            key: value
+            for key, value in params_dict.get("CLAUDE_CONFIG", {}).items()
+            if key != "system_prompt"
+        }
         self.config = {
             **self.DEFAULT_CONFIG,
-            **params_dict.get("CLAUDE_CONFIG", {}),
+            **model_settings,
             **(config or {}),
         }
         self.tool_spec = tool_spec or EVALUATION_TOOL_SPEC
-        self.tool_choice = tool_choice or {
-            "type": "tool",
-            "name": self.tool_spec["name"],
-        }
+        # Claude-authored (2026-10-13): "auto" instead of forcing the tool ({"type": "tool", ...}), which returns a
+        # 400 on Opus 5.5 / Sonnet 5.5 / Fable 5.1. SYSTEM_PROMPT instructs the model to call the tool, and the
+        # strict schema keeps its input valid.
+        self.tool_choice = tool_choice or {"type": "auto"}
 
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
@@ -147,15 +185,26 @@ class ParallelStockEvaluator:
             user_prompt = format_user_prompt(symbol, sanitized_prompt_data)
 
             try:
-                response = await self.client.messages.create(
-                    model=self.config["model"],
-                    max_tokens=self.config["max_tokens"],
-                    output_config={"effort": self.config["effort"]},
-                    system=self.config["system_prompt"],
-                    tools=[self.tool_spec],
-                    tool_choice=self.tool_choice,
-                    messages=[{"role": "user", "content": user_prompt}],
-                )
+                request = {
+                    "model": self.config["model"],
+                    "max_tokens": self.config["max_tokens"],
+                    "output_config": {"effort": self.config["effort"]},
+                    "system": self.config["system_prompt"],
+                    "tools": [self.tool_spec],
+                    "tool_choice": self.tool_choice,
+                    "messages": [{"role": "user", "content": user_prompt}],
+                }
+                # Claude-authored (2026-10-13): on models that support it, a safety-classifier refusal is re-run
+                # server-side on a recommended fallback model instead of losing the ticker.
+                if (
+                    params_dict.get("CLAUDE_REFUSAL_FALLBACK", True)
+                    and self.config["model"] in params_dict.get("CLAUDE_FALLBACK_DEFAULT_MODELS", [])
+                ):
+                    response = await self.client.beta.messages.create(
+                        **request, betas=[FALLBACK_BETA], fallbacks="default"
+                    )
+                else:
+                    response = await self.client.messages.create(**request)
 
                 if response.stop_reason == "refusal":
                     category = getattr(response.stop_details, "category", None)
@@ -169,7 +218,11 @@ class ParallelStockEvaluator:
                     return None
 
                 tool_block = next(
-                    (b for b in response.content if b.type == "tool_use"), None
+                    (
+                        b for b in response.content
+                        if b.type == "tool_use" and b.name == self.tool_spec["name"]
+                    ),
+                    None,
                 )
                 if not tool_block:
                     logger.error(
@@ -184,6 +237,10 @@ class ParallelStockEvaluator:
                 )
                 return breakdown
 
+            except ValidationError as e:
+                # Claude-authored (2026-10-13): score ranges are no longer in the API schema (strict mode
+                # rejects them), so an out-of-range score is caught here and the ticker is skipped.
+                logger.error(f"[{symbol}] Sub-scores failed validation (e.g. outside rubric range): {e}")
             except APIError as e:
                 logger.error(f"[{symbol}] Anthropic API Error: {e.message}")
             except Exception as e:

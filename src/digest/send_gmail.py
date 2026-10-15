@@ -6,7 +6,13 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from personal.user_profiles import USER_PROFILES
+
+import sys
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+    
+from src.personalized.user_profiles import USER_PROFILES
 
 load_dotenv()
 
