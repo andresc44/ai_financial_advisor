@@ -237,3 +237,23 @@ cron_test_results.csv
 
 # aider
 .aider*
+
+# Watchdog state and shared market-context cache (Claude-authored 2026-10-13, see docs/watchdog.md)
+data/watchdog_state.json
+data/market_context_cache.json
+
+# Claude-authored (2026-10-15): run outputs. They hold users' holdings, emails, and alert history, or are
+# regenerated on every run, so they must never be committed.
+src/html_reports/
+src/digest/html_reports/
+questrade_positions_*.csv
+data/alerts_sent/
+data/ticker_data/
+data/track_record/
+data/digest_state.json
+data/fx_rates.json
+logs/
+*.log
+test_output/
+*_interactive_chart.html
+*_news.csv
