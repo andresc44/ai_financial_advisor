@@ -2,6 +2,8 @@
 # Claude-authored (2026-10-15): cron now runs this every hour at :10; src/digest/digest_schedule.py decides whether a
 # Pre-Market or Post-Market digest is due (see docs/watchdog.md, "Running it").
 import argparse
+import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 from typing import Optional
@@ -23,6 +25,8 @@ from src.universal.universal_consolidated import get_universal_content
 from src.personalized.personalized_consolidated import get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, record_sent, users_already_sent
+from src.run_logging import name_thread, start_run_log
+from src.telegram_alert.notices import alert_admins
 import copy
 
 class DigestPayload:
@@ -49,6 +53,7 @@ class DigestPayload:
         SNAPTRADE or SHEETS. It neither reads nor changes self.payload, so several users can be built at once,
         alongside the universal content.
         """
+        name_thread(user_name)  # Claude-authored (2026-10-15): log lines from this thread show the user
         user_profile = USER_PROFILES.get(user_name)
         if user_profile is None:
             raise ValueError(f"User '{user_name}' not found in USER_PROFILES.")
@@ -125,6 +130,8 @@ def run_daily_digests(
         f"{max_parallel_users} users' content in parallel..."
     )
     digest = DigestPayload(period=period, day=day)
+    started = time.monotonic()
+    sent, failed = [], []
 
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="universal") as universal_pool, \
             ThreadPoolExecutor(max_workers=max_parallel_users, thread_name_prefix="user") as user_pool:
@@ -135,6 +142,8 @@ def run_daily_digests(
             universal_ok = universal_future.result()
         except (Exception, SystemExit) as e:  # get_universal_content calls sys.exit(1) if its data fetcher can't start
             print(f"[{stamp}] Universal content failed: {e!r}")
+            traceback.print_exc()
+            alert_admins(f"{period} digest aborted: universal content failed", repr(e))
             universal_ok = False
 
         if not universal_ok:
@@ -148,9 +157,19 @@ def run_daily_digests(
                 try:
                     digest.send_daily_digest_to(user, personal=future.result())
                     record_sent(day, period, user)  # Not sent again if a later hourly run is still in the window
+                    sent.append(user)
                     print(f"[{stamp}] Successfully sent digest to {user}.")
                 except Exception as e:
+                    failed.append(user)
                     print(f"[{stamp}] ERROR sending digest to {user}: {e}")
+                    traceback.print_exc()
+                    alert_admins(f"{period} digest failed for {user}", repr(e))
+
+    # Claude-authored (2026-10-15): one summary line per run, easy to grep in logs/digest.log
+    print(
+        f"[{stamp}] {period} digest run finished in {time.monotonic() - started:.0f}s: "
+        f"sent {sent or 'none'}, failed {failed or 'none'}."
+    )
 
 
 if __name__ == "__main__":
@@ -170,4 +189,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.now is not None and (args.now.tzinfo is None or not args.check):
         parser.error("--now must include a UTC offset and can only be used with --check.")
-    run_daily_digests(get_active_users(), now=args.now, check_only=args.check)
+    # Claude-authored (2026-10-15): everything goes to logs/digest.log; an unexpected crash also alerts the admins
+    start_run_log("digest")
+    try:
+        run_daily_digests(get_active_users(), now=args.now, check_only=args.check)
+    except Exception as e:
+        traceback.print_exc()
+        alert_admins("digest run crashed", repr(e))
+        raise

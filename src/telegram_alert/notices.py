@@ -176,6 +176,24 @@ def send_notice_now(
         return True
 
 
+def alert_admins(event: str, detail: str) -> None:
+    """
+    Tells the OPS.ALERT_USERS that a run failed (`event`, e.g. "digest failed for Steven"), at most once per
+    OPS.ALERT_COOLDOWN_HOURS for each event. The full traceback is in the run log; this only says where to look.
+    Never raises, so reporting a failure can't cause another one.
+    """
+    ops = params_dict["OPS"]
+    body = (
+        f"\U0001f6e0\ufe0f Finnbot problem: {html.escape(event)}\n\n{html.escape(detail[:500])}\n\n"
+        "Details are in the logs/ folder on the server."
+    )
+    for admin in ops["ALERT_USERS"]:
+        try:
+            send_notice_now(admin, "ops", event, body, cooldown_hours=ops["ALERT_COOLDOWN_HOURS"])
+        except Exception as e:  # e.g. an unreadable alert log; the failure itself is already in the run log
+            print(f"[WARNING] Could not send the failure alert to {admin}: {e}")
+
+
 def merge_and_save_alert_logs(alert_logs: pd.DataFrame) -> pd.DataFrame:
     """Saves the watchdog's in-memory log, keeping any rows send_notice_now wrote to the file during the run."""
     with _LOG_LOCK:

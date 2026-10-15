@@ -255,6 +255,14 @@ params_dict = {
         "STALE_SYNC_HOURS": 96,  # Notify the user when SnapTrade hasn't synced an account's holdings for this long
     },
 
+    # Claude-authored (2026-10-15): failure alerts and run logs (src/telegram_alert/notices.py, src/run_logging.py)
+    "OPS": {
+        "ALERT_USERS": ["Andres"],     # Users (with a Telegram chat ID) told when a digest or watchdog run fails
+        "ALERT_COOLDOWN_HOURS": 6,     # The same failure is reported at most once per this many hours
+        "LOG_MAX_MB": 5,               # logs/<run>.log rotates at this size ...
+        "LOG_BACKUPS": 5,              # ... keeping this many old files
+    },
+
     # ==============================================================================================
     # Claude-authored (2026-10-13): holdings watchdog scheduling + per-user Claude model selection.
     # Why: lets each user choose how often their holdings are re-evaluated, during which market

@@ -187,6 +187,12 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies for display. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list, which is downloaded once per morning and once per afternoon. |
 
+### Logs and failure alerts
+
+Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py`): one line per message with a timestamp and the user it belongs to, rotating at `OPS.LOG_MAX_MB` (5 MB) and keeping `OPS.LOG_BACKUPS` (5) old files. Under cron the output no longer also goes to `digest.log` / `watchdog.log` in the project root, which now only catch crashes before logging starts; set `FINNBOT_LOG_ECHO=1` to see the output when piping it. Each run ends with a summary line (who was sent or checked, who failed, how long it took).
+
+`OPS.ALERT_USERS` (default `["Andres"]`) get a Telegram alert when the digest's universal content fails, a user's digest or watchdog check fails, or a run crashes, at most once per `OPS.ALERT_COOLDOWN_HOURS` (6) for each kind of failure. The traceback is in the log.
+
 To test without spending anything:
 
 ```bash

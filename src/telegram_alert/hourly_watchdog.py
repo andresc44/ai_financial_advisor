@@ -32,6 +32,7 @@ import argparse
 import html
 import os
 import sys
+import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -59,6 +60,7 @@ from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.recommendation import resolve_anthropic_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
+from src.run_logging import name_thread, start_run_log
 from src.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert import notices
 from src.telegram_alert.notices import (  # Shared alert log; names kept importable from this module
@@ -69,6 +71,7 @@ from src.telegram_alert.notices import (  # Shared alert log; names kept importa
     holdings_issue_subject,
     is_alert_suppressed,
     load_and_prune_alert_logs,
+    alert_admins,
     merge_and_save_alert_logs,
     send_user_notice,
 )
@@ -415,14 +418,21 @@ def process_user_alerts(
         notices.CSV_PATH, retention_days=retention_days
     )
 
+    started = time.monotonic()
+    failed_users: List[str] = []
+
     def _check(user: str) -> pd.DataFrame:
+        name_thread(user)  # Claude-authored (2026-10-15): log lines from this thread show the user
         print(f"Checking for alerts for user: {user}")
         try:
             return check_user(user, now, alert_logs, cooldown_hours=cooldown_hours, dry_run=dry_run)
-        except Exception:
+        except Exception as e:
             # One user's failure (API outage, bad data) must not stop the others or lose the alert log
             print(f"[ERROR] Watchdog check failed for {user}; continuing with other users.")
             traceback.print_exc()
+            failed_users.append(user)
+            if not dry_run:
+                alert_admins(f"watchdog check failed for {user}", repr(e))
             return alert_logs
 
     # Claude-authored (2026-10-15): users are checked in parallel (WATCHDOG.MAX_PARALLEL_USERS at a time), so one
@@ -445,6 +455,10 @@ def process_user_alerts(
     # Save cleaned history back to CSV (Claude-authored 2026-10-15: merged with notices the run saved directly)
     merge_and_save_alert_logs(alert_logs)
     print(f"Alert log updated at: {notices.CSV_PATH}")
+    print(
+        f"Watchdog run finished in {time.monotonic() - started:.0f}s: checked {len(eligible)} user(s), "
+        f"failed {failed_users or 'none'}."
+    )
 
 
 if __name__ == "__main__":
@@ -465,4 +479,12 @@ if __name__ == "__main__":
     if args.now is not None and (args.now.tzinfo is None or not args.dry_run):
         parser.error("--now must include a UTC offset and can only be used with --dry-run.")
 
-    process_user_alerts(retention_days=RETENTION_DAYS, cooldown_hours=COOLDOWN_HOURS, now=args.now, dry_run=args.dry_run)
+    # Claude-authored (2026-10-15): everything goes to logs/watchdog.log; an unexpected crash also alerts the admins
+    start_run_log("watchdog")
+    try:
+        process_user_alerts(retention_days=RETENTION_DAYS, cooldown_hours=COOLDOWN_HOURS, now=args.now, dry_run=args.dry_run)
+    except Exception as e:
+        traceback.print_exc()
+        if not args.dry_run:
+            alert_admins("watchdog run crashed", repr(e))
+        raise
