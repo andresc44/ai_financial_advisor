@@ -29,11 +29,12 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error, shared_api_key, shared_key_issue
 from src.personalized.symbol_specific_news import _grounded_urls, _verify_source_urls
 from src.usage_tracking import record_gemini_response
 
-MACRO_NEWS_MODEL = "gemini-3.6-flash"
+MACRO_NEWS_MODEL = params_dict["GEMINI_MODELS"]["MACRO_NEWS"]  # Claude-authored (2026-10-16): set in parameters.py
 
 # 1. Load variables from .env file into environment
 load_dotenv()

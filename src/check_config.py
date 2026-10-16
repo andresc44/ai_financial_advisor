@@ -30,7 +30,7 @@ from src.personalized.user_settings import get_active_users
 # Shared .env keys: (required, what it's for)
 SHARED_KEYS = {
     "FINNHUB_API_KEY": (True, "Finnhub, shared market data"),
-    "TWELVEDATA_API_KEY": (True, "Twelve Data, shared technical indicators"),
+    "TWELVEDATA_API_KEY": (False, "Twelve Data: only indicators not computed from Yahoo prices (TECHNICAL_INDICATOR_SOURCE)"),
     "ANTHROPIC_API_KEY": (True, "Claude for the universal recommendations (shared)"),
     "GMAIL_USER": (True, "Gmail account the digest is sent from"),
     "GMAIL_APP_PASSWORD": (True, "App password for that Gmail account"),

@@ -31,6 +31,7 @@ from src.universal.recommendations.finnhub_filter_helper import filter_finnhub_t
 from src.universal.recommendations.twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
 from src.parameters import params_dict
 from src.universal.recommendations.data_source_guard import DataSourceIssues, GuardedFinnhubClient, twelvedata_request
+from src.universal.recommendations import local_indicators
 
 class DataFetcher:
     """Handles fetching, processing, and exporting stock market data 
@@ -262,11 +263,15 @@ class DataFetcher:
 
         symbols_str = ",".join(symbols)
         batch_results: Dict[str, Any] = {}
+        # Claude-authored (2026-10-16): with TECHNICAL_INDICATOR_SOURCE "yahoo" (the default), every indicator
+        # local_indicators.py implements is computed from Yahoo's daily bars (one download for all symbols, no credits);
+        # only the rest go to Twelve Data below. Same result format either way.
+        compute_locally = params_dict.get("TECHNICAL_INDICATOR_SOURCE", "yahoo") == "yahoo"
 
         for item in indicators:
             indicator_name, extra_params = item if isinstance(item, tuple) else (item, {})
             url = f"https://api.twelvedata.com/{indicator_name.lower()}"
-            
+
             params = {
                 "symbol": symbols_str,
                 "interval": interval,
@@ -277,6 +282,16 @@ class DataFetcher:
             # Generate unique key per parameter set (e.g., 'rsi' vs 'rsi_9')
             param_suffix = f"_{extra_params.get('time_period')}" if "time_period" in extra_params else ""
             indicator_key = f"{indicator_name}{param_suffix}"
+
+            if compute_locally and local_indicators.supports(indicator_name, interval, extra_params):
+                bars = self._daily_bars(symbols)
+                for symbol in symbols:
+                    values = local_indicators.compute(
+                        indicator_name, interval, extra_params, bars.get(symbol), bars.get(local_indicators.MARKET_SYMBOL)
+                    )
+                    if values:
+                        batch_results.setdefault(symbol, {})[indicator_key] = {"values": values}
+                continue
 
             try:
                 # Claude-authored (2026-10-16): rate limits waited out, a used-up allowance or rejected key reported
@@ -298,7 +313,28 @@ class DataFetcher:
 
         print(f"[DEBUG Batch Results Complete] Formatted keys: {list(batch_results.keys())}")
         return batch_results
-    
+
+    def _daily_bars(self, symbols: List[str]) -> Dict[str, Any]:
+        """
+        Claude-authored (2026-10-16): unadjusted daily bars for `symbols` and SPY (for beta), downloaded once per run in
+        a single Yahoo request and reused by every indicator. A failed download is reported as a data-source issue and
+        not retried this run; those symbols then have no indicators, which the completeness check also flags.
+        """
+        cache = self.__dict__.setdefault("_daily_bars_cache", {})
+        missing = sorted((set(symbols) | {local_indicators.MARKET_SYMBOL}) - set(cache))
+        if missing:
+            try:
+                cache.update(local_indicators.download_daily_bars(missing))
+            except Exception as e:
+                print(f"[WARNING] Yahoo daily prices for technical indicators failed: {e}")
+                issues = self.__dict__.get("data_source_issues")
+                if issues is not None:
+                    issues.add("Yahoo prices", "failed",
+                               f"Daily prices for the technical indicators couldn't be downloaded ({type(e).__name__}).")
+            for symbol in missing:
+                cache.setdefault(symbol, None)
+        return cache
+
     def __get_metric_with_alert(self, data: Dict[str, Any], key: str, symbol: str, default: Any = False) -> Any:
         if key not in data:
             print(f"Alert: Field '{key}' not found for ticker '{symbol}'.")

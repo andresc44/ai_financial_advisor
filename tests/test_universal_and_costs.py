@@ -170,7 +170,7 @@ def test_missing_data_issues():
     for ticker in ("T1", "T2", "T3"):
         packets[ticker]["twelvedata"] = {}
     issues = guard.missing_data_issues(packets, max_missing_pct=20)
-    assert [(i["source"], i["reason"]) for i in issues] == [("Twelve Data", "incomplete_data")]
+    assert [(i["source"], i["reason"]) for i in issues] == [("Technical indicators", "incomplete_data")]
     assert "3 of 10 tickers (30%)" in issues[0]["message"]
     assert guard.missing_data_issues(packets, max_missing_pct=40) == []
 

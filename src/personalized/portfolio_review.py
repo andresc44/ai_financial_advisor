@@ -30,10 +30,10 @@ if str(project_root) not in sys.path:
 from src.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
 from src.personalized.holdings_state import _clean_float
-from src.personalized.symbol_specific_news import GEMINI_MODEL
 from src.usage_tracking import record_gemini_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
+GEMINI_MODEL = params_dict["GEMINI_MODELS"]["PORTFOLIO_REVIEW"]  # Claude-authored (2026-10-16): set in parameters.py
 CATEGORIES = ("WATCH", "NOTE")
 
 # 1. Define Pydantic Schema

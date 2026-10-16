@@ -147,6 +147,14 @@ params_dict = {
     #        - Logic Required: `vwap` requires comparing against current stock price (`Price > VWAP`); `obv` requires 
     #          evaluating N-period slope or moving average crossover.
     # ==============================================================================================
+    # Claude-authored (2026-10-16): where the indicators in TWELVEDATA_FILTERS / TWELVEDATA_CONTEXT come from.
+    # "yahoo" (default) computes them from Yahoo's unadjusted daily bars (src/universal/recommendations/local_indicators.py):
+    # free, no rate limit, one download for every ticker, and the same values as Twelve Data for rsi, ema, sma, bbands,
+    # sar, adx, and atr (checked against Twelve Data to within 0.0001%). "beta" is market beta against SPY. Intervals
+    # 1day and 1week only. Anything else (another indicator, an intraday interval, an option such as ma_type) still
+    # goes to Twelve Data, whose free plan allows 8 credits a minute (one per ticker per indicator).
+    # "twelvedata" sends everything to Twelve Data, as before.
+    "TECHNICAL_INDICATOR_SOURCE": "yahoo",
     "TWELVEDATA_FILTERS": [
         # --- Category A: Standalone Bounded Momentum ---
         # ("rsi", "1day", "<=", 70),                                            # Standard 14-period RSI
@@ -228,11 +236,11 @@ params_dict = {
         # Question Answered: "Will this bounce hard and fast enough to be worth our time?"
         # Multi-week Setup: Evaluates relative market sensitivity calculated over a 1-year weekly window.
         # -----------------------------------------------------------------------------------------
-        # Claude-authored (2026-10-16): off. Twelve Data's "beta" is TA-Lib's statistical beta between two price series
-        # of the same stock (open vs close by default), not sensitivity to the market: it read 0.02 for SNPS, whose
-        # market beta is ~1.1. It cost a credit per ticker and could mislead Claude. Yahoo's market beta is already
-        # in the data as price_action.beta.
-        # ("beta", "1week", {"time_period": 52, "outputsize": outputs_twelvedata_context}),
+        # Claude-authored (2026-10-16): computed locally as market beta: the slope of the stock's weekly returns on SPY's
+        # over 52 weeks. (Twelve Data's "beta" is a statistic between two price series of the same stock, which read
+        # 0.02 for SNPS, whose market beta is ~1.1; with TECHNICAL_INDICATOR_SOURCE "twelvedata", comment this out.)
+        # Yahoo's own 5-year monthly beta is also in the data, as price_action.beta.
+        ("beta", "1week", {"time_period": 52, "outputsize": outputs_twelvedata_context}),
     ],
     # 1. Recommendation Trends (SDK only accepts 'symbol')
     # "RECOMMENDATION_TRENDS": {},
@@ -248,7 +256,16 @@ params_dict = {
     "COMPANY_BASIC_FINANCIALS": {
         "METRIC": "all" # str: 'all', 'margin', 'valuation', 'price', etc.
     },
-    
+
+    # Claude-authored (2026-10-16): the Gemini model for each use (all Google Search grounded except the review).
+    # Each user's own GEMINI key pays for HOLDING_NEWS and PORTFOLIO_REVIEW; the shared GEMINI_API_KEY pays for
+    # MACRO_NEWS. A model without a price in API_PRICES["gemini"] is still counted in api_usage, just not costed.
+    "GEMINI_MODELS": {
+        "HOLDING_NEWS": "gemini-3.6-flash",      # News bullets per holding (src/personalized/symbol_specific_news.py)
+        "PORTFOLIO_REVIEW": "gemini-3.6-flash",  # Whole-portfolio review notes (src/personalized/portfolio_review.py)
+        "MACRO_NEWS": "gemini-3.6-flash",        # Top macro stories in the universal content (src/universal/market_news.py)
+    },
+
     "CLAUDE_CONFIG": {
         "model": "claude-sonnet-5-5",
         "max_tokens": 16000,           # Caps thinking + tool output together, so leave headroom

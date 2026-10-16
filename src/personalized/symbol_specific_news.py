@@ -39,7 +39,7 @@ from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key
 from src.usage_tracking import record_gemini_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
-GEMINI_MODEL = "gemini-3.6-flash"  # Same model as market_news.py
+GEMINI_MODEL = params_dict["GEMINI_MODELS"]["HOLDING_NEWS"]  # Claude-authored (2026-10-16): set in parameters.py
 PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 GROUNDING_REDIRECT_HOST = "vertexaisearch.cloud.google.com"  # Gemini API grounding links redirect through here
 REDIRECT_TIMEOUT_SECONDS = 5

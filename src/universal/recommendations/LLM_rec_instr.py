@@ -106,7 +106,7 @@ Record your sub-scores by calling the `{EVALUATION_TOOL_NAME}` tool exactly once
 
 DATA PARSING & METRIC GUIDELINES:
 - Financial Ratios: Ratios such as `debt_to_equity` in the payload are scaled as percentages (e.g., 34.804 represents a 34.8% debt-to-equity ratio or ~0.35 D/E).
-- Technical Indicators: Base technical assessments on supplied series including daily RSI (14-day), short-term exponential moving averages (ema_9, ema_21), 20-day Bollinger Bands, Parabolic SAR, and volume relative to 10-day/3-month averages.
+- Technical Indicators: Base technical assessments on supplied series including daily RSI (14-day), short-term exponential moving averages (ema_9, ema_21), 20-day Bollinger Bands, Parabolic SAR, and volume relative to 10-day/3-month averages. `beta_52_1week` is the stock's beta to the S&P 500 (SPY) from 52 weeks of weekly returns; `price_action.beta` is Yahoo's longer-term beta.
 
 ### LONG-TERM EVALUATION RUBRIC (Total: 100 Points)
 1. valuation_score (0.0 - 25.0):

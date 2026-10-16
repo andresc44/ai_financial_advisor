@@ -146,7 +146,9 @@ def _has_twelvedata(packet: dict) -> bool:
     return isinstance(indicators, dict) and any(isinstance(v, dict) and v.get("values") for v in indicators.values())
 
 
-COMPLETENESS_CHECKS = {"Yahoo": _has_yahoo, "Finnhub": _has_finnhub, "Twelve Data": _has_twelvedata}
+# Claude-authored (2026-10-16): "Technical indicators", not "Twelve Data": they are now computed from Yahoo prices by
+# default (TECHNICAL_INDICATOR_SOURCE), and stored under the same "twelvedata" key either way
+COMPLETENESS_CHECKS = {"Yahoo": _has_yahoo, "Finnhub": _has_finnhub, "Technical indicators": _has_twelvedata}
 
 
 def missing_data_issues(llm_packets: dict[str, dict], max_missing_pct: float) -> list[dict]:

@@ -247,7 +247,14 @@ The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and T
 | Finnhub rejects the key (401) | No more Finnhub calls this run. |
 | Twelve Data per-minute limit | Waits for the next minute, up to 2 times per request. |
 | Twelve Data daily credits used up, or key rejected | No more Twelve Data calls this run. |
-| A Twelve Data request needs more credits than the plan allows per minute (one per ticker; the free plan allows 8) | Skipped at once instead of waiting it out, and not retried this run. The technical filter then keeps those tickers instead of dropping them all. |
+| A Twelve Data request needs more credits than the plan allows per minute (one per ticker; the free plan allows 8). Only applies to indicators not computed from Yahoo prices (below). | Skipped at once instead of waiting it out, and not retried this run. The technical filter then keeps those tickers instead of dropping them all. |
+| Yahoo's daily prices for the indicators can't be downloaded | Reported as a `Yahoo prices` issue. Those tickers have no indicators, which the completeness check also flags. |
+
+**Technical indicators** come from Yahoo daily prices by default (`TECHNICAL_INDICATOR_SOURCE = "yahoo"`, `src/universal/recommendations/local_indicators.py`, added 2026-10-16).
+- **Why:** on Twelve Data's free plan, the ~40 candidates and any holdings refresh of more than 8 stocks never got their indicators.
+- **Covered:** rsi, ema, sma, bbands, sar, adx, and atr, on daily or weekly bars. They are computed from unadjusted bars with TA-Lib's conventions. Checked against Twelve Data, they matched to within 0.0001% (`tests/test_local_indicators.py` replays it on saved AAPL data).
+- **beta:** market beta against SPY.
+- **Everything else** (another indicator, an intraday interval, an option like `ma_type`) still goes to Twelve Data. Set the source to `"twelvedata"` to send everything there.
 | More than `UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT` (20%) of tickers missing Yahoo, Finnhub, or Twelve Data data | Picks are still made, but flagged. |
 
 Each problem is added to the universal payload's `universal_issues` (`{"source", "reason", "message"}`), so the email can say why picks are missing or based on partial data. Each is also sent to `OPS.ALERT_USERS` by Telegram, once per cooldown. The macro news (`src/universal/market_news.get_macro_stories`, still disabled) works the same way with the shared `GEMINI_API_KEY`: on failure it returns no stories plus the issue, and never raises.
