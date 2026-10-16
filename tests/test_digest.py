@@ -404,3 +404,16 @@ def test_payload_only_without_a_period_waits_for_a_window(digest_run, tmp_path, 
     assert dp.run_daily_digests(["U0"], now=datetime(2026, 10, 15, 12, 0, tzinfo=ET), payload_only=True) == (
         True, "No digest due.")
     assert not (tmp_path / "payloads").exists()
+
+
+def test_grounding_redirects_are_verified_without_metadata(monkeypatch):
+    """gemini-3.6-flash with a response schema returns no grounding metadata, only the redirect links it was given."""
+    redirect = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/"
+    targets = {redirect + "real": "https://investors.caterpillar.com/news/2026/dividend"}
+    monkeypatch.setattr(news.requests, "get", lambda url, allow_redirects, timeout: SimpleNamespace(
+        is_redirect=url in targets, headers={"Location": targets.get(url)}))
+    response = SimpleNamespace(candidates=[SimpleNamespace(grounding_metadata=None)])
+    items = [news.SymbolNewsItem(priority="HIGH", event_summary="", stock_impact="", source_url=url) for url in (
+        redirect + "real", redirect + "made-up-token", "https://www.reuters.com/business/invented")]
+    news._verify_source_urls(items, news._grounded_urls(response))
+    assert [item.source_url for item in items] == [targets[redirect + "real"], None, None]

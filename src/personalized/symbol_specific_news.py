@@ -13,6 +13,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   repeating it for every stock. News already fetched is kept.
 - 2026-10-15: stocks are fetched in parallel (DIGEST.SYMBOL_NEWS_CONCURRENCY at a time, sharing one client),
   and the digest starts this while Claude evaluates the holdings.
+- 2026-10-16: gemini-3.6-flash returns no grounding metadata with a response schema, so no link survived the check.
+  Grounding redirect links the model writes are now verified by following them (see _verify_source_urls).
 """
 import sys
 import threading
@@ -106,15 +108,39 @@ def _url_key(url: Optional[str]) -> Optional[str]:
     host = (parts.hostname or "").removeprefix("www.")
     return f"{host}{parts.path.rstrip('/')}" if host else None
 
+def _is_grounding_redirect(url: Optional[str]) -> bool:
+    if not url:
+        return False
+    parts = urlsplit(url.strip())
+    return parts.hostname == GROUNDING_REDIRECT_HOST and parts.path.startswith("/grounding-api-redirect/")
+
 def _verify_source_urls(items: list[SymbolNewsItem], grounded_urls: list[str]) -> None:
-    """Replaces each item's source_url with the matching grounded URL, or None when no grounded page matches."""
+    """
+    Replaces each item's source_url with a verified article URL, or None when it can't be verified.
+
+    - A URL matching a page Google Search grounding returned (grounded_urls, from the grounding metadata) is kept
+      as that page's URL.
+    - Claude-authored (2026-10-16): with a response schema, gemini-3.6-flash returns no grounding metadata, so that
+      check kept no link at all (0 of 30 holding-news links and 0 of 5 macro links in the first full run). The model
+      does write the grounding redirect links its search returned (vertexaisearch.cloud.google.com/grounding-api-
+      redirect/...). Only a real search produces one that redirects, so each is followed one hop (without
+      downloading the article) and replaced by the article's URL; one that doesn't redirect is dropped.
+    Used by any item with a source_url (the macro news too).
+    """
     verified = {}
     for url in grounded_urls:
         key = _url_key(url)
         if key:
             verified.setdefault(key, url)
+    redirects = sorted({item.source_url.strip() for item in items if _is_grounding_redirect(item.source_url)})
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        resolved = dict(zip(redirects, pool.map(_resolve_grounding_uri, redirects)))
     for item in items:
-        item.source_url = verified.get(_url_key(item.source_url))
+        if _is_grounding_redirect(item.source_url):
+            article = resolved.get(item.source_url.strip())
+            item.source_url = article if article and not _is_grounding_redirect(article) else None
+        else:
+            item.source_url = verified.get(_url_key(item.source_url))
 
 # 3. Fetch Function (one stock) using Chat interface to avoid the AFC warning
 @retry(**GEMINI_RETRY)  # Retries only what can recover; key, billing, and quota errors fail immediately

@@ -88,6 +88,14 @@ def filter_yahoo_tickers(
     print(f"Fetching Yahoo data for {len(input_tickers)} tickers, {workers} at a time...")
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="yahoo") as pool:
         fetched = dict(zip(input_tickers, pool.map(_fetch, input_tickers)))
+    # The first parallel requests of a run can race for Yahoo's session token and get a 401 "Invalid Crumb" (ALB was
+    # lost that way on 2026-10-16), so each failed fetch is retried once, one at a time
+    failed = [s for s, data in fetched.items() if not isinstance(data, dict) or "error" in data]
+    for symbol in failed:
+        fetched[symbol] = _fetch(symbol)
+    if failed:
+        still = sum(1 for s in failed if not isinstance(fetched[s], dict) or "error" in fetched[s])
+        print(f"Retried {len(failed)} failed Yahoo fetches one at a time; {still} still failed.")
 
     for symbol in input_tickers:
         yahoo_metrics = fetched[symbol]
