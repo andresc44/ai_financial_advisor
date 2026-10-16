@@ -2,9 +2,10 @@
 Shared test setup. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-15, at Andres's request.
 
 Every test runs offline and touches nothing real:
-- files the code writes (market-context cache, alert log, FX cache, track record, usage ledger) go to a
-  temporary folder;
-- Telegram messages are captured in `telegram` instead of sent;
+- files the code writes (market-context cache, alert log, FX cache, track record, usage ledger, digest HTML) go
+  to a temporary folder;
+- Telegram messages are captured in `telegram` instead of sent, and emails fail loudly unless a test replaces
+  the SMTP connection (2026-10-17);
 - yfinance downloads fail loudly unless a test replaces them, so no test silently depends on live market data;
 - the universal content's macro news and market dashboard return nothing unless a test asks for them.
 Anthropic and Gemini calls go through mock HTTP transports inside the tests that need them.
@@ -49,6 +50,18 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(track_record, "PERSONAL_PATH", tmp_path / "track" / "personal.jsonl")
     monkeypatch.setattr(track_record, "UNIVERSAL_PATH", tmp_path / "track" / "universal.jsonl")
     monkeypatch.setattr(usage_tracking, "LEDGER_PATH", tmp_path / "usage" / "api_usage.jsonl")
+
+    # 2026-10-17: rendered digests go to the temporary folder, and no test can email anyone by accident
+    import smtplib
+
+    import src.digest.create_html as create_html
+
+    monkeypatch.setattr(create_html, "REPORTS_DIR", tmp_path / "html_reports")
+
+    def no_smtp(*args, **kwargs):
+        raise RuntimeError("smtplib.SMTP called in a test without a fake")
+
+    monkeypatch.setattr(smtplib, "SMTP", no_smtp)
 
     def no_network(*args, **kwargs):
         raise RuntimeError("yfinance.download called in a test without a fake")

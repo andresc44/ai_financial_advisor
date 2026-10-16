@@ -231,7 +231,47 @@ venv/bin/python src/digest/digest_payload.py --payload-only --period Pre-Market 
 - **Still recorded:** new evaluations are saved to the watchdog state and the track record, and spend to the usage ledger, like any other run.
 - **Still alerted:** problems found while building, such as a broken holdings connection or a bad key, send their usual notices.
 
+**Test the email from a saved payload** with `--from-payload` (added 2026-10-17). It runs only the last two steps of a real run, `create_html` and then `send_gmail`, so it fetches no data and calls no LLM:
+
+```bash
+venv/bin/python src/digest/digest_payload.py --from-payload test_output/digest_payloads/Andres_2026-10-16_Pre-Market_0801.json
+venv/bin/python src/digest/digest_payload.py --from-payload <file> --no-email   # only save the HTML
+```
+
+- **Recipient:** the email goes to the payload's user at their `<NAME>_EMAIL` in `.env`.
+- **Subject:** starts with `[Test]`.
+- **Nothing is recorded as sent.**
+- **The HTML is saved** to `src/digest/html_reports/<user>_<date>_<period>.html` (gitignored). Open it in a browser to check the layout.
+
 On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1"` first.
+
+### The digest email (rewritten 2026-10-17)
+
+`src/digest/create_html.py` turns each user's payload into the email, and `src/digest/email_template.html` lays it out.
+
+**Order:**
+1. Greeting, by the time of day in the user's home timezone.
+2. Notices about anything missing.
+3. Portfolio overview.
+4. Portfolio risk: beta, the share of the portfolio's value under each signal, and the portfolio review's "watch" notes.
+5. The connected brokerage and its accounts.
+6. Markets and macro news.
+7. Holdings: most urgent signal first, then largest position. A stock held in several accounts gets one card.
+8. Swing ideas.
+9. Long-term ideas.
+
+It is built for a phone first: one column up to 600 px wide, checked at 360 and 390 px.
+
+**Dropdowns.** Long text sits in dropdowns: each holding's reasoning and news, each macro story's impact, each pick's extra figures, and the cost of the digest.
+- **Collapse:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
+- **Show expanded:** Gmail and Outlook, under the same labels. Neither supports dropdowns in email.
+
+**Gmail's size limit.** Gmail hides everything past about 102 KB of HTML behind "[Message clipped]".
+- **Normal size:** a typical digest is about 80 KB.
+- **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions.
+- **Never removed:** each holding's signal, figures and reasoning.
+- **Capacity:** about 25 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
+- **Plain-text version:** always complete.
 
 ### Fresh data in each digest
 

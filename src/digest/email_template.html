@@ -1,600 +1,367 @@
-<!--
-================================================================================
-DAILY FINANCIAL DIGEST — EMAIL TEMPLATE (Jinja2)
-================================================================================
-Mobile-first (480px cap), table-based layout for Gmail/Outlook-on-Android
-rendering, Geotab brand palette, financial red/green conditionals.
+{#-
+  Finnbot digest email (Jinja2), rendered by create_html.py from build_view(payload).
+  Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-17, at Andres's request; replaces the earlier
+  placeholder template.
 
-TOP-LEVEL DATA CONTRACT (see render_digest.py for the full typed schema):
-  report_date            | Type: str
-  market_status           | Type: Literal["Risk-On","Risk-Off","Consolidating"]
-  macro_metrics            | Type: List[Dict[str, Any]]
-  macro_stories             | Type: List[str]
-  sector_heatmap_url         | Type: str
-  portfolio_value              | Type: float
-  cash_balance                  | Type: float
-  daily_pl_dollar                | Type: float
-  daily_pl_percent                | Type: float
-  all_time_pl_dollar               | Type: float
-  all_time_pl_percent               | Type: float
-  portfolio_beta                     | Type: float
-  performance_chart_url               | Type: str
-  holdings                             | Type: List[Dict[str, Any]]
-  swing_candidates                      | Type: List[Dict[str, Any]]
-  value_candidates                       | Type: List[Dict[str, Any]]
-  allocation_chart_url                    | Type: str
-  risk_warnings                            | Type: List[str]
+  Built for phones first: one fluid column up to 600px wide in table layout, which Gmail, Apple Mail and Outlook
+  all render. Every value arrives as a ready-made string, so this file is layout only. Order: header and greeting,
+  notices, portfolio overview, portfolio risk, connected account, markets and macro news, holdings, swing ideas,
+  long-term ideas, footer.
 
-REQUIRES CUSTOM JINJA FILTERS (registered on the Environment in
-render_digest.py — plain Jinja2 has no built-in currency/percent formatting):
-  currency         -> "$12,345.67"
-  signed_currency   -> "+$123.45" / "-$123.45"
-  signed_pct         -> "+1.23%" / "-1.23%"
-  pct                 -> "38.0%"
+  Size: Gmail clips an email after ~102 KB of HTML ("[Message clipped]"), so typography lives in the short classes
+  of the <style> block (Gmail, Apple Mail, Outlook and Samsung Email all apply them) instead of being repeated
+  inline hundreds of times. Colours, backgrounds and spacing stay inline, so the email still reads if a client
+  drops the <style> block.
 
-DESIGN NOTE ON COLOR: the brief locks in the Geotab palette plus a strict
-green/red exception for price gain/loss. Zone 3's "Decision Flag" badge has
-three states, and only two map cleanly onto that palette (HOLD -> favorable
-blue, RISK ALERT -> the existing bearish red). "TRIM / TAKE PROFIT" is a
-genuinely separate, in-between signal, so one supplementary caution color
-(#D97706, amber) is introduced for it — flagged here since it's the one
-deviation from the given hex list. Sentiment badges (Bullish/Bearish/Neutral)
-and the pre-market status tag reuse the existing palette with no additions.
-================================================================================
--->
+  Dropdowns are <details>/<summary> (the `fold` macro). Apple Mail and Samsung Email collapse them. Outlook strips
+  the tags and Gmail swaps them for <u>, so both show the content expanded under its label; the `u` rule removes
+  the underline Gmail would otherwise draw under all of it. Spacing sits on the wrapping <div>, not on <details>,
+  since the bare <u> tags Gmail puts in their place carry no styles.
+-#}
+{%- macro badge(b) -%}
+<span class="bd" style="background-color:{{ b.bg }};color:{{ b.fg }};">{{ b.text }}</span>
+{%- endmacro -%}
+
+{%- macro label(text, color=MUTED, top="0") -%}
+<div class="lb" style="color:{{ color }};padding-top:{{ top }};">{{ text }}</div>
+{%- endmacro -%}
+
+{%- macro stats(items) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F5F7FA;border-radius:10px;">
+<tr>
+{% for s in items %}
+<td width="{{ 100 // items|length }}%" valign="top" class="st{{ '' if loop.first else ' sb' }}"><div class="sl">{{ s.label }}</div><div class="sv"{% if s.tone != "ink" %} style="color:{{ TONES[s.tone] }};"{% endif %}>{{ s.value }}</div>{% if s.sub %}<div class="ss"{% if s.sub_tone != "muted" %} style="color:{{ TONES[s.sub_tone] }};"{% endif %}>{{ s.sub }}</div>{% endif %}</td>
+{% endfor %}
+</tr>
+</table>
+{%- endmacro -%}
+
+{%- macro fold(title, open=false) -%}
+<div style="padding-top:6px;"><details{{ " open" if open else "" }}>
+<summary style="padding:6px 0;color:#0B6BCB;"><span class="ft">{{ title }}</span></summary>
+<div style="padding-top:4px;">{{ caller() }}</div>
+</details></div>
+{%- endmacro -%}
+
+{%- macro kv(rows) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{% for row_label, row_value in rows %}
+<tr><td class="kl">{{ row_label }}</td><td align="right" class="kv">{{ row_value }}</td></tr>
+{% endfor %}
+</table>
+{%- endmacro -%}
+
+{%- macro card(pad="16px", bg="#FFFFFF", border="#E2E8F0") -%}
+<tr><td class="gutter" style="padding:0 12px 12px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:14px;">
+<tr><td class="c" style="padding:{{ pad }};">
+{{ caller() }}
+</td></tr>
+</table>
+</td></tr>
+{%- endmacro -%}
+
+{%- macro heading(title, sub="") -%}
+<tr><td class="c" style="padding:16px 20px 10px 20px;">
+<div class="hd">{{ title }}</div>
+{% if sub %}<div class="xs mu" style="padding-top:2px;">{{ sub }}</div>{% endif %}
+</td></tr>
+{%- endmacro -%}
+
+{%- macro stripe(color) -%}
+<td width="4" style="width:4px;background-color:{{ color }};border-radius:2px;font-size:1px;line-height:1px;">&nbsp;</td>
+{%- endmacro -%}
+
+{%- macro links(l) -%}
+<div class="sm lk" style="padding-top:12px;"><a href="{{ l.yahoo }}" class="lk">Yahoo</a><span style="color:#CBD5E1;">&nbsp; | &nbsp;</span><a href="{{ l.finviz }}" class="lk">Finviz</a><span style="color:#CBD5E1;">&nbsp; | &nbsp;</span><a href="{{ l.tradingview }}" class="lk">TradingView</a></div>
+{%- endmacro -%}
+
+{%- macro title_row(href, title, subtitle, value, extra) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+<td valign="top"><a href="{{ href }}" class="tk">{{ title }}</a><div class="sm mu" style="padding-top:1px;">{{ subtitle }}</div></td>
+<td valign="top" align="right" style="padding-left:10px;white-space:nowrap;"><div class="pv">{{ value }}</div>{{ extra }}</td>
+</tr></table>
+{%- endmacro -%}
+
+{%- macro pick_header(c) -%}
+{{ title_row(c.links.yahoo, c.ticker, c.name, c.price, '<div style="padding-top:3px;"><span class="bd" style="background-color:#0F2A44;color:#FFFFFF;font-size:12px;">Score '|safe ~ c.score ~ '</span></div>'|safe) }}
+<div class="xs mu" style="padding-top:10px;line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+{%- endmacro -%}
 <!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no,url=no">
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
-<title>Daily Financial Digest — {{ report_date }}</title>
-<!--[if mso]>
-<noscript>
-<xml>
-<o:OfficeDocumentSettings>
-<o:PixelsPerInch>96</o:PixelsPerInch>
-</o:OfficeDocumentSettings>
-</xml>
-</noscript>
-<![endif]-->
+<title>{{ subject }}</title>
+<!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
 <style>
-  /* ---- Client resets ---- */
-  body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-  table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
-  img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; display: block; }
-  body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #EFF2F7; }
-  a { text-decoration: none; }
-  table { border-collapse: collapse; }
-
-  /* ---- Mobile-first: this IS the base layout, capped at 480px ---- */
-  .email-container { width: 480px; max-width: 480px; }
-
-  @media screen and (max-width: 480px) {
-     .email-container { width: 100% !important; }
-     .fluid-td { width: 100% !important; display: block !important; }
-     .half-col { width: 50% !important; }
-     .quick-link-cell { padding-left: 4px !important; padding-right: 4px !important; }
-  }
+body{margin:0!important;padding:0!important;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
+table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
+table{border-collapse:collapse;}
+a{text-decoration:none;}
+u{text-decoration:none!important;}
+summary{cursor:pointer;}
+.c{font-family:{{ FONT }};font-size:14px;line-height:21px;color:#334155;}
+.hd{font-size:13px;line-height:18px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#0F2A44;}
+.h2{font-size:16px;line-height:22px;font-weight:800;color:#0F2A44;}
+.lb{font-size:11px;line-height:15px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
+.sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
+.st{padding:10px 8px;}
+.sb{border-left:1px solid #E5EAF0;}
+.sv{font-size:15px;line-height:20px;font-weight:700;padding-top:3px;color:#0F2A44;}
+.ss{font-size:11px;line-height:15px;color:#64748B;}
+.sm{font-size:13px;line-height:19px;}
+.xs{font-size:12px;line-height:18px;}
+.mu{color:#64748B;}
+.ink{color:#0F2A44;}
+.lk{color:#0B6BCB;font-weight:700;}
+.ft{color:#0B6BCB;font-size:13px;line-height:18px;font-weight:700;}
+.tk{font-size:19px;line-height:24px;font-weight:800;color:#0F2A44;}
+.pv{font-size:17px;line-height:24px;font-weight:800;color:#0F2A44;}
+.bd{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;line-height:15px;font-weight:700;white-space:nowrap;}
+.dot{display:inline-block;width:7px;height:7px;border-radius:4px;}
+.nd{width:14px;padding-top:7px;}
+.nt{padding-bottom:10px;}
+.kl,.kv{padding:6px 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;}
+.kl{color:#64748B;}
+.kv{padding-left:10px;font-weight:700;color:#0F2A44;}
+.mh{padding:0 0 6px 6px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
+.mc{padding:7px 0 7px 6px;border-top:1px solid #EEF2F6;font-size:13px;line-height:17px;white-space:nowrap;}
+@media screen and (max-width:420px){.gutter{padding-left:8px!important;padding-right:8px!important;}}
 </style>
 </head>
-<body style="margin:0;padding:0;background-color:#EFF2F7;">
+<body style="margin:0;padding:0;background-color:#EEF2F6;">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{{ preheader }}{% for _ in range(30) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EEF2F6;">
+<tr><td align="center" style="padding:0;font-family:{{ FONT }};">
+<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;">
 
-<!-- Preheader (hidden preview text) -->
-<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
-  {{ market_status }} — Portfolio {{ signed_pct(daily_pl_percent) }} today. Full digest inside.
-  <!-- Whitespace padding so Gmail/Apple Mail don't pull trailing body text into the inbox snippet -->
-  &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;
+{# ---------- Header: greeting ---------- #}
+<tr><td style="padding:0 0 14px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0F2A44;">
+<tr><td class="c" style="padding:24px 20px 22px 20px;">
+<div class="lb" style="letter-spacing:1.6px;color:#7DD3FC;">Finnbot &middot; {{ period }} digest</div>
+<div style="font-size:25px;line-height:31px;font-weight:800;color:#FFFFFF;padding-top:8px;">{{ greeting }}</div>
+<div style="color:#CBD5E1;padding-top:4px;">{{ date_long }}</div>
+{% if prepared %}<div class="xs" style="color:#94A3B8;padding-top:2px;">{{ prepared }}</div>{% endif %}
+</td></tr>
+</table>
+</td></tr>
+
+{# ---------- Notices: why parts of the digest are missing ---------- #}
+{% if issues %}
+{% call card("14px 16px", "#FFFBEB", "#FCD34D") %}
+<div style="font-weight:800;color:#92400E;">Some parts of this digest are incomplete</div>
+{% for i in issues %}
+<div class="sm" style="padding-top:6px;"><b class="ink">{{ i.title }}:</b> {{ i.message }}</div>
+{% endfor %}
+{% endcall %}
+{% endif %}
+
+{# ---------- Overview ---------- #}
+{% if portfolio %}
+{% call card() %}
+{{ label(portfolio.label) }}
+<div style="font-size:32px;line-height:38px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
+<div style="padding-top:2px;"><b style="color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</b> <span class="mu">&nbsp;{{ portfolio.session }}</span></div>
+<div style="padding-top:14px;">{{ stats(portfolio.stats) }}</div>
+{% endcall %}
+{% endif %}
+
+{# ---------- Portfolio risk ---------- #}
+{% if risk %}
+{% call card() %}
+<div class="h2">Portfolio risk</div>
+{% if risk.beta %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;"><tr>
+<td width="72" valign="top" align="center" style="width:72px;background-color:#F5F7FA;border-radius:10px;padding:8px 0;"><div class="sl">Beta</div><div style="font-size:20px;line-height:26px;font-weight:800;color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.value }}</div></td>
+<td valign="top" style="padding-left:12px;"><b style="color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.label }}</b><div class="sm" style="padding-top:2px;">{{ risk.beta.text }}</div></td>
+</tr></table>
+{% endif %}
+{% if risk.mix %}
+{{ label("Signals, by share of portfolio value", top="16px") }}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><tr>
+{% for m in risk.mix %}<td width="{{ m.width }}%" style="background-color:{{ m.color }};height:10px;font-size:1px;line-height:10px;">&nbsp;</td>{% endfor %}
+</tr></table>
+<div class="xs" style="padding-top:8px;line-height:22px;">
+{% for m in risk.mix %}<span style="white-space:nowrap;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background-color:{{ m.color }};"></span>&nbsp;<b class="ink">{{ m.label }}</b> {{ m.count }} &middot; {{ m.pct }}</span>&nbsp;&nbsp;&nbsp; {% endfor %}
 </div>
+{% if risk.largest %}<div class="sm" style="padding-top:4px;">Largest position: <b class="ink">{{ risk.largest }}</b></div>{% endif %}
+{% endif %}
+{% if risk.watch %}
+{{ label("What to watch", top="16px") }}
+{% for n in risk.watch %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><tr>{{ stripe("#F97316") }}<td style="padding:1px 0 1px 10px;">{{ n.text }}</td></tr></table>
+{% endfor %}
+{% endif %}
+{% if risk.notes %}
+{% call fold(("Also worth noting" if risk.watch else "Review notes") ~ " (" ~ risk.notes|length ~ ")") %}
+{% for n in risk.notes %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;"><tr>{{ stripe("#38BDF8") }}<td style="padding:1px 0 1px 10px;">{{ n.text }}</td></tr></table>
+{% endfor %}
+{% endcall %}
+{% endif %}
+{% endcall %}
+{% endif %}
 
-<center style="width:100%;background-color:#EFF2F7;">
-<!--[if mso]>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td>
-<![endif]-->
-<table role="presentation" class="email-container" width="480" cellpadding="0" cellspacing="0" border="0" align="center" style="width:480px;max-width:480px;margin:0 auto;background-color:#EFF2F7;">
+{# ---------- Connected account ---------- #}
+{% if account %}
+{% call card() %}
+{{ label("Connected account") }}
+<div style="font-size:18px;line-height:24px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ account.company }}</div>
+{% if account.accounts %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+{% for a in account.accounts %}
+<tr><td style="padding:7px 0;border-top:1px solid #EEF2F6;font-weight:600;color:#0F2A44;">{{ a.name }}<div class="xs mu" style="font-weight:400;">{{ a.positions }}</div></td><td align="right" valign="top" style="padding:7px 0 7px 10px;border-top:1px solid #EEF2F6;font-weight:700;color:#0F2A44;">{{ a.value }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endcall %}
+{% endif %}
 
-  <!-- ============================================================ -->
-  <!-- MASTHEAD                                                       -->
-  <!-- EXPECTED DATA: report_date | Type: str                          -->
-  <!-- EXPECTED DATA: market_status | Type: Literal["Risk-On","Risk-Off","Consolidating"] -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:24px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
-      <p style="margin:0 0 4px 0;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#66788C;font-weight:700;">Daily Financial Digest</p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td valign="middle" style="font-size:22px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">
-            {{ report_date }}
-          </td>
-          <td valign="middle" align="right">
-            {% if market_status == "Risk-On" %}
-              {% set status_fg, status_bg = "#16A34A", "#E7F7ED" %}
-            {% elif market_status == "Risk-Off" %}
-              {% set status_fg, status_bg = "#DC2626", "#FDECEC" %}
-            {% else %}
-              {% set status_fg, status_bg = "#66788C", "#F1F4F8" %}
-            {% endif %}
-            <span style="display:inline-block;padding:7px 14px;border-radius:20px;background-color:{{ status_bg }};color:{{ status_fg }};font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;white-space:nowrap;">{{ market_status }}</span>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+{# ---------- Markets & macro ---------- #}
+{% if market or stories %}
+{{ heading("Markets & macro") }}
+{% if market %}
+{% call card() %}
+{% if market.rows %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", "1D", "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
+{% for r in market.rows %}
+<tr><td class="mc" style="padding-left:0;white-space:normal;font-weight:700;color:#0F2A44;">{{ r.name }}{% if r.ticker %} <span class="mu" style="font-size:11px;font-weight:400;">{{ r.ticker }}</span>{% endif %}</td><td align="right" class="mc">{{ r.last }}</td><td align="right" class="mc" style="font-weight:700;color:{{ TONES[r.d1.tone] }};">{{ r.d1.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.d5.tone] }};">{{ r.d5.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.m1.tone] }};">{{ r.m1.text }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+{% if market.chips %}<div style="padding-top:{{ '14px' if market.rows else '0' }};">{{ stats(market.chips) }}</div>{% endif %}
+{% endcall %}
+{% endif %}
+{% if stories %}
+{% call card() %}
+<div class="h2">Top macro stories</div>
+{% for s in stories %}
+<div style="{% if loop.first %}padding-top:10px;{% else %}margin-top:14px;padding-top:14px;border-top:1px solid #EEF2F6;{% endif %}">
+<div class="lb mu" style="letter-spacing:0.6px;"><span class="dot" style="background-color:{{ s.dot }};"></span>&nbsp; {{ s.priority }} priority</div>
+<div style="font-size:15px;line-height:22px;color:#0F2A44;padding-top:4px;">{{ s.summary }}</div>
+{% if s.impact %}
+{% call fold("Why it matters") %}{{ s.impact }}{% endcall %}
+{% endif %}
+{% if s.url %}<div class="sm" style="padding-top:6px;"><a href="{{ s.url }}" class="lk">Read the source</a></div>{% endif %}
+</div>
+{% endfor %}
+{% endcall %}
+{% endif %}
+{% endif %}
 
-  <!-- ============================================================ -->
-  <!-- ZONE 1: GLOBAL MACRO PULSE                                     -->
-  <!-- EXPECTED DATA: macro_metrics | Type: List[Dict[str, Any]]       -->
-  <!--   each item: { label: str, value: str, change_percent: Optional[float] } -->
-  <!-- EXPECTED DATA: macro_stories | Type: List[str]                   -->
-  <!-- EXPECTED DATA: sector_heatmap_url | Type: str                     -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:16px 16px 0 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
-        <tr>
-          <td style="padding:18px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Global Macro Pulse</p>
-            <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Industrial &amp; broad economy — mining/resources excluded</p>
-          </td>
-        </tr>
+{# ---------- Holdings ---------- #}
+{% if holdings %}
+{{ heading("Your holdings", holdings_note) }}
+{% for h in holdings %}
+{% call card() %}
+{{ title_row(h.links.yahoo, h.symbol, h.name, h.value, '<div class="xs mu">'|safe ~ h.weight ~ '</div>'|safe) }}
+<div class="xs mu" style="padding-top:10px;line-height:22px;">{{ badge(h.signal) }}{% if h.sentiment %} {{ badge(h.sentiment) }}{% endif %}&nbsp; {{ h.meta }}</div>
+<div style="padding-top:10px;">{{ stats(h.stats) }}</div>
+{% for c in h.catalysts %}
+<div class="sm" style="padding-top:10px;">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text }}</div>
+{% endfor %}
+{% if h.rationale %}
+{% call fold("Reasoning") %}
+{{ h.rationale }}
+{% if h.volatility %}<div class="xs mu" style="padding-top:6px;">{{ h.volatility }}</div>{% endif %}
+{% endcall %}
+{% endif %}
+{% if h.news %}
+{% call fold("News (" ~ h.news|length ~ ")") %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{% for n in h.news %}
+<tr><td width="14" valign="top" class="nd"><span class="dot" style="background-color:{{ n.dot }};"></span></td><td valign="top" class="nt">{{ n.text }}{% if n.url %} <a href="{{ n.url }}" class="lk" style="white-space:nowrap;">Source</a>{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% endcall %}
+{% endif %}
+{{ links(h.links) }}
+{% endcall %}
+{% endfor %}
+{% endif %}
 
-        <!-- Macro metric grid: two columns, stacked table rows of pairs -->
-        <tr>
-          <td style="padding:12px 12px 4px 12px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              {% for pair in macro_metrics|batch(2) %}
-              <tr>
-                {% for metric in pair %}
-                <td class="half-col" width="50%" valign="top" style="padding:4px;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-                    <tr>
-                      <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
-                        <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">{{ metric.label }}</p>
-                        <p style="margin:2px 0 0 0;font-size:16px;font-weight:700;color:#002B49;">
-                          {{ metric.value }}
-                          {% if metric.change_percent is not none %}
-                            <span style="font-size:12px;font-weight:700;color:{{ '#16A34A' if metric.change_percent >= 0 else '#DC2626' }};">{{ signed_pct(metric.change_percent) }}</span>
-                          {% endif %}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-                {% endfor %}
-                {% if pair|length == 1 %}<td class="half-col" width="50%" style="padding:4px;">&nbsp;</td>{% endif %}
-              </tr>
-              {% endfor %}
-            </table>
-          </td>
-        </tr>
+{# ---------- Swing ideas ---------- #}
+{{ heading("Swing ideas", "Short-term setups: days to a few weeks") }}
+{% for c in swing %}
+{% call card() %}
+{{ pick_header(c) }}
+{% if c.plan %}
+<div style="padding-top:12px;">{{ stats(c.plan) }}</div>
+{% else %}
+<div class="sm mu" style="padding-top:10px;">No trade levels: the entry, stop, and target the model gave didn't line up.</div>
+{% endif %}
+{% if c.thesis %}<div style="padding-top:12px;">{{ c.thesis }}</div>{% endif %}
+{% if c.earnings_warning %}<div class="sm" style="color:#92400E;background-color:#FEF3C7;border-radius:8px;padding:8px 10px;margin-top:10px;">{{ c.earnings_warning }}</div>{% endif %}
+{% if c.analyst %}<div class="sm mu" style="padding-top:10px;">{{ c.analyst }}</div>{% endif %}
+{% if c.details or c.score_rows %}
+{% call fold("Technicals & score breakdown") %}
+{{ kv(c.details) }}
+{% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
+{% endcall %}
+{% endif %}
+{{ links(c.links) }}
+{% endcall %}
+{% else %}
+{% call card() %}
+<div class="mu">No swing setups scored {{ min_swing_score }} or more out of 100 today.</div>
+{% endcall %}
+{% endfor %}
 
-        <!-- Top 3 macro stories -->
-        <tr>
-          <td style="padding:8px 16px 16px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:12px 0 6px 0;font-size:13px;font-weight:700;color:#002B49;text-transform:uppercase;letter-spacing:0.5px;">Top Stories</p>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              {% for story in macro_stories %}
-              <tr>
-                <td style="padding:0 0 8px 0;font-size:14px;line-height:20px;color:#3B4758;" valign="top">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
-                    <td valign="top">{{ story }}</td>
-                  </tr></table>
-                </td>
-              </tr>
-              {% endfor %}
-            </table>
-          </td>
-        </tr>
+{# ---------- Long-term ideas ---------- #}
+{{ heading("Long-term ideas", "Businesses worth owning for years") }}
+{% for c in long_term %}
+{% call card() %}
+{{ pick_header(c) }}
+{% if c.thesis %}<div style="padding-top:10px;">{{ c.thesis }}</div>{% endif %}
+{% if c.key_risk %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;"><tr>{{ stripe("#F59E0B") }}<td style="padding:1px 0 1px 10px;">{{ label("Key risk", "#92400E") }}<div class="sm" style="padding-top:2px;">{{ c.key_risk }}</div></td></tr></table>
+{% endif %}
+<div style="padding-top:12px;">{{ stats(c.stats) }}</div>
+{% if c.analyst %}<div class="sm mu" style="padding-top:10px;">{{ c.analyst }}</div>{% endif %}
+{% if c.range %}
+{{ label("52-week range", top="12px") }}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;"><tr><td width="{{ c.range.left }}%" style="background-color:#93C5FD;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="4" style="width:4px;background-color:#0F2A44;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="{{ c.range.right }}%" style="background-color:#E2E8F0;height:8px;font-size:1px;line-height:8px;">&nbsp;</td></tr></table>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="xs mu" style="padding-top:4px;">{{ c.range.low }}</td><td align="center" class="xs" style="padding-top:4px;">{{ c.range.note }}</td><td align="right" class="xs mu" style="padding-top:4px;">{{ c.range.high }}</td></tr></table>
+{% endif %}
+{% if c.details or c.score_rows %}
+{% call fold("More fundamentals & score breakdown") %}
+{{ kv(c.details) }}
+{% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
+{% endcall %}
+{% endif %}
+{{ links(c.links) }}
+{% endcall %}
+{% else %}
+{% call card() %}
+<div class="mu">No long-term ideas scored {{ min_long_score }} or more out of 100 today.</div>
+{% endcall %}
+{% endfor %}
 
-        <!-- Sector heatmap image -->
-        <tr>
-          <td style="padding:0 12px 16px 12px;">
-            <a href="{{ sector_heatmap_url }}" style="display:block;">
-              <img src="{{ sector_heatmap_url }}" alt="S&amp;P 500 Sector Performance Heatmap" width="456" style="width:100%;max-width:456px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
-            </a>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-
-  <!-- ============================================================ -->
-  <!-- ZONE 2: EXECUTIVE ACCOUNT DASHBOARD (6-MONTH BENCHMARK)         -->
-  <!-- EXPECTED DATA: portfolio_value | Type: float                     -->
-  <!-- EXPECTED DATA: cash_balance | Type: float                          -->
-  <!-- EXPECTED DATA: daily_pl_dollar | Type: float                        -->
-  <!-- EXPECTED DATA: daily_pl_percent | Type: float                        -->
-  <!-- EXPECTED DATA: all_time_pl_dollar | Type: float                       -->
-  <!-- EXPECTED DATA: all_time_pl_percent | Type: float                       -->
-  <!-- EXPECTED DATA: portfolio_beta | Type: float                              -->
-  <!-- EXPECTED DATA: performance_chart_url | Type: str                          -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:16px 16px 0 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
-        <tr>
-          <td style="padding:18px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Executive Account Dashboard</p>
-            <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">Trailing 6 months vs. S&amp;P 500</p>
-          </td>
-        </tr>
-
-        <!-- Headline value + daily P/L -->
-        <tr>
-          <td style="padding:8px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:12px;color:#66788C;font-weight:600;">TOTAL PORTFOLIO VALUE</p>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td valign="bottom" style="font-size:28px;font-weight:700;color:#002B49;">{{ currency(portfolio_value) }}</td>
-                <td valign="bottom" align="right" style="font-size:15px;font-weight:700;color:{{ '#16A34A' if daily_pl_percent >= 0 else '#DC2626' }};white-space:nowrap;">
-                  {{ signed_currency(daily_pl_dollar) }} ({{ signed_pct(daily_pl_percent) }})
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- Metrics bar: cash / all-time P/L / beta -->
-        <tr>
-          <td style="padding:10px 12px 4px 12px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td width="33%" style="padding:4px;" valign="top">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-                    <tr><td style="padding:10px 10px;font-family:Arial,Helvetica,sans-serif;">
-                      <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">CASH</p>
-                      <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">{{ currency(cash_balance) }}</p>
-                    </td></tr>
-                  </table>
-                </td>
-                <td width="34%" style="padding:4px;" valign="top">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-                    <tr><td style="padding:10px 10px;font-family:Arial,Helvetica,sans-serif;">
-                      <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">ALL-TIME P/L</p>
-                      <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:{{ '#16A34A' if all_time_pl_percent >= 0 else '#DC2626' }};">{{ signed_pct(all_time_pl_percent) }}</p>
-                    </td></tr>
-                  </table>
-                </td>
-                <td width="33%" style="padding:4px;" valign="top">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-                    <tr><td style="padding:10px 10px;font-family:Arial,Helvetica,sans-serif;">
-                      <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">BETA (vs SPX)</p>
-                      <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">{{ "%.2f"|format(portfolio_beta) }}</p>
-                    </td></tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- Performance chart -->
-        <tr>
-          <td style="padding:10px 12px 16px 12px;">
-            <img src="{{ performance_chart_url }}" alt="Portfolio value vs. S&amp;P 500, trailing 180 days" width="456" style="width:100%;max-width:456px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-
-  <!-- ============================================================ -->
-  <!-- ZONE 3: ACTIVE HOLDINGS                                        -->
-  <!-- EXPECTED DATA: holdings | Type: List[Dict[str, Any]]             -->
-  <!--   each item: {                                                    -->
-  <!--     ticker: str, company_name: str, position_value: float,          -->
-  <!--     shares_held: float, daily_pl_dollar: float, daily_pl_percent: float, -->
-  <!--     decision_flag: Literal["HOLD (IN RANGE)","TRIM / TAKE PROFIT","RISK ALERT"], -->
-  <!--     rsi: float, ma_status: str,                                        -->
-  <!--     chart_image_url: str, chart_link_url: str,                          -->
-  <!--     news_bullets: List[str], sentiment: Literal["Bullish","Bearish","Neutral"], -->
-  <!--     catalysts: List[Dict[str, Any]]  # {event_type,label,event_date,days_until} -->
-  <!--     links: Dict[str, str]  # {yahoo, finviz, tradingview, sec_filings}    -->
-  <!--   }                                                                        -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:20px 16px 0 16px;font-family:Arial,Helvetica,sans-serif;">
-      <p style="margin:0 0 8px 4px;font-size:16px;font-weight:700;color:#002B49;">Active Holdings</p>
-    </td>
-  </tr>
-  {% for h in holdings %}
-  <tr>
-    <td style="padding:0 16px 12px 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
-
-        <!-- 1. Header bar -->
-        <tr>
-          <td style="padding:16px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td valign="top">
-                  <a href="{{ h.links.yahoo }}" style="font-size:18px;font-weight:700;color:#0078D3;">{{ h.ticker }}</a>
-                  <p style="margin:2px 0 0 0;font-size:13px;color:#66788C;">{{ h.company_name }}</p>
-                </td>
-                <td valign="top" align="right">
-                  <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">{{ currency(h.position_value) }}</p>
-                  <p style="margin:2px 0 0 0;font-size:12px;color:#66788C;">{{ h.shares_held }} sh</p>
-                </td>
-              </tr>
-              <tr>
-                <td colspan="2" align="right" style="padding-top:4px;font-size:13px;font-weight:700;color:{{ '#16A34A' if h.daily_pl_percent >= 0 else '#DC2626' }};">
-                  {{ signed_currency(h.daily_pl_dollar) }} ({{ signed_pct(h.daily_pl_percent) }}) today
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- 2. Decision flag badge  -->
-        <tr>
-          <td style="padding:0 16px 10px 16px;">
-            {% if h.decision_flag == "HOLD (IN RANGE)" %}
-              {% set flag_fg, flag_bg = "#0078D3", "#E6F3FC" %}
-            {% elif h.decision_flag == "TRIM / TAKE PROFIT" %}
-              {% set flag_fg, flag_bg = "#D97706", "#FEF3E2" %}
-            {% else %}
-              {% set flag_fg, flag_bg = "#DC2626", "#FDECEC" %}
-            {% endif %}
-            <span style="display:inline-block;padding:6px 12px;border-radius:6px;background-color:{{ flag_bg }};color:{{ flag_fg }};font-size:13px;font-weight:700;font-family:Arial,Helvetica,sans-serif;">{{ h.decision_flag }}</span>
-          </td>
-        </tr>
-
-        <!-- 3. Technical health -->
-        <tr>
-          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-              <tr>
-                <td width="50%" style="padding:10px 12px;" valign="top">
-                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">RSI (14)</p>
-                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">{{ "%.1f"|format(h.rsi) }}</p>
-                </td>
-                <td width="50%" style="padding:10px 12px;" valign="top">
-                  <p style="margin:0;font-size:11px;color:#66788C;font-weight:600;">MOVING AVERAGE</p>
-                  <p style="margin:2px 0 0 0;font-size:14px;font-weight:700;color:#002B49;">{{ h.ma_status }}</p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- 4. Interactive charting -->
-        <tr>
-          <td style="padding:0 12px 12px 12px;">
-            <a href="{{ h.chart_link_url }}" style="display:block;">
-              <img src="{{ h.chart_image_url }}" alt="{{ h.ticker }} daily candlestick chart" width="432" style="width:100%;max-width:432px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
-            </a>
-          </td>
-        </tr>
-
-        <!-- 5. AI news & sentiment -->
-        <tr>
-          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td>
-                  <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">
-                    News &amp; Sentiment
-                    {% if h.sentiment == "Bullish" %}
-                      {% set sent_fg, sent_bg = "#16A34A", "#E7F7ED" %}
-                    {% elif h.sentiment == "Bearish" %}
-                      {% set sent_fg, sent_bg = "#DC2626", "#FDECEC" %}
-                    {% else %}
-                      {% set sent_fg, sent_bg = "#66788C", "#F1F4F8" %}
-                    {% endif %}
-                    <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:{{ sent_bg }};color:{{ sent_fg }};font-size:11px;font-weight:700;">{{ h.sentiment }}</span>
-                  </p>
-                </td>
-              </tr>
-              {% for bullet in h.news_bullets %}
-              <tr>
-                <td style="padding:0 0 6px 0;font-size:14px;line-height:19px;color:#3B4758;" valign="top">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-                    <td valign="top" style="padding-right:8px;color:#0078D3;font-weight:700;">•</td>
-                    <td valign="top">{{ bullet }}</td>
-                  </tr></table>
-                </td>
-              </tr>
-              {% endfor %}
-            </table>
-          </td>
-        </tr>
-
-        <!-- 6. Upcoming catalysts (14-day window) -->
-        {% if h.catalysts %}
-        <tr>
-          <td style="padding:0 16px 12px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0 0 6px 0;font-size:13px;font-weight:700;color:#002B49;">Upcoming Catalysts</p>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              {% for cat in h.catalysts %}
-              <tr>
-                <td style="padding:6px 0;border-top:1px solid #EFF2F7;font-size:13px;color:#3B4758;">
-                  <strong style="color:#002B49;">{{ cat.event_type }}</strong> — {{ cat.label }} · {{ cat.event_date }}
-                </td>
-                <td align="right" style="padding:6px 0;border-top:1px solid #EFF2F7;">
-                  <span style="display:inline-block;padding:3px 8px;border-radius:10px;background-color:#E6F3FC;color:#0078D3;font-size:11px;font-weight:700;white-space:nowrap;">In {{ cat.days_until }} Day{{ "s" if cat.days_until != 1 else "" }}</span>
-                </td>
-              </tr>
-              {% endfor %}
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-
-        <!-- 7. Quick-action links bar (44px min-height touch targets) -->
-        <tr>
-          <td style="padding:4px 8px 8px 8px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td class="quick-link-cell" width="25%" style="padding:2px;">
-                  <a href="{{ h.links.yahoo }}" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Yahoo</a>
-                </td>
-                <td class="quick-link-cell" width="25%" style="padding:2px;">
-                  <a href="{{ h.links.finviz }}" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">Finviz</a>
-                </td>
-                <td class="quick-link-cell" width="25%" style="padding:2px;">
-                  <a href="{{ h.links.tradingview }}" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">TView</a>
-                </td>
-                <td class="quick-link-cell" width="25%" style="padding:2px;">
-                  <a href="{{ h.links.sec_filings }}" style="display:block;height:44px;line-height:44px;text-align:center;background-color:#EFF2F7;border-radius:6px;font-size:13px;font-weight:700;color:#002B49;font-family:Arial,Helvetica,sans-serif;">SEC</a>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-
-      </table>
-    </td>
-  </tr>
-  {% endfor %}
-
-  <!-- ============================================================ -->
-  <!-- ZONE 4: ACTIONABLE CANDIDATE WATCHLIST                          -->
-  <!-- EXPECTED DATA: swing_candidates | Type: List[Dict[str, Any]]      -->
-  <!--   each item: { ticker, setup, entry_zone, target_price, stop_loss } -->
-  <!-- EXPECTED DATA: value_candidates | Type: List[Dict[str, Any]]        -->
-  <!--   each item: { ticker, moat, valuation_metric, buy_target }           -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:8px 16px 0 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
-        <tr>
-          <td style="padding:18px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Candidate Watchlist</p>
-          </td>
-        </tr>
-
-        <tr>
-          <td style="padding:4px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:#0078D3;text-transform:uppercase;letter-spacing:0.5px;">Medium-Term Swing Setups</p>
-          </td>
-        </tr>
-        {% for c in swing_candidates %}
-        <tr>
-          <td style="padding:0 16px 10px 16px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-              <tr>
-                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
-                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">{{ c.ticker }} <span style="font-weight:400;color:#66788C;font-size:12px;">— {{ c.setup }}</span></p>
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                    <tr>
-                      <td width="34%" style="font-size:12px;color:#66788C;">Entry<br><span style="font-size:13px;font-weight:700;color:#002B49;">{{ c.entry_zone }}</span></td>
-                      <td width="33%" style="font-size:12px;color:#66788C;">Target<br><span style="font-size:13px;font-weight:700;color:#16A34A;">{{ c.target_price }}</span></td>
-                      <td width="33%" style="font-size:12px;color:#66788C;">Stop<br><span style="font-size:13px;font-weight:700;color:#DC2626;">{{ c.stop_loss }}</span></td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endfor %}
-
-        <tr>
-          <td style="padding:8px 16px 4px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0 0 6px 0;font-size:12px;font-weight:700;color:#0078D3;text-transform:uppercase;letter-spacing:0.5px;">Long-Term Value / Growth</p>
-          </td>
-        </tr>
-        {% for c in value_candidates %}
-        <tr>
-          <td style="padding:0 16px 10px 16px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EFF2F7;border-radius:8px;">
-              <tr>
-                <td style="padding:10px 12px;font-family:Arial,Helvetica,sans-serif;">
-                  <p style="margin:0 0 4px 0;font-size:14px;font-weight:700;color:#002B49;">{{ c.ticker }}</p>
-                  <p style="margin:0 0 4px 0;font-size:13px;color:#3B4758;line-height:18px;">{{ c.moat }}</p>
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                    <tr>
-                      <td width="50%" style="font-size:12px;color:#66788C;">Valuation<br><span style="font-size:13px;font-weight:700;color:#002B49;">{{ c.valuation_metric }}</span></td>
-                      <td width="50%" style="font-size:12px;color:#66788C;">Buy Target<br><span style="font-size:13px;font-weight:700;color:#002B49;">{{ c.buy_target }}</span></td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endfor %}
-        <tr><td style="padding-bottom:4px;">&nbsp;</td></tr>
-      </table>
-    </td>
-  </tr>
-
-  <!-- ============================================================ -->
-  <!-- ZONE 5: RISK GUARDRAILS & ALLOCATION                            -->
-  <!-- EXPECTED DATA: allocation_chart_url | Type: str                   -->
-  <!-- EXPECTED DATA: risk_warnings | Type: List[str]                      -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:16px 16px 0 16px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FFFFFF;border:1px solid #CBD5E1;border-radius:12px;">
-        <tr>
-          <td style="padding:18px 16px 8px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:16px;font-weight:700;color:#002B49;">Risk Guardrails &amp; Allocation</p>
-          </td>
-        </tr>
-
-        <tr>
-          <td style="padding:0 12px 12px 12px;">
-            <img src="{{ allocation_chart_url }}" alt="Asset allocation breakdown" width="456" style="width:100%;max-width:456px;height:auto;border-radius:8px;border:1px solid #CBD5E1;">
-          </td>
-        </tr>
-
-        {% if risk_warnings %}
-        <tr>
-          <td style="padding:0 16px 16px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              {% for warning in risk_warnings %}
-              <tr>
-                <td style="padding-bottom:8px;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#FDECEC;border:1px solid #DC2626;border-radius:8px;">
-                    <tr>
-                      <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#DC2626;line-height:18px;">{{ warning }}</td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              {% endfor %}
-            </table>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td style="padding:0 16px 16px 16px;font-family:Arial,Helvetica,sans-serif;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#E7F7ED;border:1px solid #16A34A;border-radius:8px;">
-              <tr>
-                <td style="padding:10px 12px;font-size:13px;font-weight:600;color:#16A34A;">✓ All positions within configured allocation and concentration limits.</td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        {% endif %}
-      </table>
-    </td>
-  </tr>
-
-  <!-- ============================================================ -->
-  <!-- FOOTER (compliance boilerplate — not one of the 5 core zones)  -->
-  <!-- ============================================================ -->
-  <tr>
-    <td style="padding:20px 16px 32px 16px;font-family:Arial,Helvetica,sans-serif;" align="center">
-      <p style="margin:0 0 8px 0;font-size:11px;line-height:16px;color:#66788C;text-align:center;">
-        This digest is generated automatically for informational purposes only and is not investment advice.
-        Data may be delayed. Review all figures against your brokerage statements before acting.
-      </p>
-      <p style="margin:0;font-size:11px;color:#66788C;">
-        <a href="#" style="color:#66788C;text-decoration:underline;">Manage preferences</a> &nbsp;·&nbsp;
-        <a href="#" style="color:#66788C;text-decoration:underline;">Unsubscribe</a>
-      </p>
-    </td>
-  </tr>
+{# ---------- Footer ---------- #}
+<tr><td class="c xs mu" style="padding:8px 24px 32px 24px;">
+{% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority news and details were left out to keep this email under Gmail's size limit.</div>{% endif %}
+<div>Ideas appear only when they score {% if min_long_score == min_swing_score %}{{ min_long_score }} or more{% else %}{{ min_long_score }}+ (long-term) or {{ min_swing_score }}+ (swing){% endif %} out of 100{% if models %}; scored by {{ models }}{% endif %}.</div>
+{% if usage %}
+{% call fold("What this digest cost") %}
+{{ kv(usage) }}
+{% if usage_note %}<div style="padding-top:6px;font-size:11px;line-height:16px;">{{ usage_note }}</div>{% endif %}
+{% endcall %}
+{% endif %}
+<div style="padding-top:12px;">Generated automatically for information only; this is not investment advice. Prices may be delayed, so check figures against your brokerage before acting.</div>
+</td></tr>
 
 </table>
-<!--[if mso]>
-</td></tr></table>
-<![endif]-->
-</center>
+<!--[if mso]></td></tr></table><![endif]-->
+</td></tr>
+</table>
 </body>
 </html>

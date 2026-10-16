@@ -72,6 +72,7 @@ class DigestPayload:
         self.period = digest_period
         self.payload = {
             "date": curr_date,
+            "period": digest_period,  # Claude-authored (2026-10-17): for create_html's header and file name
             "subject": f"Finnbot {digest_period} Digest {curr_date}",
             "title": "Daily Finnbot Digest",
         }
@@ -111,13 +112,9 @@ class DigestPayload:
 
     def send_daily_digest_to(self, user_name: str = "Andres", personal: Optional[dict] = None):
         user_payload = self.personalized_content(user_name, personal)
-        html_main(user_payload, self.src_dir)
-        # populate_and_send_email(user_payload)  # Placeholder for actual email sending logic
-        send_html_email(user_name, user_payload["subject"],
-                        user_payload["date"],
-                        self.src_dir,
-                        )
-        print(f"Sending daily digest to {user_name} with personalized payload")
+        # Claude-authored (2026-10-17): the rendered HTML and plain text go straight to the email
+        rendered = html_main(user_payload, self.src_dir)
+        send_html_email(user_name, user_payload["subject"], rendered.html, rendered.text)
         return True
 
     def save_payload(self, user_name: str, personal: Optional[dict] = None, out_dir: Optional[Path] = None) -> Path:
@@ -133,6 +130,24 @@ class DigestPayload:
         path = out_dir / f"{user_name}_{self.payload['date']}_{self.period}_{saved_at}.json"
         path.write_text(json.dumps(_jsonable(user_payload), indent=2, ensure_ascii=False), encoding="utf-8")
         return path
+
+
+def send_saved_payload(path: Path, email: bool = True) -> str:
+    """
+    Claude-authored (2026-10-17): --from-payload. Renders a payload saved by --payload-only and emails it to that
+    user's address in .env: the last two steps of a real run (create_html, then send_gmail), for testing the email
+    without rebuilding the data. The subject starts with "[Test]", and nothing is recorded as sent. `email=False`
+    (--no-email) only saves the HTML under src/digest/html_reports/. Returns a one-line summary.
+    """
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    user_name = payload.get("user_name")
+    if not user_name:
+        raise ValueError(f"{path} has no user_name; pass a file saved by --payload-only.")
+    rendered = html_main(payload, Path(__file__).resolve().parent)
+    if not email:
+        return f"Rendered {user_name}'s saved digest to {rendered.path} (not emailed)."
+    send_html_email(user_name, f"[Test] {payload.get('subject', 'Finnbot Digest')}", rendered.html, rendered.text)
+    return f"Emailed {user_name}'s saved digest ({Path(path).name})."
 
 
 def missed_digests(recipients: list[str], now: datetime, alert: bool = True) -> list[str]:
@@ -288,7 +303,28 @@ if __name__ == "__main__":
         default=None,
         help="With --payload-only: build this digest now, even outside its send window.",
     )
+    # Claude-authored (2026-10-17): test the email itself from a payload saved by --payload-only
+    parser.add_argument(
+        "--from-payload",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Render this saved payload JSON and email it to its user (subject starts with [Test]); fetches no "
+             "data and records nothing as sent.",
+    )
+    parser.add_argument(
+        "--no-email",
+        action="store_true",
+        help="With --from-payload: only save the HTML under src/digest/html_reports/.",
+    )
     args = parser.parse_args()
+    if args.from_payload and (args.check or args.payload_only or args.period or args.now):
+        parser.error("--from-payload can't be combined with --check, --now, --payload-only, or --period.")
+    if args.no_email and not args.from_payload:
+        parser.error("--no-email can only be used with --from-payload.")
+    if args.from_payload:
+        print(send_saved_payload(args.from_payload, email=not args.no_email))
+        sys.exit(0)
     if args.now is not None and (args.now.tzinfo is None or not args.check):
         parser.error("--now must include a UTC offset and can only be used with --check.")
     if args.payload_only and args.check:

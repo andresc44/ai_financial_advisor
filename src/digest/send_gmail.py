@@ -1,78 +1,69 @@
 #File to send emails via gmail using the Gmail SMTP server. This file is called by the daily digest payload to send the generated HTML report to users.
+"""
+Claude-authored (2026-10-17): send_html_email now takes the rendered HTML and plain text from create_html.html_main
+instead of re-reading html_reports/ by date. The old `date=datetime.now(...)` default was evaluated once, at
+import, so a long-running process would have looked for the wrong day's file, and two digests on one day shared a
+file name. It also checks the Gmail settings before connecting, sends a real plain-text part (spam filters and
+text-only mail apps), and gives up on an unresponsive server after SMTP_TIMEOUT_SECONDS.
+"""
 import os
-from pathlib import Path
 import smtplib
-from email.message import EmailMessage
-from dotenv import load_dotenv
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 import sys
+from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-    
+
 from src.personalized.user_profiles import USER_PROFILES
 
 load_dotenv()
 
-def get_latest_report_path(user_name: str="Andres",
-                           date: datetime = datetime.now(ZoneInfo("America/New_York")),
-                           here: Path = Path(__file__).resolve().parent,
-                           ) -> Path:
-    """Generates the report path dynamically using current US Eastern time."""
-    today_est = date.strftime("%d_%m_%y")
-    return here / "html_reports" / f"{user_name}_{today_est}_report.html"
+SMTP_HOST, SMTP_PORT = "smtp.gmail.com", 587
+SMTP_TIMEOUT_SECONDS = 60
+SENDER_NAME = "Finnbot"
 
 
-def send_html_email(user_name: str = "Andres",
-                    subject: str = "Daily Finnbot Digest",
-                    date: datetime = datetime.now(ZoneInfo("America/New_York")),
-                    here: Path = Path(__file__).resolve().parent
-                    ):
+def destination_email(user_name: str) -> str:
+    """The user's <NAME>_EMAIL from .env."""
     user_profile = USER_PROFILES.get(user_name)
     if user_profile is None:
         raise ValueError(f"User '{user_name}' not found in USER_PROFILES.")
+    env_key = user_profile.get("destination_email")
+    to_email = (os.environ.get(env_key) or "").strip() if env_key else ""
+    if not to_email:
+        raise ValueError(f"Destination email for user '{user_name}' is not configured ({env_key} in .env).")
+    return to_email
 
-    to_email_value = user_profile.get("destination_email")
-    if to_email_value is None:
-        raise ValueError(
-            f"Destination email for user '{user_name}' is not configured in USER_PROFILES."
-        )
-    to_email = os.environ[to_email_value]
 
-    sender_email = os.environ["GMAIL_USER"]
-    app_password = os.environ["GMAIL_APP_PASSWORD"]
+def send_html_email(user_name: str, subject: str, html: str, text: Optional[str] = None) -> str:
+    """Emails `html` (with `text` as the plain-text version) to the user from GMAIL_USER; returns the address."""
+    to_email = destination_email(user_name)
+    sender_email = (os.environ.get("GMAIL_USER") or "").strip()
+    app_password = (os.environ.get("GMAIL_APP_PASSWORD") or "").strip()
     if not sender_email or not app_password:
         raise ValueError("Missing credentials. Set GMAIL_USER and GMAIL_APP_PASSWORD.")
 
-    # 1. Read HTML file content
-    resolved_path = get_latest_report_path(user_name, date, here)
-
-    with open(resolved_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-
-    # 2. Build email payload
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = sender_email
+    msg["From"] = f"{SENDER_NAME} <{sender_email}>"
     msg["To"] = to_email
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=sender_email.rsplit("@", 1)[-1])
+    # Plain-text version for mail apps that don't show HTML
+    msg.set_content(text or "This digest needs a mail app that shows HTML.")
+    msg.add_alternative(html, subtype="html")
 
-    # Plain-text fallback for non-HTML clients
-    msg.set_content("Please enable HTML viewing to render this email properly.")
-    
-    # Attach HTML body
-    msg.add_alternative(html_content, subtype="html")
-
-    # 3. Connect to Gmail SMTP server via TLS (Port 587)
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    # Connect to Gmail's SMTP server with TLS (port 587)
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as server:
         server.starttls()
         server.login(sender_email, app_password)
         server.send_message(msg)
 
     print(f"✅ Email successfully sent to {to_email}")
-
-if __name__ == "__main__":
-    send_html_email(
-        subject="Testing email functionality with main file",
-    )
+    return to_email
