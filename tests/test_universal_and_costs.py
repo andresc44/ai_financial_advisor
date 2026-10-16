@@ -1,4 +1,5 @@
-"""Universal content failure handling (shared keys, Finnhub, Twelve Data, data gaps, macro news) and API cost tracking."""
+"""Universal content failure handling (shared keys, Finnhub, Twelve Data, data gaps, macro news), the data on universal
+picks, and API cost tracking."""
 import json
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -12,8 +13,11 @@ import src.universal.market_news as market_news
 import src.universal.recommendations.LLM_recommendation as universal_llm
 import src.universal.universal_consolidated as universal
 import src.usage_tracking as usage
+from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
 from src.universal.recommendations import data_source_guard as guard
+from src.universal.recommendations import enriched_rec
+from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 
 
 # --------------------------------------------------------------------------------------------- shared Anthropic key
@@ -288,3 +292,53 @@ def test_late_digest_on_the_last_day_of_the_month(monkeypatch):
     summary = usage.usage_summary("Andres", run_started_at=now - timedelta(minutes=10), now=now)
     assert summary["today"]["gemini"]["calls"] == 2 and summary["today"]["total_cost_usd"] == pytest.approx(0.11)
     assert summary["month_to_date"]["gemini"]["calls"] == 1 and summary["month_to_date"]["total_cost_usd"] == pytest.approx(0.01)
+
+
+# --------------------------------------------------------------------------------------------- data on universal picks
+SANITIZED = {"AAA": {
+    "symbol": "AAA", "profile": {"name": "Alpha Corp", "sector": None},
+    "price_action": {"52_week_high": 210.5, "50_day_average": 190.0},
+    "valuation_and_fundamentals": {"pe_trailing": 31.2},
+    "sentiment_and_analysts": {"recommendation_key": "buy"},
+    "catalysts_and_earnings": {"upcoming_earnings": [{"date": "2026-10-28"}]},
+}}
+
+
+def test_picks_get_their_fields_from_the_nested_sanitized_data():
+    picks = {"top_long_term": [{"ticker": "AAA", "longScore": 85.0, "swingScore": 40.0}],
+             "top_swing": [{"ticker": "AAA", "swingScore": 82.0, "longScore": 85.0}]}
+    out = enriched_rec.enrich_recommendations(picks, SANITIZED)  # The defaults in parameters.py
+    assert out["top_long_term"][0] == {"ticker": "AAA", "longScore": 85.0, "swingScore": 40.0,
+                                       "pe_trailing": 31.2, "recommendation_key": "buy"}
+    assert (out["top_swing"][0]["52_week_high"], out["top_swing"][0]["50_day_average"]) == (210.5, 190.0)
+    assert "pe_trailing" not in picks["top_long_term"][0]  # The scorer's picks aren't changed
+
+
+def test_shared_fields_typos_and_names_the_scorer_uses(capsys):
+    fields = {"all": {"name": "profile.name", "sector": "profile.sector"},
+              "top_swing": {"earnings": "catalysts_and_earnings.upcoming_earnings",
+                            "high": "price_action.52_wk_high", "ticker": "profile.name"}}
+    picks = {"top_long_term": [{"ticker": "AAA"}, {"ticker": "ZZZ"}], "top_swing": [{"ticker": "AAA"}, {"ticker": "AAA"}]}
+    out = enriched_rec.enrich_recommendations(picks, SANITIZED, fields)
+    assert out["top_long_term"] == [{"ticker": "AAA", "name": "Alpha Corp", "sector": None},
+                                    {"ticker": "ZZZ", "name": None, "sector": None}]  # ZZZ has no data
+    swing = out["top_swing"][0]
+    assert swing["earnings"] == [{"date": "2026-10-28"}]
+    assert swing["earnings"] is not SANITIZED["AAA"]["catalysts_and_earnings"]["upcoming_earnings"]
+    assert swing["high"] is None and swing["ticker"] == "AAA"
+    printed = capsys.readouterr().out
+    assert printed.count("52_wk_high") == 1 and printed.count("'ticker' is already used") == 1  # Once per run
+
+
+def test_every_configured_field_exists_in_the_sanitized_data():
+    """Catches a typo in RECOMMENDATION_FIELDS (or a renamed sanitizer field) before a digest shows nulls."""
+    sanitized = sanitize_ticker_payload("AAA", {})
+    configured = params_dict["RECOMMENDATION_FIELDS"]
+    for list_name in configured:
+        for name, path in enriched_rec.fields_for(list_name, configured).items():
+            assert enriched_rec.lookup(sanitized, path) is not enriched_rec._MISSING, f"{list_name}.{name}: {path}"
+
+
+def test_score_thresholds_and_news_limit():
+    assert params_dict["MIN_LONG_SCORE"] == params_dict["MIN_SWING_SCORE"] == 80.0
+    assert params_dict["MAX_NEWS_ARTICLES"] == 20

@@ -26,7 +26,7 @@ params_dict = {
     "SECTOR": None,  # Takes priority over 'industry'
     "INDUSTRY": "Software",  # Ignored when sector is defined
     "CLEAR_EXISTING_DATA": True,  # Deletes previous CSV exports in output dir
-    "MAX_NEWS_ARTICLES": 10,  # Maximum number of news articles to include per ticker
+    "MAX_NEWS_ARTICLES": 20,  # Maximum number of news articles to include per ticker
     
     #Stage 2 Yahoo Filter Parameters
     "YAHOO_FILTERS": [ #["<", "<=", ">", ">=", "==", "=", "!="]
@@ -240,9 +240,42 @@ params_dict = {
     },
     "LONG_TERM_N_AMOUNT": 2,
     "SWING_TERM_N_AMOUNT": 5,
-    "MAX_NEWS_ARTICLES": 20,
-    "MIN_LONG_SCORE": 10.0,
-    "MIN_SWING_SCORE": 15.0,
+    # Both totals are out of 100: the sum of the sub-scores in src/universal/recommendations/LLM_rec_instr.py
+    "MIN_LONG_SCORE": 80.0,
+    "MIN_SWING_SCORE": 80.0,
+
+    # Claude-authored (2026-10-16): data attached to each universal pick for the digest
+    # (src/universal/recommendations/enriched_rec.py), as "name in the digest": "section.field" in the sanitized data
+    # Claude scored. "all" goes on every pick; a list's own entries win on the same name. A path that doesn't exist
+    # is attached as null with a [WARNING] in the log. Available (src/universal/recommendations/sanitizer.py):
+    #   profile: name, sector, industry, business_summary, full_time_employees, ipo_date
+    #   price_action: current_price, previous_close, open, day_low, day_high, 52_week_low, 52_week_high,
+    #       52_week_change_percent, 50_day_average, 200_day_average, volume, average_volume_10d, average_volume_3m, beta
+    #   valuation_and_fundamentals: market_cap, enterprise_value, pe_trailing, pe_forward, peg_ratio, price_to_book,
+    #       price_to_sales, enterprise_to_ebitda, enterprise_to_revenue, revenue_total, revenue_growth_yoy,
+    #       revenue_growth_3y_cagr, revenue_growth_5y_cagr, gross_margin, ebitda_margin, operating_margin,
+    #       profit_margin, earnings_growth_yoy, eps_trailing, eps_forward, free_cash_flow, operating_cash_flow,
+    #       total_cash, total_debt, debt_to_equity, current_ratio, quick_ratio, return_on_assets, return_on_equity,
+    #       return_on_invested_capital
+    #   sentiment_and_analysts: recommendation_key, recommendation_mean, target_mean_price, target_high_price,
+    #       target_low_price, analyst_opinions_count, short_percent_of_float, short_ratio, held_percent_insiders,
+    #       held_percent_institutions, insider_sentiment_series
+    #   catalysts_and_earnings: upcoming_earnings, past_earnings_surprises
+    #   quarterly_financial_trends (series): eps, revenue_per_share, operating_margin, net_margin, free_cash_flow_margin
+    #   technical_indicators (series, newest first): rsi_14_1day, ema_9_1day, ema_21_1day, bbands_20_1day, sar_1day,
+    #       beta_52_1week
+    #   recent_headlines_and_catalysts (a whole section: the list of headlines)
+    "RECOMMENDATION_FIELDS": {
+        "all": {},
+        "top_long_term": {
+            "pe_trailing": "valuation_and_fundamentals.pe_trailing",
+            "recommendation_key": "sentiment_and_analysts.recommendation_key",
+        },
+        "top_swing": {
+            "52_week_high": "price_action.52_week_high",
+            "50_day_average": "price_action.50_day_average",
+        },
+    },
 
     # Claude-authored (2026-10-15): the users the digest and the watchdog run for, in this order. Each name needs a
     # profile in src/personalized/user_profiles.py. Their .env settings still decide what they get: the
