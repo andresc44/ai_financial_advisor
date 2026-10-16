@@ -64,7 +64,7 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 | `watchdog_interval_hours` | `ANDRES_WATCHDOG_INTERVAL_HOURS=4` | `0` (off) to `168` |
 | `watchdog_session` | `ANDRES_WATCHDOG_SESSION=extended` | `regular`, `extended`, `24_7` |
 | `watchdog_tripwire` | `ANDRES_WATCHDOG_TRIPWIRE=true` | `true` / `false` (also `yes`/`no`, `1`/`0`) |
-| `holdings_claude_model` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-opus-5` | any key of `ALLOWED_CLAUDE_MODELS` |
+| `holdings_claude_model` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-sonnet-5-5` | any key of `ALLOWED_CLAUDE_MODELS` |
 | `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_EFFORT=high` | `low` `medium` `high` `xhigh` `max`, if the model supports it |
 | `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic API key (required) |
 | `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the digest's per-holding news (required for news) |

@@ -102,8 +102,9 @@ EVALUATION_TOOL_SPEC = {
 
 
 class ParallelHoldingEvaluator:
+    # Only used when CLAUDE_CONFIG and the user's settings leave a setting out. Claude-authored (2026-10-16): Sonnet 5.5
     DEFAULT_CONFIG = {
-        "model": "claude-opus-5-5",
+        "model": "claude-sonnet-5-5",
         "max_tokens": 16000,
         "effort": "high",
         "system_prompt": SYSTEM_PROMPT,

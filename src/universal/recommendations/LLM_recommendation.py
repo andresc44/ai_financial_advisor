@@ -154,8 +154,9 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 class ParallelStockEvaluator:
+    # Only used when CLAUDE_CONFIG leaves a setting out (CLAUDE_CONFIG wins). Claude-authored (2026-10-16): Sonnet 5.5
     DEFAULT_CONFIG = {
-        "model": "claude-opus-5",
+        "model": "claude-sonnet-5-5",
         "max_tokens": 16000,
         "effort": "high",
         "system_prompt": SYSTEM_PROMPT,
