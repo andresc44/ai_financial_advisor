@@ -60,7 +60,7 @@ from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.recommendation import resolve_anthropic_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
-from src.run_logging import name_thread, start_run_log
+from src.run_logging import name_thread, start_run_log, write_run_status
 from src.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert import notices
 from src.telegram_alert.notices import (  # Shared alert log; names kept importable from this module
@@ -404,11 +404,13 @@ def process_user_alerts(
     cooldown_hours: int = COOLDOWN_HOURS,
     now: Optional[datetime] = None,
     dry_run: bool = False,
-) -> None:
+) -> tuple[bool, str]:
     """Main execution function accepting custom retention and cooldown windows.
 
     Claude-authored (2026-10-13): `now` (timezone-aware) and `dry_run` were added as fallback
     parameters so the schedule can be tested without waiting for real market hours.
+    2026-10-16: returns (ok, status) for the healthchecks.io heartbeat: ok is False when any user's check crashed.
+    A user's own key problem (expired, out of credits) is not a failure here; they get their own notice.
     """
     now = now or datetime.now(timezone.utc)
     notices.CSV_DIR.mkdir(parents=True, exist_ok=True)
@@ -450,15 +452,14 @@ def process_user_alerts(
 
     if dry_run:
         print("Dry run: alert log not written.")
-        return
+        return not failed_users, f"Dry run: {len(eligible)} user(s) eligible, {len(failed_users)} failed."
 
     # Save cleaned history back to CSV (Claude-authored 2026-10-15: merged with notices the run saved directly)
     merge_and_save_alert_logs(alert_logs)
     print(f"Alert log updated at: {notices.CSV_PATH}")
-    print(
-        f"Watchdog run finished in {time.monotonic() - started:.0f}s: checked {len(eligible)} user(s), "
-        f"failed {failed_users or 'none'}."
-    )
+    elapsed = time.monotonic() - started
+    print(f"Watchdog run finished in {elapsed:.0f}s: checked {len(eligible)} user(s), failed {failed_users or 'none'}.")
+    return not failed_users, f"Checked {len(eligible)} user(s), {len(failed_users)} failed, in {elapsed:.0f}s."
 
 
 if __name__ == "__main__":
@@ -482,9 +483,16 @@ if __name__ == "__main__":
     # Claude-authored (2026-10-15): everything goes to logs/watchdog.log; an unexpected crash also alerts the admins
     start_run_log("watchdog")
     try:
-        process_user_alerts(retention_days=RETENTION_DAYS, cooldown_hours=COOLDOWN_HOURS, now=args.now, dry_run=args.dry_run)
+        ok, status = process_user_alerts(
+            retention_days=RETENTION_DAYS, cooldown_hours=COOLDOWN_HOURS, now=args.now, dry_run=args.dry_run
+        )
     except Exception as e:
         traceback.print_exc()
         if not args.dry_run:
             alert_admins("watchdog run crashed", repr(e))
+            write_run_status("watchdog", f"Run crashed: {type(e).__name__} (traceback in logs/watchdog.log).")
         raise
+    # Claude-authored (2026-10-16): the exit code and status line are what the healthchecks.io heartbeat reports
+    if not args.dry_run:
+        write_run_status("watchdog", status)
+    sys.exit(0 if ok else 1)

@@ -1,0 +1,9 @@
+# Files under data/ that scripts/backup_to_drive.sh copies to Google Drive (rclone filter rules; first match wins).
+# Claude-authored (2026-10-16). Left out on purpose: market_context_cache.json, fx_rates.json, and ticker_data/
+# (rebuilt on the next run), and .env (keep your keys in a password manager instead).
++ /track_record/**
++ /usage/**
++ /watchdog_state.json
++ /digest_state.json
++ /alerts_sent/**
+- **

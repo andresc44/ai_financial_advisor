@@ -299,3 +299,47 @@ def test_shared_symbols_are_fetched_once_across_users(monkeypatch):
     [thread.join() for thread in threads]
     assert sorted(symbol for batch in fetched for symbol in batch) == ["A", "B", "C"]
     assert all(result["market_context"].notna().all() for result in results)
+
+
+# --------------------------------------------------------------------------------------------- heartbeat status
+@pytest.mark.parametrize("when, expected", [
+    ("2026-10-15T07:10", []),
+    ("2026-10-15T10:10", ["Pre-Market"]),                 # Pre-Market window closed at the open
+    ("2026-10-15T21:10", ["Pre-Market", "Post-Market"]),  # Post-Market window closed at 20:10
+    ("2026-10-17T10:10", []),                              # Saturday: no digests at all
+])
+def test_ended_digests(when, expected):
+    assert [period for _, period in schedule.ended_digests(datetime.fromisoformat(when).replace(tzinfo=ET))] == expected
+
+
+def test_run_result_is_ok_only_when_every_digest_went_out(digest_run):
+    ok, status = dp.run_daily_digests(["U0", "U1"], now=digest_run.now)
+    assert ok and status.startswith("Pre-Market 2026-10-15: sent 2, failed 0 in ")
+    digest_run.failing.add("U1")
+    ok, status = dp.run_daily_digests(["U0", "U1"], now=digest_run.now)
+    assert not ok and "sent 1, failed 1" in status and "U1" not in status  # Counts only: it goes to healthchecks.io
+
+
+def test_missed_digest_fails_the_heartbeat_and_alerts(digest_run, monkeypatch, telegram):
+    later = datetime(2026, 10, 15, 10, 10, tzinfo=ET)  # Nothing due; the Pre-Market window has closed
+    monkeypatch.setattr(dp, "users_already_sent", lambda day, period: {"U0"})
+    ok, status = dp.run_daily_digests(["U0", "U1"], now=later)
+    assert not ok and status == "No digest due. Missed today: Pre-Market 2026-10-15 (1 user)."
+    assert any("never went out" in body and "U1" in body for _, body in telegram.messages)
+
+    monkeypatch.setattr(dp, "users_already_sent", lambda day, period: {"U0", "U1"})
+    assert dp.run_daily_digests(["U0", "U1"], now=later) == (True, "No digest due.")
+
+
+def test_run_status_file(tmp_path, monkeypatch):
+    import src.run_logging as run_logging
+
+    monkeypatch.setattr(run_logging, "LOG_DIR", tmp_path / "logs")
+    run_logging.write_run_status("digest", "Pre-Market 2026-10-15: sent 2, failed 0 in 31s.\n")
+    assert (tmp_path / "logs" / "digest.status").read_text() == "Pre-Market 2026-10-15: sent 2, failed 0 in 31s.\n"
+
+
+
+def test_check_only_never_alerts_about_missed_digests(digest_run, telegram):
+    ok, status = dp.run_daily_digests(["U0"], now=datetime(2026, 10, 15, 10, 10, tzinfo=ET), check_only=True)
+    assert not ok and "Missed today" in status and telegram.messages == []

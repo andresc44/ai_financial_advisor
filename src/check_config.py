@@ -38,6 +38,10 @@ SHARED_KEYS = {
     "GOOGLE_APPLICATION_CREDENTIALS": (False, "Service-account JSON path; needed to read private Google Sheets"),
     "GEMINI_API_KEY": (False, "Gemini for the macro news (shared; only when headline news is enabled)"),
     "FRED_API_KEY": (False, "FRED yield curve (only when market indicators are enabled)"),
+    # Claude-authored (2026-10-16): monitoring and backups, read by scripts/cron_job.sh and scripts/backup_to_drive.sh
+    "HEALTHCHECKS_PING_KEY": (False, "healthchecks.io ping key; without it cron jobs run unmonitored"),
+    "FINNBOT_BACKUP_REMOTE": (False, "rclone destination for the nightly backup (default finnbot-backup:)"),
+    "FINNBOT_BACKUP_KEEP_DAYS": (False, "Days to keep replaced files in the backup (default 90)"),
 }
 
 HOLDINGS_SOURCES = ("SNAPTRADE", "SHEETS", "NO_HOLDINGS")

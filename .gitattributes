@@ -1,0 +1,2 @@
+# Claude-authored (2026-10-16): shell scripts run on the Linux VM; CRLF line endings would break them
+*.sh text eol=lf

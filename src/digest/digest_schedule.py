@@ -39,28 +39,49 @@ STATE_RETENTION_DAYS = 14  # Older (date, period) entries are dropped
 _STATE_LOCK = threading.Lock()  # Users finish in parallel threads and record themselves as sent
 
 
+def _send_windows(now: datetime) -> Optional[tuple[date, dict[str, tuple[pd.Timestamp, pd.Timestamp]]]]:
+    """(market date, {period: (window start, window end) in UTC}) for `now`'s day, or None when no exchange trades."""
+    bounds = trading_day_bounds(now)
+    if bounds is None:
+        return None  # Weekend or holiday on every configured exchange
+    open_ts, close_ts = bounds
+    day = market_date(now)
+
+    hour, minute = (int(part) for part in DIGEST_PARAMS["PRE_MARKET_TIME_ET"].split(":"))
+    pre_start = pd.Timestamp(datetime.combine(day, time(hour, minute), tzinfo=MARKET_TZ)).tz_convert("UTC")
+    post_start = close_ts + pd.Timedelta(minutes=DIGEST_PARAMS["POST_MARKET_DELAY_MINUTES"])
+    post_end = post_start + pd.Timedelta(minutes=DIGEST_PARAMS["POST_MARKET_SEND_WINDOW_MINUTES"])
+    return day, {"Pre-Market": (pre_start, open_ts), "Post-Market": (post_start, post_end)}
+
+
 def due_digest(now: datetime) -> Optional[tuple[date, str]]:
     """
     (market date, "Pre-Market" | "Post-Market") when a digest is due at `now` (timezone-aware), otherwise None.
     Outside both windows, and on days no configured exchange trades, nothing is due.
     """
-    bounds = trading_day_bounds(now)
-    if bounds is None:
-        return None  # Weekend or holiday on every configured exchange
-    open_ts, close_ts = bounds
+    windows = _send_windows(now)
+    if windows is None:
+        return None
+    day, periods = windows
     ts = pd.Timestamp(now).tz_convert("UTC")
-    day = market_date(now)
-
-    hour, minute = (int(part) for part in DIGEST_PARAMS["PRE_MARKET_TIME_ET"].split(":"))
-    pre_start = pd.Timestamp(datetime.combine(day, time(hour, minute), tzinfo=MARKET_TZ)).tz_convert("UTC")
-    if pre_start <= ts < open_ts:
-        return day, "Pre-Market"
-
-    post_start = close_ts + pd.Timedelta(minutes=DIGEST_PARAMS["POST_MARKET_DELAY_MINUTES"])
-    post_end = post_start + pd.Timedelta(minutes=DIGEST_PARAMS["POST_MARKET_SEND_WINDOW_MINUTES"])
-    if post_start <= ts < post_end:
-        return day, "Post-Market"
+    for period, (start, end) in periods.items():
+        if start <= ts < end:
+            return day, period
     return None
+
+
+def ended_digests(now: datetime) -> list[tuple[date, str]]:
+    """
+    Claude-authored (2026-10-16): today's (market date, period) digests whose send window has closed by `now`. The
+    hourly run compares them with data/digest_state.json to report a digest that never went out (e.g. the VM was
+    down for the whole window), which no single failed run would show.
+    """
+    windows = _send_windows(now)
+    if windows is None:
+        return []
+    day, periods = windows
+    ts = pd.Timestamp(now).tz_convert("UTC")
+    return [(day, period) for period, (_, end) in periods.items() if ts >= end]
 
 
 def _state_key(day: date, period: str) -> str:

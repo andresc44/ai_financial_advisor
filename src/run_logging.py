@@ -11,6 +11,7 @@ start_run_log(name) sends every printed line, error, and logging record to logs/
 - when the output isn't a terminal (cron), lines are no longer also written to cron's redirect file, so that file
   only catches crashes that happen before logging starts. In a terminal, or with FINNBOT_LOG_ECHO=1 (e.g. when
   piping output), lines are shown as well.
+2026-10-16: write_run_status() leaves a one-line result for the healthchecks.io heartbeat (docs/operations.md).
 """
 import io
 import logging
@@ -107,3 +108,16 @@ def start_run_log(name: str) -> Path:
 def name_thread(user_name: str) -> None:
     """Labels the current thread with the user it is working for, so their log lines are easy to pick out."""
     threading.current_thread().name = user_name
+
+
+def write_run_status(name: str, text: str) -> None:
+    """
+    Claude-authored (2026-10-16): writes logs/<name>.status, the one-line result that scripts/cron_job.sh sends to
+    healthchecks.io with the run's exit code. It goes to a third-party service, so it holds counts and periods only:
+    never user names, holdings, or amounts (those stay in the log and the admin's Telegram alerts).
+    """
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        (LOG_DIR / f"{name}.status").write_text(text.strip() + "\n", encoding="utf-8")
+    except OSError as e:
+        print(f"[WARNING] Could not write the run status for {name}: {e}")

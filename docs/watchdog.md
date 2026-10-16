@@ -163,14 +163,16 @@ The first two files are written atomically (temp file, then rename) and are giti
 
 ## Running it
 
-From the project root on the VM. The watchdog and the digest share one `flock` lock, so they never write the state file at the same time. `-w 900` waits up to 15 minutes for the lock instead of skipping the run.
+From the project root on the VM. The watchdog, the digest, and the backup share one `flock` lock, so they never write the state files at the same time. Each waits up to 15 minutes for the lock instead of skipping the run. Since 2026-10-16, `scripts/cron_job.sh` takes the lock, runs the job, and reports the result to healthchecks.io. Both jobs now exit with code 1 when a user's run fails. Setup is in [operations.md](operations.md).
 
 ```cron
-45 * * * * cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/telegram_alert/hourly_watchdog.py >> watchdog.log 2>&1
+45 * * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh watchdog
 # Digest: every hour at :10, in any VM timezone. src/digest/digest_schedule.py decides from the exchange calendar
 # whether the Pre-Market (07:00 ET until the open) or Post-Market (close + 10 min, so 16:10 ET) digest is due, skips
 # days no configured exchange trades, and remembers who already received it. Daylight saving needs no changes.
-10 * * * * cd ~/ai_financial_advisor && flock -w 900 /tmp/finnbot.lock venv/bin/python src/digest/digest_payload.py >> digest.log 2>&1
+10 * * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh digest
+# Nightly backup of data/ to Google Drive (docs/operations.md)
+30 2 * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh backup
 ```
 
 Check what the digest would do at any moment without sending anything: `venv/bin/python src/digest/digest_payload.py --check [--now 2026-10-15T16:10:00-04:00]`.

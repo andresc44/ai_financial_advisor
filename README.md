@@ -2,6 +2,7 @@
 AI-powered assistant to recommend new stocks to explore and alert when it's time to sell
 
 - [Holdings watchdog and per-user model selection](docs/watchdog.md): how holdings are re-evaluated on each user's schedule, the settings, and the crontab lines.
+- [Monitoring and backups](docs/operations.md): the healthchecks.io heartbeat and the nightly Google Drive backup, with setup steps.
 
 ## Adding a user
 

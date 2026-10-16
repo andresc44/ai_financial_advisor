@@ -24,8 +24,8 @@ from src.digest.send_gmail import send_html_email
 from src.universal.universal_consolidated import get_universal_content
 from src.personalized.personalized_consolidated import get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
-from src.digest.digest_schedule import due_digest, record_sent, users_already_sent
-from src.run_logging import name_thread, start_run_log
+from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
+from src.run_logging import name_thread, start_run_log, write_run_status
 from src.telegram_alert.notices import alert_admins
 import copy
 
@@ -89,24 +89,48 @@ class DigestPayload:
         return True
 
 
+def missed_digests(recipients: list[str], now: datetime, alert: bool = True) -> list[str]:
+    """
+    Claude-authored (2026-10-16): one line per digest from today whose send window has closed without reaching every
+    recipient, e.g. "Pre-Market 2026-10-16 (1 user)". Catches what no single run reports as failed: the VM or cron
+    being down for the whole window, or a user whose digest failed on every retry. Names are printed to the log
+    only, because the returned lines go to healthchecks.io. `alert=False` (--check) skips the admin alert.
+    """
+    missed = []
+    for day, period in ended_digests(now):
+        missing = sorted(set(determine_recipients(recipients, period)) - users_already_sent(day, period))
+        if missing:
+            print(f"[ERROR] The {period} digest for {day} never went out to: {missing}.")
+            if alert:
+                alert_admins(f"{period} digest for {day} never went out", f"Not sent to: {', '.join(missing)}")
+            missed.append(f"{period} {day} ({len(missing)} user{'s' if len(missing) > 1 else ''})")
+    return missed
+
+
 def run_daily_digests(
     recipients: list[str], now: Optional[datetime] = None, check_only: bool = False
-) -> None:
+) -> tuple[bool, str]:
     """
     Builds and sends the digest for every recipient scheduled for this period (called by cron via __main__).
 
     Claude-authored (2026-10-15): cron runs this every hour. Nothing happens unless digest_schedule.due_digest says a
     Pre-Market or Post-Market digest is due right now; users who already received it are skipped, and each user is
     recorded as sent as soon as their email goes out. `check_only` prints who would receive it, without sending.
+
+    2026-10-16: returns (ok, status) for the heartbeat (scripts/cron_job.sh). ok is False when the universal content
+    or any user's digest failed, or an earlier digest today never went out (missed_digests). status is one line
+    with counts only.
     """
     now = now or datetime.now(timezone.utc)
     stamp = now.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M ET")
     print(f"[{stamp}] Starting digest check...")
+    missed = missed_digests(recipients, now, alert=not check_only)
+    missed_note = f" Missed today: {'; '.join(missed)}." if missed else ""
 
     due = due_digest(now)
     if due is None:
         print(f"[{stamp}] No digest is due now (outside the Pre-/Post-Market windows, or no exchange trades today).")
-        return
+        return not missed, f"No digest due.{missed_note}"
     day, period = due
     already_sent = users_already_sent(day, period)
     digest_recipients = [
@@ -115,10 +139,10 @@ def run_daily_digests(
 
     if not digest_recipients:
         print(f"[{stamp}] {period} digest for {day}: no recipients left to send to. Exiting.")
-        return
+        return not missed, f"{period} {day}: already sent to every recipient.{missed_note}"
     if check_only:
         print(f"[{stamp}] {period} digest for {day} is due for: {digest_recipients} (check only; nothing sent).")
-        return
+        return not missed, f"{period} {day}: due for {len(digest_recipients)} recipient(s) (check only).{missed_note}"
 
     # Claude-authored (2026-10-15): the universal content and up to DIGEST.MAX_PARALLEL_USERS users are built at the
     # same time. Each user's Claude and Gemini calls use their own keys; fetching from the shared Finnhub / Twelve Data
@@ -167,10 +191,11 @@ def run_daily_digests(
                     alert_admins(f"{period} digest failed for {user}", repr(e))
 
     # Claude-authored (2026-10-15): one summary line per run, easy to grep in logs/digest.log
-    print(
-        f"[{stamp}] {period} digest run finished in {time.monotonic() - started:.0f}s: "
-        f"sent {sent or 'none'}, failed {failed or 'none'}."
-    )
+    elapsed = time.monotonic() - started
+    print(f"[{stamp}] {period} digest run finished in {elapsed:.0f}s: sent {sent or 'none'}, failed {failed or 'none'}.")
+    universal_note = "" if universal_ok else " Universal content failed, so nothing was sent."
+    status = f"{period} {day}: sent {len(sent)}, failed {len(failed)} in {elapsed:.0f}s.{universal_note}{missed_note}"
+    return universal_ok and not failed and not missed, status
 
 
 if __name__ == "__main__":
@@ -193,8 +218,14 @@ if __name__ == "__main__":
     # Claude-authored (2026-10-15): everything goes to logs/digest.log; an unexpected crash also alerts the admins
     start_run_log("digest")
     try:
-        run_daily_digests(get_active_users(), now=args.now, check_only=args.check)
+        ok, status = run_daily_digests(get_active_users(), now=args.now, check_only=args.check)
     except Exception as e:
         traceback.print_exc()
         alert_admins("digest run crashed", repr(e))
+        if not args.check:
+            write_run_status("digest", f"Run crashed: {type(e).__name__} (traceback in logs/digest.log).")
         raise
+    # Claude-authored (2026-10-16): the exit code and status line are what the healthchecks.io heartbeat reports
+    if not args.check:
+        write_run_status("digest", status)
+    sys.exit(0 if ok else 1)

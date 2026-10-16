@@ -121,8 +121,9 @@ def test_users_run_in_parallel_and_failures_alert_admins(monkeypatch, telegram):
         return pd.concat([alert_logs, row], ignore_index=True)
 
     monkeypatch.setattr(wd, "check_user", fake_check)
-    wd.process_user_alerts(now=NOW)
+    ok, status = wd.process_user_alerts(now=NOW)
 
+    assert not ok and status.startswith("Checked 4 user(s), 1 failed")  # Heartbeat: exit 1, no names
     assert running["max"] > 1  # Users overlapped
     log = pd.read_csv(notices.CSV_PATH)
     assert {"old", "U0", "U1", "U3"} <= set(log["user"])
