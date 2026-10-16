@@ -502,6 +502,9 @@ params_dict = {
         "PRE_MARKET_TIME_ET": "07:00",           # Pre-Market digest from this US Eastern time until the open
         "POST_MARKET_DELAY_MINUTES": 10,         # Post-Market digest this long after the close (16:10 ET), so closing data is final
         "POST_MARKET_SEND_WINDOW_MINUTES": 240,  # A missed Post-Market run is retried for this long after it was due
+        # Claude-authored (2026-10-17): the email itself (src/digest/create_html.py)
+        "AMP_EMAIL": True,      # Also send an AMP version, whose dropdowns work in the Gmail app (needs setup: docs/watchdog.md)
+        "CHARTS_OPEN": False,   # True: each stock's candlestick chart starts expanded instead of in a collapsed dropdown
     },
     # Server-side refusal fallback (fallbacks="default") in both Claude evaluators: LLM_recommendation.py
     # (new-stock scoring) and src/personalized/recommendation.py (holdings). Only sent for the models listed below.

@@ -112,9 +112,9 @@ class DigestPayload:
 
     def send_daily_digest_to(self, user_name: str = "Andres", personal: Optional[dict] = None):
         user_payload = self.personalized_content(user_name, personal)
-        # Claude-authored (2026-10-17): the rendered HTML and plain text go straight to the email
+        # Claude-authored (2026-10-17): the rendered HTML, plain text, and AMP version go straight to the email
         rendered = html_main(user_payload, self.src_dir)
-        send_html_email(user_name, user_payload["subject"], rendered.html, rendered.text)
+        send_html_email(user_name, user_payload["subject"], rendered.html, rendered.text, amp=rendered.amp)
         return True
 
     def save_payload(self, user_name: str, personal: Optional[dict] = None, out_dir: Optional[Path] = None) -> Path:
@@ -146,7 +146,8 @@ def send_saved_payload(path: Path, email: bool = True) -> str:
     rendered = html_main(payload, Path(__file__).resolve().parent)
     if not email:
         return f"Rendered {user_name}'s saved digest to {rendered.path} (not emailed)."
-    send_html_email(user_name, f"[Test] {payload.get('subject', 'Finnbot Digest')}", rendered.html, rendered.text)
+    send_html_email(user_name, f"[Test] {payload.get('subject', 'Finnbot Digest')}", rendered.html, rendered.text,
+                    amp=rendered.amp)
     return f"Emailed {user_name}'s saved digest ({Path(path).name})."
 
 

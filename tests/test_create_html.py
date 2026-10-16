@@ -277,6 +277,55 @@ def test_send_html_email_sends_html_and_text_parts(monkeypatch):
     assert msg.get_body(("html",)).get_content().strip() == "<p>Hello</p>"
 
 
+def test_send_html_email_puts_the_amp_part_before_the_html(monkeypatch):
+    FakeSMTP.sent = []
+    monkeypatch.setattr(sg.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setitem(sg.USER_PROFILES, "Test", {"destination_email": "TEST_EMAIL"})
+    monkeypatch.setenv("TEST_EMAIL", "test@example.com")
+    monkeypatch.setenv("GMAIL_USER", "sender@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "app-password")
+
+    sg.send_html_email("Test", "Subject", "<p>Hello</p>", "Hello", amp="<html amp4email>Hello</html>")
+    msg = message_from_bytes(FakeSMTP.sent[0].as_bytes(), policy=default_policy)
+    assert [part.get_content_type() for part in msg.iter_parts()] == ["text/plain", "text/x-amp-html", "text/html"]
+
+
+def test_charts_for_every_stock_except_non_us_holdings():
+    view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.TO", currency="CAD")]))
+    charts = {card["symbol"]: card["chart"] for card in view["holdings"]}
+    assert charts["XYZ.TO"] is None  # Finviz covers US listings only
+    assert charts["AAA"]["src"] == "https://finviz.com/chart.ashx?t=AAA&ty=c&ta=1&p=d&s=l&v=20261016pre"
+    assert view["swing"][0]["chart"]["src"].startswith("https://finviz.com/chart.ashx?t=SWA&")
+    assert view["long_term"][0]["chart"]["link"] == "https://finviz.com/quote.ashx?t=LTA"
+    html = ch.render_html(view, TEMPLATE_DIR)
+    assert html.count('<img src="https://finviz.com/chart.ashx?') == 3  # AAA, SWA, LTA
+    assert "t=AAA&amp;ty=c" in html  # & escaped inside the attribute
+
+
+def test_amp_version_uses_amp_markup_only():
+    view = ch.build_view(payload())
+    amp = ch.render_amp(view, TEMPLATE_DIR)
+    assert amp.startswith("<!DOCTYPE html>\n<html amp4email data-css-strict")
+    assert '<meta charset="utf-8">\n<script async src="https://cdn.ampproject.org/v0.js"></script>' in amp
+    assert "<style amp4email-boilerplate>body{visibility:hidden}</style>" in amp
+    assert amp.count("<amp-accordion") == html_folds(view) and "<amp-img" in amp  # Same dropdowns as the HTML
+    for disallowed in ("<details", "<summary", "<img", "!important", "<!--[if", "mso-", "<meta name="):
+        assert disallowed not in amp, disallowed
+    assert amp.count("<section>") == amp.count("<amp-accordion")  # All collapsed (CHARTS_OPEN is off)
+
+
+def html_folds(view):
+    """How many dropdowns the HTML version has for this view."""
+    return ch.render_html(view, TEMPLATE_DIR).count("<details")
+
+
+def test_charts_open_setting(monkeypatch):
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "CHARTS_OPEN", True)
+    view = ch.build_view(payload(holdings=[holding("AAA")]))
+    assert ch.render_html(view, TEMPLATE_DIR).count("<details open>") == 3  # AAA, SWA, and LTA's charts
+    assert ch.render_amp(view, TEMPLATE_DIR).count("<section expanded>") == 3
+
+
 def test_send_html_email_needs_gmail_credentials(monkeypatch):
     monkeypatch.setitem(sg.USER_PROFILES, "Test", {"destination_email": "TEST_EMAIL"})
     monkeypatch.setenv("TEST_EMAIL", "test@example.com")
@@ -294,13 +343,16 @@ def test_from_payload_renders_and_emails_a_saved_payload(tmp_path, monkeypatch):
     saved = tmp_path / "Test_2026-10-16_Pre-Market_0801.json"
     saved.write_text(json.dumps(payload()), encoding="utf-8")
     emails = []
-    monkeypatch.setattr(dp, "send_html_email", lambda user, subject, html, text: emails.append((user, subject, html, text)))
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "AMP_EMAIL", True)
+    monkeypatch.setattr(dp, "send_html_email",
+                        lambda user, subject, html, text, amp=None: emails.append((user, subject, html, text, amp)))
 
     assert dp.send_saved_payload(saved) == f"Emailed Test's saved digest ({saved.name})."
-    user, subject, html, text = emails[0]
+    user, subject, html, text, amp = emails[0]
     assert (user, subject) == ("Test", "[Test] Finnbot Pre-Market Digest 2026-10-16")
-    assert "Your holdings" in html and "YOUR HOLDINGS" in text
+    assert "Your holdings" in html and "YOUR HOLDINGS" in text and "amp4email" in amp
     assert (ch.REPORTS_DIR / "Test_2026-10-16_Pre-Market.html").read_text(encoding="utf-8") == html
+    assert (ch.REPORTS_DIR / "Test_2026-10-16_Pre-Market.amp.html").read_text(encoding="utf-8") == amp
 
     assert "not emailed" in dp.send_saved_payload(saved, email=False)
     assert len(emails) == 1

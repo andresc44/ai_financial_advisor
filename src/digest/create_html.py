@@ -12,6 +12,10 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   Long text (each holding's reasoning and news, a story's market impact, a pick's extra figures) sits in
   <details> dropdowns. Apple Mail and Samsung Email collapse them; Gmail and Outlook can't, so they show them
   expanded under their labels (Gmail turns the tags into <u>, whose underline the template's CSS removes).
+- 2026-10-17: each holding and idea gets a Finviz candlestick chart (in a dropdown; DIGEST.CHARTS_OPEN to show it
+  open), and render_amp builds an AMP for Email version from the same template, whose dropdowns work in the Gmail
+  app (DIGEST.AMP_EMAIL; setup in docs/watchdog.md). The design now avoids dark backgrounds with white text, which
+  the Gmail app's dark mode recolours badly.
 """
 
 from __future__ import annotations
@@ -39,6 +43,8 @@ from src.personalized.portfolio_review import build_portfolio_summary
 TEMPLATE_NAME = "email_template.html"
 REPORTS_DIR = Path(__file__).resolve().parent / "html_reports"  # gitignored: each report holds the user's holdings
 GMAIL_CLIP_BYTES = 102_000  # Gmail hides everything past ~102 KB of HTML behind "[Message clipped]"
+AMP_MAX_BYTES = 200_000  # The AMP for Email spec's limit for the whole AMP part
+CHART_WIDTH, CHART_HEIGHT = 466, 219  # Finviz's large daily chart (s=l)
 
 FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 INK, BODY, MUTED = "#0F2A44", "#334155", "#64748B"
@@ -46,7 +52,7 @@ TONES = {"pos": "#15803D", "neg": "#B91C1C", "warn": "#B45309", "flat": BODY, "i
 
 # recommendation -> (label, badge text colour, badge colour, bar colour, sort order: most urgent first)
 SIGNALS = {
-    "urgent_sell": ("Urgent sell", "#FFFFFF", "#DC2626", "#DC2626", 0),
+    "urgent_sell": ("Urgent sell", "#7F1D1D", "#FECACA", "#DC2626", 0),
     "risk_alert": ("Risk alert", "#9A3412", "#FFEDD5", "#F97316", 1),
     "trim": ("Trim", "#92400E", "#FEF3C7", "#F59E0B", 2),
     "hold": ("Hold", "#075985", "#E0F2FE", "#38BDF8", 3),
@@ -185,6 +191,22 @@ def _sentiment_badge(value: Any) -> Optional[dict]:
     if sentiment not in SENTIMENTS:
         return None
     return _badge(sentiment, *SENTIMENTS[sentiment])
+
+
+def _chart(symbol: str, version: str) -> dict:
+    """
+    Finviz's daily candlestick chart (moving averages, trendlines, volume), as in the first version of the email.
+    Finviz covers US listings; for symbols it doesn't know, it returns a "Chart not available" image rather than an
+    error. `version` changes with each digest, so Gmail's image proxy can't show an earlier digest's cached chart.
+    """
+    finviz_symbol = symbol.replace("/", "-").replace(".", "-")
+    return {
+        "src": f"https://finviz.com/chart.ashx?t={finviz_symbol}&ty=c&ta=1&p=d&s=l&v={version}",
+        "link": f"https://finviz.com/quote.ashx?t={finviz_symbol}",
+        "alt": f"{symbol} daily candlestick chart",
+        "width": CHART_WIDTH,
+        "height": CHART_HEIGHT,
+    }
 
 
 def _quote_links(symbol: str) -> dict:
@@ -349,6 +371,8 @@ def _holding_card(symbol: str, lots: list[dict]) -> dict:
         "volatility": volatility_line,
         "news": news,
         "links": _quote_links(symbol),
+        "currency": currency,
+        "chart": None,  # Set by build_view
     }
 
 
@@ -583,6 +607,7 @@ def _pick_common(pick: dict, score_key: str) -> dict:
         "thesis": _text(pick.get("thesis")) or "",
         "analyst": _analyst_line(pick),
         "links": _quote_links(ticker),
+        "chart": None,  # Set by build_view
     }
 
 
@@ -697,6 +722,14 @@ def build_view(payload: dict) -> dict:
     market = _market(payload.get("market_data"))
     models = sorted({str(pick["model"]) for pick in (recommendations.get("top_swing") or [])
                      + (recommendations.get("top_long_term") or []) if pick.get("model")})
+    # Claude-authored (2026-10-17): one chart per stock. Holdings in other currencies are skipped (Finviz covers US
+    # listings); the ideas come from the US screener.
+    version = f"{today:%Y%m%d}" if today else "0"
+    version += "pre" if _period(payload) == "Pre-Market" else "post"
+    for card in cards:
+        card["chart"] = _chart(card["symbol"], version) if card["currency"] == "USD" else None
+    for card in swing + long_term:
+        card["chart"] = _chart(card["ticker"], version) if card["ticker"] else None
 
     return {
         "subject": str(payload.get("subject") or "Finnbot Digest"),
@@ -721,6 +754,7 @@ def build_view(payload: dict) -> dict:
         "usage": _usage(payload.get("api_usage")),
         "usage_note": str((payload.get("api_usage") or {}).get("note") or ""),
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
+        "charts_open": bool(params_dict["DIGEST"].get("CHARTS_OPEN", False)),
     }
 
 
@@ -742,9 +776,24 @@ def build_environment(template_dir: Path) -> Environment:
     return env
 
 
-def render_html(view: dict, template_dir: Path) -> str:
-    html = build_environment(template_dir).get_template(TEMPLATE_NAME).render(**view)
+def render_html(view: dict, template_dir: Path, amp: bool = False) -> str:
+    """The email as HTML, or with amp=True as AMP for Email (the template's dropdowns become amp-accordion)."""
+    html = build_environment(template_dir).get_template(TEMPLATE_NAME).render(**view, amp=amp)
     return re.sub(r"\n[ \t]+", "\n", html)  # Leading indentation only adds bytes toward Gmail's clipping limit
+
+
+def render_amp(view: dict, template_dir: Path) -> Optional[str]:
+    """
+    Claude-authored (2026-10-17): the AMP version of the email, or None when it's over the AMP spec's 200 KB limit
+    (Gmail then shows the HTML version). Gmail renders it, with working dropdowns, only for senders allowed in the
+    recipient's Gmail settings (docs/watchdog.md); every other mail app ignores it and shows the HTML version.
+    """
+    amp_html = render_html(view, template_dir, amp=True)
+    size = len(amp_html.encode("utf-8"))
+    if size > AMP_MAX_BYTES:
+        print(f"[WARNING] The AMP digest is {size / 1000:.0f} KB, over AMP's 200 KB limit; sending HTML only.")
+        return None
+    return amp_html
 
 
 def _drop_low_news(view: dict) -> None:
@@ -875,6 +924,7 @@ class RenderedDigest:
     html: str
     text: str
     path: Path  # Where the HTML was saved (in REPORTS_DIR)
+    amp: Optional[str] = None  # The AMP version, when DIGEST.AMP_EMAIL is on and it fits
 
 
 def report_path(payload: dict) -> Path:
@@ -886,7 +936,7 @@ def report_path(payload: dict) -> Path:
 def html_main(payload: dict, here: Path = Path(__file__).resolve().parent) -> RenderedDigest:
     """
     Renders the user's digest from the template in `here`, saves the HTML in REPORTS_DIR, and returns it with
-    the plain-text version.
+    the plain-text version and, when DIGEST.AMP_EMAIL is on, the AMP version (saved next to it as .amp.html).
     """
     view = build_view(payload)
     text = render_text(view)  # Before fit_for_gmail, so the plain-text version keeps everything
@@ -896,4 +946,11 @@ def html_main(payload: dict, here: Path = Path(__file__).resolve().parent) -> Re
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")
     print(f"Wrote {payload.get('user_name')}'s digest to {path} ({len(html.encode('utf-8')) / 1000:.0f} KB)")
-    return RenderedDigest(html=html, text=text, path=path)
+
+    amp_html = None
+    if params_dict["DIGEST"].get("AMP_EMAIL", False):
+        # A fresh view: the AMP part's 200 KB limit fits what fit_for_gmail may have trimmed from the HTML
+        amp_html = render_amp(build_view(payload), template_dir=here)
+        if amp_html:
+            path.with_suffix(".amp.html").write_text(amp_html, encoding="utf-8")
+    return RenderedDigest(html=html, text=text, path=path, amp=amp_html)

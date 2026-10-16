@@ -262,16 +262,59 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 
 It is built for a phone first: one column up to 600 px wide, checked at 360 and 390 px.
 
-**Dropdowns.** Long text sits in dropdowns: each holding's reasoning and news, each macro story's impact, each pick's extra figures, and the cost of the digest.
-- **Collapse:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
-- **Show expanded:** Gmail and Outlook, under the same labels. Neither supports dropdowns in email.
+**Dropdowns.** Long content sits in dropdowns:
+- each holding's and pick's chart;
+- each holding's reasoning and news;
+- each macro story's impact;
+- each pick's extra figures;
+- the cost of the digest.
 
-**Gmail's size limit.** Gmail hides everything past about 102 KB of HTML behind "[Message clipped]".
-- **Normal size:** a typical digest is about 80 KB.
+Where they work:
+- **Collapse in the HTML version:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
+- **Show expanded:** Gmail and Outlook, under the same labels, because neither supports dropdowns in HTML email.
+- **Gmail:** gets working dropdowns from the AMP version (below).
+
+**Charts (added 2026-10-17).** Each holding and idea has Finviz's daily candlestick chart: candles, 20/50/200-day moving averages, trendlines and volume.
+- **Collapsed by default.** Set `DIGEST["CHARTS_OPEN"] = True` to show them open.
+- **Not shown for holdings listed in another currency,** since Finviz covers US listings.
+- **Freshness:** each digest's chart links are unique, so Gmail's image cache can't show yesterday's chart.
+- **Finviz blocks headless browsers (403).** Previewing the saved HTML in an automated browser needs a normal user agent. Gmail's image proxy and ordinary browsers get the charts.
+
+**AMP version: working dropdowns in Gmail (added 2026-10-17).** With `DIGEST["AMP_EMAIL"] = True`, every email also carries an AMP for Email version, built from the same template. Its dropdowns are `amp-accordion`, which work in the Gmail app on Android and iOS and on the web.
+- **Who sees it:** only Gmail renders AMP. Every other mail app ignores it and shows the HTML version.
+- **What Gmail requires:**
+  - a sender different from the recipient;
+  - SPF and DKIM passing, which Gmail-to-Gmail mail does;
+  - a sender address the recipient has allowed.
+
+One-time setup (per recipient):
+1. Create a Gmail account for sending the digests, e.g. `finnbot.digest@gmail.com`.
+2. Turn on 2-Step Verification for it, then create an app password: Google Account → Security → App passwords.
+3. In `.env`, set `GMAIL_USER` to that address and `GMAIL_APP_PASSWORD` to the app password.
+4. Each recipient, in Gmail on the web: **Settings → See all settings → General → Dynamic email**. Tick **Enable dynamic email**, click **Developer settings**, add the sender address, and save.
+5. Send a test: `--from-payload` (above). Without the setup, Gmail quietly shows the HTML version.
+
+Other limits:
+- **Expiry:** Gmail shows an AMP email's HTML version once it is 30 days old.
+- **Size:** the AMP spec allows 200 KB, about twice a typical digest.
+- **Validation:** Gmail falls back to HTML when the AMP version isn't valid. After editing the template, check the saved `src/digest/html_reports/<user>_<date>_<period>.amp.html` with Google's validator:
+
+  ```bash
+  npm install amphtml-validator
+  npx amphtml-validator --html_format AMP4EMAIL <file>.amp.html
+  ```
+
+**Dark mode.** The Gmail app recolours emails itself and ignores the email's own dark-mode styles.
+- **How the design handles it:** every block is a light background with dark text, which Gmail converts cleanly. There are no dark panels with white text, because the Gmail iOS app turns white text dark.
+- **Charts:** Gmail doesn't recolour images, so they stay white panels in dark mode.
+- **Apple Mail:** keeps the light design.
+
+**Gmail's size limit.** Gmail hides everything past about 102 KB of the HTML version behind "[Message clipped]".
+- **Normal size:** a typical digest is about 85 KB.
 - **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions.
 - **Never removed:** each holding's signal, figures and reasoning.
 - **Capacity:** about 25 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
-- **Plain-text version:** always complete.
+- **Untrimmed:** the plain-text and AMP versions are always complete.
 
 ### Fresh data in each digest
 

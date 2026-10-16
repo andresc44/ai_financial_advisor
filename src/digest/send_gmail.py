@@ -41,13 +41,23 @@ def destination_email(user_name: str) -> str:
     return to_email
 
 
-def send_html_email(user_name: str, subject: str, html: str, text: Optional[str] = None) -> str:
-    """Emails `html` (with `text` as the plain-text version) to the user from GMAIL_USER; returns the address."""
+def send_html_email(
+    user_name: str, subject: str, html: str, text: Optional[str] = None, amp: Optional[str] = None
+) -> str:
+    """
+    Emails `html` to the user from GMAIL_USER, with `text` as the plain-text version and `amp` (2026-10-17) as the
+    AMP for Email version; returns the address. Gmail shows the AMP version, whose dropdowns work in its app, only
+    when the sender is allowed in the recipient's Gmail settings and differs from the recipient; every other case
+    shows the HTML version (docs/watchdog.md).
+    """
     to_email = destination_email(user_name)
     sender_email = (os.environ.get("GMAIL_USER") or "").strip()
     app_password = (os.environ.get("GMAIL_APP_PASSWORD") or "").strip()
     if not sender_email or not app_password:
         raise ValueError("Missing credentials. Set GMAIL_USER and GMAIL_APP_PASSWORD.")
+    if amp and sender_email.lower() == to_email.lower():
+        print(f"[NOTE] {user_name}'s digest is sent from their own address, so Gmail shows the HTML version, not the "
+              "AMP one with working dropdowns (Gmail requires a different sender; see docs/watchdog.md).")
 
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -57,6 +67,8 @@ def send_html_email(user_name: str, subject: str, html: str, text: Optional[str]
     msg["Message-ID"] = make_msgid(domain=sender_email.rsplit("@", 1)[-1])
     # Plain-text version for mail apps that don't show HTML
     msg.set_content(text or "This digest needs a mail app that shows HTML.")
+    if amp:  # AMP goes before the HTML part, as Gmail requires; apps without AMP support skip it
+        msg.add_alternative(amp, subtype="x-amp-html")
     msg.add_alternative(html, subtype="html")
 
     # Connect to Gmail's SMTP server with TLS (port 587)

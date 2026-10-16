@@ -8,16 +8,26 @@
   notices, portfolio overview, portfolio risk, connected account, markets and macro news, holdings, swing ideas,
   long-term ideas, footer.
 
-  Size: Gmail clips an email after ~102 KB of HTML ("[Message clipped]"), so typography lives in the short classes
-  of the <style> block (Gmail, Apple Mail, Outlook and Samsung Email all apply them) instead of being repeated
-  inline hundreds of times. Colours, backgrounds and spacing stay inline, so the email still reads if a client
-  drops the <style> block.
+  Two outputs from this one file (2026-10-17):
+  - HTML (`amp` false), which every mail app shows. Dropdowns are <details>/<summary> (the `fold` macro): Apple Mail
+    and Samsung Email collapse them, while Outlook strips the tags and Gmail swaps them for <u>, so both show the
+    content expanded under its label (the `u` rule removes the underline Gmail would draw under all of it; spacing
+    sits on the wrapping <div>, since the bare <u> tags carry no styles).
+  - AMP for Email (`amp` true), which only Gmail renders, and only for senders the recipient allowed in Gmail's
+    settings. Its dropdowns are amp-accordion, so they work in the Gmail app. AMP allows no <img>, conditional
+    comments, !important, or Outlook-only CSS, so those are left out of it; check changes with Google's validator
+    (docs/watchdog.md).
 
-  Dropdowns are <details>/<summary> (the `fold` macro). Apple Mail and Samsung Email collapse them. Outlook strips
-  the tags and Gmail swaps them for <u>, so both show the content expanded under its label; the `u` rule removes
-  the underline Gmail would otherwise draw under all of it. Spacing sits on the wrapping <div>, not on <details>,
-  since the bare <u> tags Gmail puts in their place carry no styles.
+  Size: Gmail clips an email after ~102 KB of HTML ("[Message clipped]"), so typography lives in the short classes
+  of the <style> block instead of being repeated inline hundreds of times. Colours, backgrounds and spacing stay
+  inline, so the HTML version still reads if a client drops the <style> block.
+
+  Dark mode: the Gmail app recolours emails itself and ignores prefers-color-scheme, so every block is a light
+  background with dark text, which it converts cleanly. Dark backgrounds with white text are avoided: the Gmail
+  iOS app turns white text dark.
 -#}
+{%- set IMP = "" if amp else "!important" -%}
+
 {%- macro badge(b) -%}
 <span class="bd" style="background-color:{{ b.bg }};color:{{ b.fg }};">{{ b.text }}</span>
 {%- endmacro -%}
@@ -37,10 +47,20 @@
 {%- endmacro -%}
 
 {%- macro fold(title, open=false) -%}
+{% if amp %}
+<amp-accordion animate class="ac"><section{{ " expanded" if open else "" }}><h4 class="fh"><span class="a1">&#9656;</span><span class="a2">&#9662;</span> {{ title }}</h4><div class="fb">{{ caller() }}</div></section></amp-accordion>
+{% else %}
 <div style="padding-top:6px;"><details{{ " open" if open else "" }}>
 <summary style="padding:6px 0;color:#0B6BCB;"><span class="ft">{{ title }}</span></summary>
 <div style="padding-top:4px;">{{ caller() }}</div>
 </details></div>
+{% endif %}
+{%- endmacro -%}
+
+{%- macro chart(ch, open) -%}
+{% call fold("Chart", open) %}
+<a href="{{ ch.link }}" style="display:block;">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" style="display:block;width:100%;max-width:{{ ch.width }}px;height:auto;border:0;border-radius:8px;">{% endif %}</a>
+{% endcall %}
 {%- endmacro -%}
 
 {%- macro kv(rows) -%}
@@ -52,7 +72,7 @@
 {%- endmacro -%}
 
 {%- macro card(pad="16px", bg="#FFFFFF", border="#E2E8F0") -%}
-<tr><td class="gutter" style="padding:0 12px 12px 12px;">
+<tr><td class="gutter"{% if not amp %} style="padding:0 12px 12px 12px;"{% endif %}>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:14px;">
 <tr><td class="c" style="padding:{{ pad }};">
 {{ caller() }}
@@ -84,10 +104,18 @@
 {%- endmacro -%}
 
 {%- macro pick_header(c) -%}
-{{ title_row(c.links.yahoo, c.ticker, c.name, c.price, '<div style="padding-top:3px;"><span class="bd" style="background-color:#0F2A44;color:#FFFFFF;font-size:12px;">Score '|safe ~ c.score ~ '</span></div>'|safe) }}
+{{ title_row(c.links.yahoo, c.ticker, c.name, c.price, '<div style="padding-top:3px;"><span class="bd" style="background-color:#E2E8F0;color:#0F2A44;font-size:12px;">Score '|safe ~ c.score ~ '</span></div>'|safe) }}
 <div class="xs mu" style="padding-top:10px;line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
 {%- endmacro -%}
 <!DOCTYPE html>
+{% if amp %}
+<html amp4email data-css-strict lang="en">
+<head>
+<meta charset="utf-8">
+<script async src="https://cdn.ampproject.org/v0.js"></script>
+<script async custom-element="amp-accordion" src="https://cdn.ampproject.org/v0/amp-accordion-0.1.js"></script>
+<style amp4email-boilerplate>body{visibility:hidden}</style>
+{% else %}
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="UTF-8">
@@ -99,13 +127,25 @@
 <meta name="supported-color-schemes" content="light">
 <title>{{ subject }}</title>
 <!--[if mso]><noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript><![endif]-->
-<style>
+{% endif %}
+<style{{ " amp-custom" if amp else "" }}>
+{% if amp %}
+body{margin:0;padding:0;}
+.gutter{padding:0 12px 12px 12px;}
+amp-accordion .fh{margin:0;padding:6px 0;background-color:transparent;border:0;font-size:13px;line-height:18px;font-weight:700;color:#0B6BCB;}
+.ac{margin-top:4px;}
+.fb{padding-top:4px;}
+.a2{display:none;}
+section[expanded] .a1{display:none;}
+section[expanded] .a2{display:inline;}
+{% else %}
 body{margin:0!important;padding:0!important;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
 table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
-table{border-collapse:collapse;}
-a{text-decoration:none;}
 u{text-decoration:none!important;}
 summary{cursor:pointer;}
+{% endif %}
+table{border-collapse:collapse;}
+a{text-decoration:none;}
 .c{font-family:{{ FONT }};font-size:14px;line-height:21px;color:#334155;}
 .hd{font-size:13px;line-height:18px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#0F2A44;}
 .h2{font-size:16px;line-height:22px;font-weight:800;color:#0F2A44;}
@@ -132,26 +172,23 @@ summary{cursor:pointer;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;}
 .mh{padding:0 0 6px 6px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
 .mc{padding:7px 0 7px 6px;border-top:1px solid #EEF2F6;font-size:13px;line-height:17px;white-space:nowrap;}
-@media screen and (max-width:420px){.gutter{padding-left:8px!important;padding-right:8px!important;}}
+@media screen and (max-width:420px){.gutter{padding-left:8px{{ IMP }};padding-right:8px{{ IMP }};}}
 </style>
 </head>
 <body style="margin:0;padding:0;background-color:#EEF2F6;">
-<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{{ preheader }}{% for _ in range(30) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;{{ '' if amp else 'mso-hide:all;' }}">{{ preheader }}{% for _ in range(30) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EEF2F6;">
 <tr><td align="center" style="padding:0;font-family:{{ FONT }};">
-<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
+{% if not amp %}<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->{% endif %}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;">
 
-{# ---------- Header: greeting ---------- #}
-<tr><td style="padding:0 0 14px 0;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0F2A44;">
-<tr><td class="c" style="padding:24px 20px 22px 20px;">
-<div class="lb" style="letter-spacing:1.6px;color:#7DD3FC;">Finnbot &middot; {{ period }} digest</div>
-<div style="font-size:25px;line-height:31px;font-weight:800;color:#FFFFFF;padding-top:8px;">{{ greeting }}</div>
-<div style="color:#CBD5E1;padding-top:4px;">{{ date_long }}</div>
-{% if prepared %}<div class="xs" style="color:#94A3B8;padding-top:2px;">{{ prepared }}</div>{% endif %}
-</td></tr>
-</table>
+{# ---------- Header: greeting (light, so Gmail's dark mode converts it cleanly) ---------- #}
+<tr><td style="background-color:#0B6BCB;height:4px;font-size:1px;line-height:4px;">&nbsp;</td></tr>
+<tr><td class="c" style="padding:22px 20px 14px 20px;">
+<div class="lb" style="letter-spacing:1.6px;color:#0B6BCB;">Finnbot &middot; {{ period }} digest</div>
+<div style="font-size:26px;line-height:32px;font-weight:800;color:#0F2A44;padding-top:6px;">{{ greeting }}</div>
+<div style="color:#475569;padding-top:2px;">{{ date_long }}</div>
+{% if prepared %}<div class="xs mu" style="padding-top:1px;">{{ prepared }}</div>{% endif %}
 </td></tr>
 
 {# ---------- Notices: why parts of the digest are missing ---------- #}
@@ -269,6 +306,7 @@ summary{cursor:pointer;}
 {% for c in h.catalysts %}
 <div class="sm" style="padding-top:10px;">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text }}</div>
 {% endfor %}
+{% if h.chart %}{{ chart(h.chart, charts_open) }}{% endif %}
 {% if h.rationale %}
 {% call fold("Reasoning") %}
 {{ h.rationale }}
@@ -302,6 +340,7 @@ summary{cursor:pointer;}
 {% if c.thesis %}<div style="padding-top:12px;">{{ c.thesis }}</div>{% endif %}
 {% if c.earnings_warning %}<div class="sm" style="color:#92400E;background-color:#FEF3C7;border-radius:8px;padding:8px 10px;margin-top:10px;">{{ c.earnings_warning }}</div>{% endif %}
 {% if c.analyst %}<div class="sm mu" style="padding-top:10px;">{{ c.analyst }}</div>{% endif %}
+{% if c.chart %}{{ chart(c.chart, charts_open) }}{% endif %}
 {% if c.details or c.score_rows %}
 {% call fold("Technicals & score breakdown") %}
 {{ kv(c.details) }}
@@ -332,6 +371,7 @@ summary{cursor:pointer;}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;"><tr><td width="{{ c.range.left }}%" style="background-color:#93C5FD;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="4" style="width:4px;background-color:#0F2A44;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="{{ c.range.right }}%" style="background-color:#E2E8F0;height:8px;font-size:1px;line-height:8px;">&nbsp;</td></tr></table>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="xs mu" style="padding-top:4px;">{{ c.range.low }}</td><td align="center" class="xs" style="padding-top:4px;">{{ c.range.note }}</td><td align="right" class="xs mu" style="padding-top:4px;">{{ c.range.high }}</td></tr></table>
 {% endif %}
+{% if c.chart %}{{ chart(c.chart, charts_open) }}{% endif %}
 {% if c.details or c.score_rows %}
 {% call fold("More fundamentals & score breakdown") %}
 {{ kv(c.details) }}
@@ -360,7 +400,7 @@ summary{cursor:pointer;}
 </td></tr>
 
 </table>
-<!--[if mso]></td></tr></table><![endif]-->
+{% if not amp %}<!--[if mso]></td></tr></table><![endif]-->{% endif %}
 </td></tr>
 </table>
 </body>
