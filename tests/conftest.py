@@ -5,7 +5,8 @@ Every test runs offline and touches nothing real:
 - files the code writes (market-context cache, alert log, FX cache, track record, usage ledger) go to a
   temporary folder;
 - Telegram messages are captured in `telegram` instead of sent;
-- yfinance downloads fail loudly unless a test replaces them, so no test silently depends on live market data.
+- yfinance downloads fail loudly unless a test replaces them, so no test silently depends on live market data;
+- the universal content's macro news and market dashboard return nothing unless a test asks for them.
 Anthropic and Gemini calls go through mock HTTP transports inside the tests that need them.
 """
 import sys
@@ -53,6 +54,13 @@ def isolated(tmp_path, monkeypatch):
         raise RuntimeError("yfinance.download called in a test without a fake")
 
     monkeypatch.setattr(yfinance, "download", no_network)
+
+    # 2026-10-16: the universal content's macro news (a real Gemini call with the .env key) and market dashboard
+    # (Yahoo, FRED, CNN, Wikipedia) are replaced with "nothing fetched"; tests of them call the real functions
+    import src.universal.universal_consolidated as universal
+
+    monkeypatch.setattr(universal, "get_macro_stories", lambda: (None, []))
+    monkeypatch.setattr(universal, "get_market_dashboard", lambda: ({}, []))
     return tmp_path
 
 

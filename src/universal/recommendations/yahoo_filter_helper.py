@@ -1,5 +1,6 @@
 import operator
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
@@ -74,9 +75,22 @@ def filter_yahoo_tickers(
         getattr(client, "_get_metric_with_alert", None) or getattr(client, "get_metric_with_alert", None)
     )
 
+    # Claude-authored (2026-10-16): fetched YAHOO_FETCH_CONCURRENCY at a time (each takes ~2 s, so a few hundred
+    # tickers one by one took minutes), then checked in order. fetch_yahoo_data keeps each result, so the survivors
+    # aren't fetched again when their full data is gathered.
+    def _fetch(symbol: str) -> Any:
+        try:
+            return client.fetch_yahoo_data(symbol=symbol, fetch_news=False)
+        except Exception as e:  # fetch_yahoo_data already catches its own errors; this is only a safety net
+            return {"error": str(e)}
+
+    workers = max(1, int(params_dict.get("YAHOO_FETCH_CONCURRENCY", 4)))
+    print(f"Fetching Yahoo data for {len(input_tickers)} tickers, {workers} at a time...")
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="yahoo") as pool:
+        fetched = dict(zip(input_tickers, pool.map(_fetch, input_tickers)))
+
     for symbol in input_tickers:
-        print(f"Fetching Yahoo data for {symbol}...")
-        yahoo_metrics = client.fetch_yahoo_data(symbol=symbol, fetch_news=False)
+        yahoo_metrics = fetched[symbol]
 
         if not isinstance(yahoo_metrics, dict):
             print(f"Alert: Yahoo data for '{symbol}' is not a dictionary. Skipping.")
@@ -104,4 +118,24 @@ def filter_yahoo_tickers(
             filtered_yahoo_tickers.append(symbol)
             print(f"✓ {symbol} passed Yahoo filters: {evaluated_values}")
 
-    return filtered_yahoo_tickers
+    return one_listing_per_company(filtered_yahoo_tickers, fetched)
+
+
+def one_listing_per_company(symbols: List[str], metrics: Dict[str, Any]) -> List[str]:
+    """
+    Claude-authored (2026-10-16): keeps the most traded listing of each company (Yahoo longName), in order. Share
+    classes like GOOG / GOOGL are one business: both reaching Claude would double its cost for that company and could
+    fill two pick slots with it.
+    """
+    best: Dict[str, tuple[str, float]] = {}
+    for symbol in symbols:
+        data = metrics.get(symbol) if isinstance(metrics.get(symbol), dict) else {}
+        company = str(data.get("longName") or data.get("shortName") or symbol).strip().lower()
+        volume = data.get("averageVolume") or 0
+        if company not in best or volume > best[company][1]:
+            best[company] = (symbol, volume)
+    kept = {symbol for symbol, _ in best.values()}
+    for symbol in symbols:
+        if symbol not in kept:
+            print(f"Alert: {symbol} is another listing of a company already kept. Skipping.")
+    return [symbol for symbol in symbols if symbol in kept]

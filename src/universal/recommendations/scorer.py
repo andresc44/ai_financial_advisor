@@ -12,6 +12,45 @@ from src.universal.recommendations.LLM_recommendation import run_llm_evaluation
 
 logger = logging.getLogger("Finnbot.CandidateSelector")
 
+# Claude-authored (2026-10-16): the parts of Claude's evaluation that go with a pick to the digest. Before, only the
+# two totals were kept, so a pick never said why it was made.
+LONG_TERM_SCORES = ("valuation_score", "financial_health_score", "growth_momentum_score", "competitive_moat_score")
+SWING_SCORES = ("technical_setup_score", "risk_reward_ratio_score", "momentum_volume_score", "catalyst_sentiment_score")
+
+
+def long_term_reasoning(scores: Dict[str, Any]) -> Dict[str, Any]:
+    """Sentiment, thesis, key risk, and sub-scores from the long-term half of a ticker's evaluation."""
+    section = (scores.get("sub_scores") or {}).get("long_term") or {}
+    return {
+        "sentiment": section.get("sentiment"),
+        "thesis": section.get("thesis"),
+        "key_risk": section.get("key_risk"),
+        "sub_scores": {name: section.get(name) for name in LONG_TERM_SCORES},
+    }
+
+
+def swing_reasoning(ticker: str, scores: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Sentiment, thesis, sub-scores, and trade levels from the swing half of a ticker's evaluation. The levels are
+    only kept when they make sense together (0 < stop < entry < target); then risk_reward is the upside to the
+    target per unit of downside to the stop, e.g. 2.5 for 2.5:1.
+    """
+    section = (scores.get("sub_scores") or {}).get("swing") or {}
+    entry, stop, target = (section.get(key) for key in ("entry_price", "stop_loss", "price_target"))
+    levels_ok = all(isinstance(v, (int, float)) for v in (entry, stop, target)) and 0 < stop < entry < target
+    if not levels_ok:
+        logger.warning(f"[{ticker}] Swing levels dropped (need 0 < stop < entry < target): "
+                       f"entry={entry}, stop={stop}, target={target}")
+    return {
+        "sentiment": section.get("sentiment"),
+        "thesis": section.get("thesis"),
+        "entry_price": entry if levels_ok else None,
+        "stop_loss": stop if levels_ok else None,
+        "price_target": target if levels_ok else None,
+        "risk_reward": round((target - entry) / (entry - stop), 1) if levels_ok else None,
+        "sub_scores": {name: section.get(name) for name in SWING_SCORES},
+    }
+
 
 def select_top_candidates(
     sanitized_inputs: Dict[str, Dict[str, Any]], 
@@ -89,7 +128,8 @@ def select_top_candidates(
         {
             "ticker": ticker,
             "longScore": scores.get("longScore", 0.0),
-            "swingScore": scores.get("swingScore", 0.0)
+            "swingScore": scores.get("swingScore", 0.0),
+            **long_term_reasoning(scores),  # Claude-authored (2026-10-16)
         }
         for ticker, scores in top_long_tuples
     ]
@@ -125,7 +165,8 @@ def select_top_candidates(
         {
             "ticker": ticker,
             "swingScore": scores.get("swingScore", 0.0),
-            "longScore": scores.get("longScore", 0.0)
+            "longScore": scores.get("longScore", 0.0),
+            **swing_reasoning(ticker, scores),  # Claude-authored (2026-10-16)
         }
         for ticker, scores in top_swing_tuples
     ]

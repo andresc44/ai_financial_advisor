@@ -1,4 +1,5 @@
 # File to grab data from Yahoo Finance and Finnhub APIs, filter tickers based on fundamental data, and export the results to JSON files.
+import copy
 import json
 import os
 import time
@@ -108,7 +109,9 @@ class DataFetcher:
         if not dated_files:
             raise FileNotFoundError(f"No validly dated CSV files in '{ticker_dir}'.")
 
-        dated_files.sort(key=lambda x: x[0])
+        # Claude-authored (2026-10-16): newest write breaks a same-date tie (files are now also named by their filter
+        # settings, so two can share a date when CLEAR_EXISTING_DATA is off)
+        dated_files.sort(key=lambda x: (x[0], x[1].stat().st_mtime))
         return dated_files[-1][1]
 
     def __load_ticker_df(self) -> pd.DataFrame:
@@ -124,6 +127,11 @@ class DataFetcher:
 
     def fetch_yahoo_data(self, symbol: str, fetch_news: bool = False) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """Fetches key metrics (dict) or news articles (list of dicts) directly for a ticker from Yahoo Finance."""
+        # Claude-authored (2026-10-16): the Yahoo filter stage already fetched each candidate's info this run, so it's
+        # reused when the survivors' full data is gathered (fetch_all) instead of downloading it twice
+        info_cache = self.__dict__.setdefault("_yahoo_info_cache", {})
+        if not fetch_news and symbol in info_cache:
+            return dict(info_cache[symbol])
         ticker_obj = yf.Ticker(symbol)
 
         def _safe_get(key: str, attribute_name: str, is_callable: bool = False, *args, **kwargs):
@@ -164,7 +172,9 @@ class DataFetcher:
         if isinstance(info_res, dict):
             info_clean = info_res.copy()
             info_clean.pop("companyOfficers", None)  # type: ignore
-            return info_clean
+            if "error" not in info_clean:
+                info_cache[symbol] = info_clean
+            return dict(info_clean)
 
         return info_res if isinstance(info_res, dict) else {"error": str(info_res)}
 
@@ -193,6 +203,12 @@ class DataFetcher:
                 to=today_date,
             )
             return news_res if isinstance(news_res, list) else [news_res]
+
+        # Claude-authored (2026-10-16): reuse what the Finnhub filter stage fetched this run (4 calls per ticker, under
+        # the free plan's 60 calls/minute) when the survivors' full data is gathered
+        finnhub_cache = self.__dict__.setdefault("_finnhub_cache", {})
+        if symbol in finnhub_cache:
+            return copy.deepcopy(finnhub_cache[symbol])
 
         finnhub_data: Dict[str, Any] = {}
 
@@ -228,8 +244,9 @@ class DataFetcher:
             to=to_date,
             symbol=symbol,
         )
-        
 
+        if not any(isinstance(section, dict) and "error" in section for section in finnhub_data.values()):
+            finnhub_cache[symbol] = copy.deepcopy(finnhub_data)  # A failed call is retried if the ticker comes back
         return finnhub_data
     
 

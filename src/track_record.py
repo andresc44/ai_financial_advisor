@@ -112,6 +112,11 @@ def log_universal(
                 "longScore": _number(pick.get("longScore")),
                 "swingScore": _number(pick.get("swingScore")),
                 "price": _number(price_action.get("current_price")),
+                # Claude-authored (2026-10-16): so the record can show whether sentiment and the swing levels held up
+                "sentiment": pick.get("sentiment"),
+                "entry_price": _number(pick.get("entry_price")),
+                "stop_loss": _number(pick.get("stop_loss")),
+                "price_target": _number(pick.get("price_target")),
             })
     _append(UNIVERSAL_PATH, records)
 

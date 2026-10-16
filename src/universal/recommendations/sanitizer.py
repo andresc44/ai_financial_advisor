@@ -160,6 +160,12 @@ def sanitize_ticker_payload(ticker_symbol, raw_data):
     fh_profile = finnhub.get("profile", {})
     fh_basic = finnhub.get("basic_financials", {})
     fh_earnings = finnhub.get("earnings_calendar", {}).get("earningsCalendar", [])
+    # Claude-authored (2026-10-16): soonest first, so "catalysts_and_earnings.upcoming_earnings.0" is the next report
+    # (RECOMMENDATION_FIELDS in parameters.py)
+    fh_earnings = sorted(
+        (e for e in fh_earnings if isinstance(e, dict)) if isinstance(fh_earnings, list) else [],
+        key=lambda e: str(e.get("date") or "9999-99-99"),
+    )
     fh_surprises = finnhub.get("earnings_surprise", [])
     fh_insider = finnhub.get("insider_sentiment", {}).get("data", [])
     fh_series = finnhub.get("series_financials", {}).get("quarterly", {})

@@ -1,4 +1,5 @@
 # File to create a Tickers class that fetches and filters stock ticker datasets based on basic criteria.
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -105,7 +106,11 @@ class Tickers:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        name_parts = [date_str]
+        # Claude-authored (2026-10-16): a short hash of the filter settings is part of the name, so changing a stage-1
+        # setting in parameters.py makes a new file instead of reusing this half-day's file built with the old ones
+        settings = (mktcap_min, mktcap_max, volume_min, volume_max, lastsale_min, lastsale_max, region, country,
+                    sector, industry)
+        name_parts = [date_str, hashlib.sha1(repr(settings).encode()).hexdigest()[:8]]
 
         prefix = "_".join(name_parts)
         ticker_file_name = f"{prefix}_ticker_data.csv"

@@ -7,7 +7,11 @@ Claude-authored changes (Claude Opus 5.5 via Claude Code), at Andres's request:
   too many tickers (UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT) are returned as `universal_issues` and sent to the
   admins. When recommendations can't be produced (no Anthropic or Finnhub key), the digest still goes out with
   empty picks and the issue, instead of sys.exit aborting every user's digest.
+- 2026-10-16 (later): macro news and the market dashboard are on (params_dict["UNIVERSAL_EXTRAS"] switches each
+  off). They run in background threads while the screener, filters, and Claude scoring run, are included even when
+  no picks can be produced, and their failures become universal_issues like the rest.
 """
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import sys
@@ -26,7 +30,7 @@ from src.universal.recommendations.enriched_rec import enrich_recommendations
 from src.universal.recommendations.filter_tickers import DataFetcher
 from src.universal.recommendations.data_source_guard import missing_data_issues
 from src.universal.market_news import get_macro_stories
-from src.universal.macro_indicators import get_market_dashboard_data
+from src.universal.macro_indicators import get_market_dashboard
 from src.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert.notices import alert_admins
 from src.track_record import log_universal
@@ -41,21 +45,40 @@ def _report_issues(issues: list[dict]) -> None:
 
 
 def _without_recommendations(issues: list[dict]) -> dict:
-    """Universal content with no picks, when they can't be produced; the digest still goes out with the issue."""
+    """No picks, when they can't be produced; the digest still goes out with the issue (and the macro content)."""
     _report_issues(issues)
-    return {
-        "recommendations": enrich_recommendations(NO_RECOMMENDATIONS, {}),
-        "market_data": {},
-        "headline_news": {},
-        "universal_issues": issues,
-    }
+    return {"recommendations": enrich_recommendations(NO_RECOMMENDATIONS, {}), "universal_issues": issues}
 
 
 def get_universal_content():
     """
     Returns a dictionary containing universal content for the daily digest.
     This content is not user-specific and can be shared across all users.
+
+    Claude-authored (2026-10-16): {"recommendations", "market_data", "headline_news", "universal_issues"}. The
+    macro news (Gemini with Google Search) and the market dashboard (Yahoo, FRED, CNN, Wikipedia) are fetched in
+    the background while the picks are built, since neither needs the other.
     """
+    extras = params_dict.get("UNIVERSAL_EXTRAS", {})
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="macro") as pool:
+        news_future = pool.submit(get_macro_stories) if extras.get("MACRO_NEWS", True) else None
+        dashboard_future = pool.submit(get_market_dashboard) if extras.get("MARKET_DASHBOARD", True) else None
+        content = _get_recommendations()
+        stories, news_issues = news_future.result() if news_future else (None, [])
+        market_data, dashboard_issues = dashboard_future.result() if dashboard_future else ({}, [])
+    _report_issues(dashboard_issues)  # get_macro_stories already sent its own
+    return {
+        "recommendations": content["recommendations"],
+        "market_data": market_data,
+        # {"macro_stories": [{"priority", "event_summary", "market_impact", "source_url"}]}; {} when off or failed
+        "headline_news": stories.model_dump() if stories else {},
+        # Why picks, news, or indicators may be missing or based on partial data
+        "universal_issues": content["universal_issues"] + news_issues + dashboard_issues,
+    }
+
+
+def _get_recommendations() -> dict:
+    """The scored, enriched picks and the problems found building them: {"recommendations", "universal_issues"}."""
     issues: list[dict] = []
     # Claude-authored (2026-10-16): a missing, invalid, expired, or unpermitted shared Anthropic key is found here,
     # for free, before the screener and market data are fetched for scoring that couldn't run
@@ -126,20 +149,8 @@ def get_universal_content():
     log_universal(generated_recommendations, sanitized_LLM_inputs)  # Claude-authored (2026-10-15): track record
     recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)
 
-    # IMPORTANT but not required for recommendations development
-    # To enable (Claude-authored 2026-10-16): get_macro_stories() returns (stories, issues) and never raises; add the
-    # issues to this run's, e.g.  headline_news, news_issues = get_macro_stories(); issues += news_issues
-    headline_news = {}
-    # market_data = get_market_dashboard_data()
-    market_data = {}
-
     _report_issues(issues)
-    return {
-        "recommendations": recs_w_data,
-        "market_data": market_data,
-        "headline_news": headline_news,
-        "universal_issues": issues,  # Claude-authored (2026-10-16): why picks may be missing or based on partial data
-    }
+    return {"recommendations": recs_w_data, "universal_issues": issues}
 
 if __name__ == "__main__":
     universal_content = get_universal_content()

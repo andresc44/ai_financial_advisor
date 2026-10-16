@@ -7,12 +7,16 @@ the macro news on:
   retried; key, billing, and quota errors fail at once instead of being retried four times.
 - get_macro_stories() never raises: a key problem (invalid, expired, no credits, quota) or any other failure is
   returned as an issue for universal_issues and sent to the admins. Usage is recorded under the shared key.
+- When enabled (later on 2026-10-16): links are verified like the per-stock news (a source_url is kept only when it
+  matches a page Google Search grounding returned, else None), and the prompt states today's date.
 """
 import os
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from google import genai
@@ -26,6 +30,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error, shared_api_key, shared_key_issue
+from src.personalized.symbol_specific_news import _grounded_urls, _verify_source_urls
 from src.usage_tracking import record_gemini_response
 
 MACRO_NEWS_MODEL = "gemini-3.6-flash"
@@ -40,7 +45,7 @@ class MacroStory(BaseModel):
     priority: str        # Expects "HIGH", "MEDIUM", or "LOW"
     event_summary: str   # 1 concise sentence on what occurred
     market_impact: str   # 1-2 concise sentences on market/sector ripple effects
-    source_url: str      # Direct link to the primary news source
+    source_url: Optional[str]  # Direct link to the primary news source; None unless grounding returned that page
 
 class DigestPayload(BaseModel):
     macro_stories: list[MacroStory]
@@ -71,8 +76,9 @@ def fetch_live_macro_stories() -> DigestPayload:
     print("\n[DIAGNOSTIC] Initializing Gemini Client...")
     client = genai.Client(api_key=shared_api_key("Gemini"))
 
+    today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
-        "Perform a web search for today's top global macroeconomic, central bank, "
+        f"Today is {today:%Y-%m-%d}. Perform a web search for today's top global macroeconomic, central bank, "
         "and high-impact world financial news. Select the top 5 items based on priority."
     )
 
@@ -97,7 +103,9 @@ def fetch_live_macro_stories() -> DigestPayload:
     elapsed = round(time.time() - start_time, 2)
     print(f"[DIAGNOSTIC] Response received successfully in {elapsed}s.")
 
-    return DigestPayload.model_validate_json(response.text)
+    payload = DigestPayload.model_validate_json(response.text)
+    _verify_source_urls(payload.macro_stories, _grounded_urls(response))  # Claude-authored (2026-10-16)
+    return payload
 
 
 def get_macro_stories() -> tuple[Optional[DigestPayload], list[dict]]:

@@ -12,6 +12,7 @@ allowance, or a revoked key quietly produced recommendations scored on partial d
 Every problem is recorded once in DataSourceIssues; the universal content reports them to the admins and puts
 them in the digest payload (universal_issues).
 """
+import re
 import threading
 import time
 from datetime import datetime
@@ -91,6 +92,11 @@ def twelvedata_request(
     """
     if state.get("blocked"):
         return None
+    # Claude-authored (2026-10-16): a batch request costs one credit per symbol. One that needs more credits than
+    # the plan allows per minute can never succeed, so it's skipped at once instead of waiting out two minutes.
+    needed = max(1, len([s for s in str(params.get("symbol", "")).split(",") if s.strip()]))
+    if needed > state.get("minute_limit", needed):
+        return None  # Already reported for this run
     for attempt in range(TWELVEDATA_MINUTE_WAITS + 1):
         data = get(url, params=params, timeout=10).json()
         if not (isinstance(data, dict) and data.get("status") == "error"):
@@ -98,6 +104,14 @@ def twelvedata_request(
         code = data.get("code")
         message = str(data.get("message", ""))
         per_day = "day" in message.lower()
+        limit = re.search(r"current limit being (\d+)", message)
+        if code == 429 and not per_day and limit and needed > int(limit.group(1)):
+            state["minute_limit"] = int(limit.group(1))
+            issues.add("Twelve Data", "plan_limit", (
+                f"A request for {needed} tickers needs {needed} credits, but the plan allows {limit.group(1)} per "
+                "minute, so technical indicators were skipped for requests that large this run. Fewer candidates "
+                "per run, a paid Twelve Data plan, or computing the indicators locally would fix it."))
+            return None
         if code == 429 and not per_day and attempt < TWELVEDATA_MINUTE_WAITS:
             wait = 61 - datetime.now().second  # Credits refill at the start of each minute
             print(f"[WARNING] Twelve Data per-minute limit reached; waiting {wait}s.")

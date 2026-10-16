@@ -3,7 +3,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from anthropic import APIError, AsyncAnthropic
 from dotenv import load_dotenv
@@ -25,6 +25,14 @@ from src.universal.recommendations.LLM_rec_instr import (
     RISK_REWARD_SCORE_DESCRIPTION,
     MOMENTUM_VOLUME_SCORE_DESCRIPTION,
     CATALYST_SENTIMENT_SCORE_DESCRIPTION,
+    LONG_TERM_SENTIMENT_DESCRIPTION,
+    LONG_TERM_THESIS_DESCRIPTION,
+    KEY_RISK_DESCRIPTION,
+    SWING_SENTIMENT_DESCRIPTION,
+    SWING_THESIS_DESCRIPTION,
+    ENTRY_PRICE_DESCRIPTION,
+    STOP_LOSS_DESCRIPTION,
+    PRICE_TARGET_DESCRIPTION,
     EVALUATION_TOOL_NAME,
     EVALUATION_TOOL_DESCRIPTION,
     SYSTEM_PROMPT,
@@ -58,6 +66,10 @@ class LongTermSubScores(BaseModel):
     competitive_moat_score: float = Field(
         ..., ge=0.0, le=25.0, description=COMPETITIVE_MOAT_SCORE_DESCRIPTION
     )
+    # Claude-authored (2026-10-16): the reasoning and sentiment shown with the pick in the digest
+    sentiment: Literal["Bullish", "Neutral", "Bearish"] = Field(..., description=LONG_TERM_SENTIMENT_DESCRIPTION)
+    thesis: str = Field(..., description=LONG_TERM_THESIS_DESCRIPTION)
+    key_risk: str = Field(..., description=KEY_RISK_DESCRIPTION)
 
     @property
     def total_score(self) -> float:
@@ -85,6 +97,14 @@ class SwingSubScores(BaseModel):
     catalyst_sentiment_score: float = Field(
         ..., ge=0.0, le=20.0, description=CATALYST_SENTIMENT_SCORE_DESCRIPTION
     )
+    # Claude-authored (2026-10-16): the reasoning, sentiment, and trade levels shown with the pick in the digest.
+    # The levels have no range constraints here: an inconsistent set (e.g. a stop above the entry) is dropped by the
+    # scorer instead of discarding the whole evaluation.
+    sentiment: Literal["Bullish", "Neutral", "Bearish"] = Field(..., description=SWING_SENTIMENT_DESCRIPTION)
+    thesis: str = Field(..., description=SWING_THESIS_DESCRIPTION)
+    entry_price: float = Field(..., description=ENTRY_PRICE_DESCRIPTION)
+    stop_loss: float = Field(..., description=STOP_LOSS_DESCRIPTION)
+    price_target: float = Field(..., description=PRICE_TARGET_DESCRIPTION)
 
     @property
     def total_score(self) -> float:

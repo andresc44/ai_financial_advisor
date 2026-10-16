@@ -53,11 +53,46 @@ CATALYST_SENTIMENT_SCORE_DESCRIPTION = (
     "analyst upgrades/downgrades, and recent headline sentiment."
 )
 
+# Claude-authored (2026-10-16): written fields shown to the reader in the digest, so a pick says why it was made
+LONG_TERM_SENTIMENT_DESCRIPTION = (
+    "Overall outlook for owning the stock over the next 1-3+ years, weighing all the data: "
+    "Bullish, Neutral, or Bearish."
+)
+LONG_TERM_THESIS_DESCRIPTION = (
+    "1-2 sentences for the reader on why the stock does or doesn't suit a long-term portfolio, citing the 2-3 "
+    "figures from the data that drive the long-term scores."
+)
+KEY_RISK_DESCRIPTION = (
+    "One sentence on the single biggest risk to the long-term thesis, citing the supporting figure or headline "
+    "where the data has one."
+)
+SWING_SENTIMENT_DESCRIPTION = (
+    "Outlook for the share price over the next 2-8 weeks, from the technicals, catalysts, and headlines: "
+    "Bullish, Neutral, or Bearish."
+)
+SWING_THESIS_DESCRIPTION = (
+    "1-2 sentences for the reader on the swing setup: what the chart and catalysts show and what would confirm it, "
+    "citing the indicator values behind it."
+)
+ENTRY_PRICE_DESCRIPTION = (
+    "Suggested entry price for a swing long, in the stock's trading currency: at or near the current price, or at "
+    "a nearby support level from the data (EMA, middle/lower Bollinger Band)."
+)
+STOP_LOSS_DESCRIPTION = (
+    "Stop-loss price below the entry, from a level in the data (Parabolic SAR, lower Bollinger Band, recent swing "
+    "low), where the setup is invalidated."
+)
+PRICE_TARGET_DESCRIPTION = (
+    "Price target above the entry for the next 2-8 weeks, from a level in the data (upper Bollinger Band, recent "
+    "high, 52-week high, analyst target), whichever is the first realistic resistance."
+)
+
 # Tool specification configuration
 EVALUATION_TOOL_NAME = "record_stock_evaluation_breakdown"
 EVALUATION_TOOL_DESCRIPTION = (
     "Record standardized sub-score evaluations across long-term fundamentals and swing trading technicals "
-    "to compute deterministic equity rating scores."
+    "to compute deterministic equity rating scores, with the sentiment, thesis, and swing price levels shown "
+    "to the reader."
 )
 
 # System level instructions for LLM with explicit scoring rubrics
@@ -114,6 +149,11 @@ DATA PARSING & METRIC GUIDELINES:
    - 16.0 - 20.0: Strong historical earnings surprise track record, upcoming catalysts in 1-4 weeks, positive Wall Street analyst upgrades/price target revisions.
    - 8.0 - 15.0: Low news volatility, neutral insider sentiment, mixed analyst coverage.
    - 0.0 - 7.0: Recent analyst downgrades, heavy insider selling, imminent regulatory or macro headwinds.
+
+### WRITTEN FIELDS (shown to the reader in their daily digest)
+- sentiment (in each section): your overall read for that horizon. Long-term weighs the business and valuation over 1-3+ years; swing weighs the next 2-8 weeks of price action. They can differ (e.g. a strong business in a short-term downtrend).
+- thesis, key_risk: plain language for an individual investor. Cite the specific figures from the data behind each point (e.g. "forward P/E of 18 against 25% revenue growth"). Never invent numbers, events, or news that are not in the data, and say so plainly when the data argues against the stock: these fields are recorded for every candidate, not only the ones picked.
+- entry_price, stop_loss, price_target (swing): derive each from levels in the data (current price, EMAs, Bollinger Bands, Parabolic SAR, 52-week range, analyst targets), in the stock's trading currency, with stop_loss < entry_price < price_target. Mention the level each one comes from in the swing thesis when it helps the reader.
 """
 
 # User prompt template

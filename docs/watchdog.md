@@ -204,7 +204,7 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
 | Gemini news and portfolio review | Fresh every run (no cache). |
 | Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies for display. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. |
-| Universal content | Fresh every run, except the NASDAQ screener's ticker list, which is downloaded once per morning and once per afternoon. |
+| Universal content | Fresh every run, except the NASDAQ screener's ticker list. That list is downloaded once per morning and once per afternoon, and again whenever the stage-1 settings in `parameters.py` change. |
 
 ### Track record (`src/track_record.py`)
 
@@ -247,9 +247,30 @@ The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and T
 | Finnhub rejects the key (401) | No more Finnhub calls this run. |
 | Twelve Data per-minute limit | Waits for the next minute, up to 2 times per request. |
 | Twelve Data daily credits used up, or key rejected | No more Twelve Data calls this run. |
+| A Twelve Data request needs more credits than the plan allows per minute (one per ticker; the free plan allows 8) | Skipped at once instead of waiting it out, and not retried this run. The technical filter then keeps those tickers instead of dropping them all. |
 | More than `UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT` (20%) of tickers missing Yahoo, Finnhub, or Twelve Data data | Picks are still made, but flagged. |
 
 Each problem is added to the universal payload's `universal_issues` (`{"source", "reason", "message"}`), so the email can say why picks are missing or based on partial data. Each is also sent to `OPS.ALERT_USERS` by Telegram, once per cooldown. The macro news (`src/universal/market_news.get_macro_stories`, still disabled) works the same way with the shared `GEMINI_API_KEY`: on failure it returns no stories plus the issue, and never raises.
+
+### Universal picks and macro content in the payload
+
+Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reasoning (added 2026-10-16) plus the data set in `RECOMMENDATION_FIELDS`:
+
+| From | Long-term picks | Swing picks |
+|---|---|---|
+| Claude's evaluation | `longScore`, `swingScore`, `sentiment` (1–3+ years), `thesis`, `key_risk`, `sub_scores` | `swingScore`, `longScore`, `sentiment` (2–8 weeks), `thesis`, `entry_price`, `stop_loss`, `price_target`, `risk_reward`, `sub_scores` |
+| `RECOMMENDATION_FIELDS["all"]` | name, sector, industry, price, market cap, 52-week range and change, analyst rating, target, and count, next earnings date | same |
+| The list's own fields | P/E (trailing, forward), PEG, revenue and earnings growth, profit margin, ROE, debt-to-equity, free cash flow | latest RSI, EMA 9/21, Bollinger bands, Parabolic SAR, 50/200-day averages, beta, volume |
+
+- **Swing levels:** the levels are only kept when they're consistent (0 < stop < entry < target). Otherwise all four are `null` and the log says why. `risk_reward` is the upside to the target per unit of risk to the stop, e.g. `2.5` for 2.5:1.
+- **Thresholds:** a stock needs a total of at least `MIN_LONG_SCORE` / `MIN_SWING_SCORE` (80 out of 100) to be picked, so some days have fewer picks than `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT`, or none.
+- **Track record:** it also keeps each pick's sentiment and swing levels, for checking later whether they held up.
+
+**Macro content.** It is switched with `UNIVERSAL_EXTRAS`, and both parts are on by default. Both run in the background while the picks are built, and both are included even when no picks could be made.
+- `headline_news`: `{"macro_stories": [{"priority", "event_summary", "market_impact", "source_url"}]}` from Gemini with Google Search, using the shared `GEMINI_API_KEY`. A `source_url` is kept only when it matches a page the search returned; otherwise it's `null`.
+- `market_data`: index, VIX, dollar, 10-year yield, and oil moves (1 day, 5 days, 1 month); the 10Y–2Y spread (FRED); CNN Fear & Greed; and the share of S&P 500 stocks above their 50-day average.
+
+A section that can't be fetched holds `{"Error": ...}` and adds a `universal_issues` entry. It never stops the digest.
 
 ### API cost tracking (`src/usage_tracking.py`)
 

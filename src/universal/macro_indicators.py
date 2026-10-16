@@ -1,4 +1,13 @@
 # File to fetch and consolidate various macroeconomic indicators from multiple sources (Yahoo Finance, FRED, CNN Fear & Greed Index, S&P 500 Breadth) into a single structured dictionary for analysis and reporting.
+"""
+Claude-authored changes (2026-10-16, Claude Opus 5.5 via Claude Code, at Andres's request), when the dashboard was
+enabled in the digest:
+- get_market_dashboard() wraps the fetch so it never raises: a failure gives an empty dashboard plus an issue,
+  instead of stopping the universal content (and so every user's digest).
+- S&P 500 breadth downloaded 60 calendar days (~41 trading days), too few for a 50-day average, so it was always 0%.
+- Every request has a timeout, so one slow site can't hang the digest.
+- A failed FRED call no longer puts its error text in the payload: that text includes the URL with the API key.
+"""
 import io
 import os
 import pandas as pd
@@ -29,16 +38,20 @@ def get_market_dashboard_data() -> dict:
     }
 
     tickers_list = list(yf_tickers.values())
-    df_yf = yf.download(
-        tickers_list, period="2mo", interval="1d", progress=False
-    )["Close"]
+    try:
+        df_yf = yf.download(
+            tickers_list, period="2mo", interval="1d", progress=False
+        )["Close"]
+    except Exception as e:  # Claude-authored (2026-10-16): the other sections can still be shown
+        print(f"[WARNING] Market dashboard: Yahoo download failed: {e}")
+        df_yf = pd.DataFrame()
 
     yf_metrics = {}
     for name, ticker in yf_tickers.items():
         if ticker in df_yf.columns:
             series = df_yf[ticker].dropna()
             if len(series) > 1:
-                latest = series.iloc[-1]
+                latest = float(series.iloc[-1])
                 d1_change = ((latest - series.iloc[-2]) / series.iloc[-2]) * 100
                 d5_change = (
                     ((latest - series.iloc[-6]) / series.iloc[-6]) * 100
@@ -62,9 +75,10 @@ def get_market_dashboard_data() -> dict:
     if not fred_api_key:
         fred_metrics = {"Error": "FRED_API_KEY missing from .env"}
     else:
-        url_fred = f"https://api.stlouisfed.org/fred/series/observations?series_id=T10Y2Y&api_key={fred_api_key}&file_type=json&sort_order=desc&limit=10"
+        url_fred = "https://api.stlouisfed.org/fred/series/observations"
+        fred_params = {"series_id": "T10Y2Y", "api_key": fred_api_key, "file_type": "json", "sort_order": "desc", "limit": 10}
         try:
-            res_fred = requests.get(url_fred).json()
+            res_fred = requests.get(url_fred, params=fred_params, timeout=15).json()
             observations = [
                 obs
                 for obs in res_fred.get("observations", [])
@@ -81,8 +95,8 @@ def get_market_dashboard_data() -> dict:
                 }
             else:
                 fred_metrics = {"Error": "Insufficient Data"}
-        except Exception as e:
-            fred_metrics = {"Error": str(e)}
+        except Exception as e:  # Claude-authored (2026-10-16): the type only; the message would include the key
+            fred_metrics = {"Error": f"FRED request failed ({type(e).__name__})"}
 
     # 3. Fetch Fear & Greed Index
     fg_url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
@@ -90,7 +104,7 @@ def get_market_dashboard_data() -> dict:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
     try:
-        res_fg = requests.get(fg_url, headers=headers).json()
+        res_fg = requests.get(fg_url, headers=headers, timeout=15).json()
         fg_metrics = {
             "Score": round(res_fg["fear_and_greed"]["score"], 1),
             "Rating": res_fg["fear_and_greed"]["rating"].capitalize(),
@@ -103,6 +117,7 @@ def get_market_dashboard_data() -> dict:
         resp_wiki = requests.get(
             "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
             headers=headers,
+            timeout=15,
         )
         soup = BeautifulSoup(resp_wiki.text, "html.parser")
         table = soup.find("table", {"id": "constituents"})
@@ -112,16 +127,19 @@ def get_market_dashboard_data() -> dict:
             df_sp500["Symbol"].str.replace(".", "-", regex=False).tolist()
         )
 
+        # Claude-authored (2026-10-16): 6 months, not 60 days: 60 calendar days is ~41 sessions, too few for a
+        # 50-day average, so every stock compared against NaN and breadth was always 0%
         data_breadth = yf.download(
-            sp500_tickers, period="60d", interval="1d", progress=False
+            sp500_tickers, period="6mo", interval="1d", progress=False
         )["Close"]
         ma50 = data_breadth.rolling(window=50).mean()
 
         latest_prices = data_breadth.iloc[-1]
         latest_ma50 = ma50.iloc[-1]
 
-        above_50ma = (latest_prices > latest_ma50).sum()
-        total_valid = latest_prices.dropna().count()
+        comparable = latest_prices.notna() & latest_ma50.notna()  # Claude-authored (2026-10-16): e.g. recent listings
+        above_50ma = (latest_prices[comparable] > latest_ma50[comparable]).sum()
+        total_valid = int(comparable.sum())
 
         breadth_pct = (above_50ma / total_valid) * 100
         breadth_metrics = {"% > 50MA": f"{breadth_pct:.2f}%"}
@@ -135,6 +153,28 @@ def get_market_dashboard_data() -> dict:
         "fear_and_greed": fg_metrics,
         "sp500_breadth": breadth_metrics,
     }
+
+
+def get_market_dashboard() -> tuple[dict, list[dict]]:
+    """
+    Claude-authored (2026-10-16): (dashboard, issues) for the universal content. Never raises. Each section that
+    couldn't be fetched (it holds {"Error": ...}, or Yahoo returned nothing) becomes an issue
+    ({"source", "reason", "message"}), so the digest can say why a figure is missing.
+    """
+    try:
+        dashboard = get_market_dashboard_data()
+    except Exception as e:
+        return {}, [{"source": "Market dashboard", "reason": "failed",
+                     "message": f"Market indicators couldn't be fetched ({type(e).__name__})."}]
+    issues = []
+    if not dashboard.get("yahoo_finance"):
+        issues.append({"source": "Market dashboard: yahoo_finance", "reason": "failed",
+                       "message": "No index, VIX, dollar, yield, or oil prices came back from Yahoo."})
+    for section in ("yield_curve_10y_2y", "fear_and_greed", "sp500_breadth"):
+        error = (dashboard.get(section) or {}).get("Error")
+        if error:
+            issues.append({"source": f"Market dashboard: {section}", "reason": "failed", "message": str(error)[:200]})
+    return dashboard, issues
 
 
 if __name__ == "__main__":

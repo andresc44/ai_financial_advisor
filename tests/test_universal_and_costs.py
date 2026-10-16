@@ -305,13 +305,28 @@ SANITIZED = {"AAA": {
 
 
 def test_picks_get_their_fields_from_the_nested_sanitized_data():
+    fields = {"top_long_term": {"pe_trailing": "valuation_and_fundamentals.pe_trailing",
+                                "rating": "sentiment_and_analysts.recommendation_key"},
+              "top_swing": {"52_week_high": "price_action.52_week_high", "50_day_average": "price_action.50_day_average",
+                            "next_earnings": "catalysts_and_earnings.upcoming_earnings.0.date"}}
     picks = {"top_long_term": [{"ticker": "AAA", "longScore": 85.0, "swingScore": 40.0}],
              "top_swing": [{"ticker": "AAA", "swingScore": 82.0, "longScore": 85.0}]}
-    out = enriched_rec.enrich_recommendations(picks, SANITIZED)  # The defaults in parameters.py
+    out = enriched_rec.enrich_recommendations(picks, SANITIZED, fields)
     assert out["top_long_term"][0] == {"ticker": "AAA", "longScore": 85.0, "swingScore": 40.0,
-                                       "pe_trailing": 31.2, "recommendation_key": "buy"}
-    assert (out["top_swing"][0]["52_week_high"], out["top_swing"][0]["50_day_average"]) == (210.5, 190.0)
+                                       "pe_trailing": 31.2, "rating": "buy"}
+    swing = out["top_swing"][0]
+    assert (swing["52_week_high"], swing["50_day_average"], swing["next_earnings"]) == (210.5, 190.0, "2026-10-28")
     assert "pe_trailing" not in picks["top_long_term"][0]  # The scorer's picks aren't changed
+
+
+def test_series_paths_and_missing_series():
+    data = {"technical_indicators": {"rsi_14_1day": [{"date": "2026-10-16", "rsi": 41.2}, {"date": "2026-10-15", "rsi": 39.0}],
+                                     "sar_1day": None}, "catalysts_and_earnings": {"upcoming_earnings": []}}
+    assert enriched_rec.lookup(data, "technical_indicators.rsi_14_1day.0.rsi") == 41.2  # Newest first
+    assert enriched_rec.lookup(data, "technical_indicators.rsi_14_1day.1.date") == "2026-10-15"
+    assert enriched_rec.lookup(data, "technical_indicators.sar_1day.0.sar") is None  # Not fetched: no data, no typo
+    assert enriched_rec.lookup(data, "catalysts_and_earnings.upcoming_earnings.0.date") is None  # No report scheduled
+    assert enriched_rec.lookup(data, "technical_indicators.rsi_14_1dy.0.rsi") is enriched_rec._MISSING  # Typo
 
 
 def test_shared_fields_typos_and_names_the_scorer_uses(capsys):
@@ -330,13 +345,36 @@ def test_shared_fields_typos_and_names_the_scorer_uses(capsys):
     assert printed.count("52_wk_high") == 1 and printed.count("'ticker' is already used") == 1  # Once per run
 
 
-def test_every_configured_field_exists_in_the_sanitized_data():
+def _series(field, values):
+    return {"values": [{"datetime": f"2026-10-{16 - i:02d}", **{f: str(v) for f, v in zip(field, row)}}
+                       for i, row in enumerate(values)]}
+
+
+# Raw data shaped like what DataFetcher gathers, with every field the default RECOMMENDATION_FIELDS read
+COMPLETE_RAW = {
+    "yahoo": {"longName": "Alpha Corp", "sector": "Technology", "industry": "Software", "currentPrice": 200.0,
+              "marketCap": 80_000_000_000, "fiftyTwoWeekLow": 150.0, "fiftyTwoWeekHigh": 230.0, "52WeekChange": 0.12,
+              "recommendationKey": "buy", "targetMeanPrice": 240.0, "numberOfAnalystOpinions": 30, "trailingPE": 28.0,
+              "forwardPE": 22.0, "pegRatio": 1.4, "revenueGrowth": 0.15, "earningsGrowth": 0.2, "profitMargins": 0.25,
+              "returnOnEquity": 0.3, "debtToEquity": 45.0, "freeCashflow": 5_000_000_000, "fiftyDayAverage": 195.0,
+              "twoHundredDayAverage": 185.0, "beta": 1.1, "volume": 3_000_000, "averageVolume": 2_500_000},
+    "finnhub": {"earnings_calendar": {"earningsCalendar": [{"date": "2027-01-28"}, {"date": "2026-10-28"}]}},
+    "twelvedata": {"rsi_14_1day": _series(["rsi"], [[48.0], [45.0]]), "ema_9_1day": _series(["ema"], [[198.0]]),
+                   "ema_21_1day": _series(["ema"], [[196.0]]), "sar_1day": _series(["sar"], [[188.0]]),
+                   "bbands_20_1day": _series(["upper_band", "middle_band", "lower_band"], [[215.0, 197.0, 179.0]])},
+}
+
+
+def test_every_configured_field_comes_through_from_complete_data():
     """Catches a typo in RECOMMENDATION_FIELDS (or a renamed sanitizer field) before a digest shows nulls."""
-    sanitized = sanitize_ticker_payload("AAA", {})
+    sanitized = sanitize_ticker_payload("AAA", COMPLETE_RAW)
     configured = params_dict["RECOMMENDATION_FIELDS"]
     for list_name in configured:
         for name, path in enriched_rec.fields_for(list_name, configured).items():
-            assert enriched_rec.lookup(sanitized, path) is not enriched_rec._MISSING, f"{list_name}.{name}: {path}"
+            value = enriched_rec.lookup(sanitized, path)
+            assert value is not enriched_rec._MISSING and value is not None, f"{list_name}.{name}: {path}"
+    assert enriched_rec.lookup(sanitized, "catalysts_and_earnings.upcoming_earnings.0.date") == "2026-10-28"  # Soonest
+    assert enriched_rec.lookup(sanitized, "technical_indicators.rsi_14_1day.0.rsi") == 48.0
 
 
 def test_score_thresholds_and_news_limit():

@@ -23,12 +23,24 @@ _MISSING = object()
 
 
 def lookup(data: Any, path: str) -> Any:
-    """The value at a dotted path like "price_action.52_week_high", or _MISSING when a part of the path doesn't exist."""
+    """
+    The value at a dotted path like "price_action.52_week_high", or _MISSING when a part of the path doesn't exist.
+    A number picks a list item: "technical_indicators.rsi_14_1day.0.rsi" is the newest RSI (series are newest
+    first). An empty or missing series (e.g. no Twelve Data that run) gives None rather than _MISSING, since that's
+    missing data, not a typo.
+    """
     value = data
     for key in path.split("."):
-        if not isinstance(value, dict) or key not in value:
+        if isinstance(value, list) and key.isdigit():
+            if int(key) >= len(value):
+                return None
+            value = value[int(key)]
+        elif value is None:
+            return None  # e.g. a series the sanitizer set to None because the indicator wasn't fetched
+        elif not isinstance(value, dict) or key not in value:
             return _MISSING
-        value = value[key]
+        else:
+            value = value[key]
     return value
 
 

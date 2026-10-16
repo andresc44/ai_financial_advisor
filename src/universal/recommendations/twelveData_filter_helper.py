@@ -75,9 +75,12 @@ def filter_twelvedata_tickers(
     )
 
     if not isinstance(batch_data, dict) or not batch_data:
-        print("Alert: Batch Twelve Data response was invalid or empty. Skipping stage.")
+        # Claude-authored (2026-10-16): no data (rate limit, used-up credits, outage) now keeps every ticker instead
+        # of dropping them all, which left nothing for Claude to score. The cause is already a universal issue
+        # (data_source_guard.py), and the completeness check flags the missing indicators.
+        print("Alert: Batch Twelve Data response was invalid or empty. Keeping all tickers unfiltered by technicals.")
         print(f"[DEBUG] Raw batch_data returned: {batch_data}")
-        return []
+        return list(input_tickers)
 
     print(f"[DEBUG] Top-level symbols returned in batch_data: {list(batch_data.keys())}")
 
@@ -87,7 +90,8 @@ def filter_twelvedata_tickers(
         symbol_data = batch_data.get(symbol, {})
         
         if not symbol_data:
-            print(f"[DEBUG] No data dict found for symbol '{symbol}'")
+            print(f"[DEBUG] No data dict found for symbol '{symbol}'; kept unfiltered by technicals.")
+            filtered_twelvedata_tickers.append(symbol)  # Claude-authored (2026-10-16): missing data isn't a failed check
             continue
 
         print(f"\n[DEBUG] Indicator keys available for '{symbol}': {list(symbol_data.keys())}")
@@ -110,11 +114,12 @@ def filter_twelvedata_tickers(
             values_list = indicator_payload.get("values", [])
             
             if not values_list:
-                print(f"Alert: Missing {indicator_key} data for {symbol}. Skipping.")
+                # Claude-authored (2026-10-16): missing data (e.g. an error for this symbol in the batch) skips this
+                # rule instead of dropping the ticker
+                print(f"Alert: Missing {indicator_key} data for {symbol}; rule skipped.")
                 print(f"[DEBUG] Full raw payload received for {symbol} -> {indicator_key}:")
                 print(f"       {indicator_payload}")
-                passed_all = False
-                break
+                continue
 
             latest_val = float(values_list[0].get(indicator, 0))
             metric_label = f"{indicator_key}_{interval}"

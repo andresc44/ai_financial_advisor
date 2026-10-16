@@ -15,34 +15,51 @@ params_dict = {
     # API Settings
     "FINNHUB_RATE_LIMIT_SLEEP": 0.05,
     # Stage 1 Ticker Filter Parameters
-    "MKTCAP_MIN": 50000.0,  # Minimum market cap in Millions USD
+    "MKTCAP_MIN": 10000.0,  # Minimum market cap in Millions USD
     "MKTCAP_MAX": None,  # Maximum market cap in Millions USD
-    "VOLUME_MIN": 0.1,  # Minimum trading volume in Millions
+    "VOLUME_MIN": 1.0,  # Minimum trading volume in Millions
     "VOLUME_MAX": None,  # Maximum trading volume in Millions
-    "LASTSALE_MIN": 346.0,  # Minimum share price USD
-    "LASTSALE_MAX": 500,  # Maximum share price USD
+    "LASTSALE_MIN": 30.0,  # Minimum share price USD
+    "LASTSALE_MAX": None,  # Maximum share price USD
     "REGION": None,  # Takes priority over 'country'
     "COUNTRY": None,  # Ignored when region is defined
     "SECTOR": None,  # Takes priority over 'industry'
-    "INDUSTRY": "Software",  # Ignored when sector is defined
+    "INDUSTRY": None,  # Ignored when sector is defined
     "CLEAR_EXISTING_DATA": True,  # Deletes previous CSV exports in output dir
     "MAX_NEWS_ARTICLES": 20,  # Maximum number of news articles to include per ticker
     
+    # Claude-authored (2026-10-16): stages 2 and 3, rewritten to send roughly 30-50 candidates to Claude: profitable,
+    # growing, reasonably valued companies that analysts favour. Calibrated against that day's live data with the
+    # stage 1 settings above: 595 tickers -> 83 after Yahoo -> 38 after Finnhub (37 companies; GOOG/GOOGL count once).
+    # Counts move with markets and earnings seasons; each run's log shows how many tickers each stage kept.
+    # Why the split: Yahoo is free and fetched YAHOO_FETCH_CONCURRENCY tickers at a time, so it does most of the
+    # narrowing. Finnhub's free plan allows 60 calls a minute and costs 4 calls per ticker (~4 s each), so it only
+    # confirms the quality screen on the ~80 that are left, using trailing-twelve-month (TTM) figures.
+    # A ticker missing any value a rule needs is dropped. Units are as each source reports them (below).
+    "YAHOO_FETCH_CONCURRENCY": 4,  # Yahoo info requests at once in the stage-2 filter (4 fetched ~400 in 2 min, no errors)
+
     #Stage 2 Yahoo Filter Parameters
     "YAHOO_FILTERS": [ #["<", "<=", ">", ">=", "==", "=", "!="]
-        ("marketCap", ">=", 10_000),
-        ("regularMarketPreviousClose", ">", 350),
-        # Add future Yahoo filters here:
-        # ("trailingPE", "<=", 25),
-        # ("dividendYield", ">", 0.02),
+        ("averageVolume", ">=", 1_000_000),     # 3-month average daily volume (shares): liquid on most days, not just one
+        ("numberOfAnalystOpinions", ">=", 10),  # Enough coverage for the consensus below to mean something
+        ("recommendationMean", "<=", 2.2),      # Analyst consensus, 1 = Strong Buy ... 3 = Hold ... 5 = Sell
+        ("forwardPE", ">", 0),                  # Expected to be profitable over the next 12 months
+        ("forwardPE", "<=", 30),                # Not priced for perfection
+        ("profitMargins", ">=", 0.10),          # Net margin, a fraction: >= 10%
+        ("revenueGrowth", ">=", 0.08),          # Latest quarter's revenue vs a year earlier, a fraction: >= 8%
+        ("returnOnEquity", ">=", 0.18),         # A fraction: >= 18%. Missing for negative-equity companies, which drop out
+        # Other fields the stage can use: trailingPE, pegRatio, earningsGrowth, debtToEquity (a percentage, missing for
+        # banks), freeCashflow, dividendYield, beta, marketCap (dollars)
     ],
+    #Stage 3 Finnhub Filter Parameters: (section, field, operator, threshold); percentages are in percent
     "FINNHUB_FILTERS": [
-        ("profile", "marketCapitalization", ">=", 1_000),
-        ("quote", "t", ">", 100_000),
-        ("basic_financials", "netProfitMarginTTM", ">", 1),
-        ("basic_financials", "peTTM", ">", 0),
-        ("basic_financials", "peTTM", "<=", 90),
-        ("basic_financials", "revenueGrowthTTMYoy", ">", -30),
+        ("basic_financials", "revenueGrowthTTMYoy", ">=", 12),            # TTM revenue growth >= 12%: sustained, not one quarter
+        ("basic_financials", "epsGrowthTTMYoy", ">", 0),                   # TTM earnings per share growing
+        ("basic_financials", "totalDebt/totalEquityQuarterly", "<=", 1.5), # Debt-to-equity as a ratio (1.5 = 150%)
+        ("basic_financials", "peTTM", ">", 0),                             # Profitable over the last 12 months
+        ("basic_financials", "peTTM", "<=", 60),                           # Trailing valuation sanity check
+        # Other fields: netProfitMarginTTM, roeTTM, currentRatioQuarterly, 52WeekPriceReturnDaily, beta (all in
+        # basic_financials), and ("profile", "marketCapitalization", ...) in millions
     ],
     
 # ==============================================================================================
@@ -211,7 +228,11 @@ params_dict = {
         # Question Answered: "Will this bounce hard and fast enough to be worth our time?"
         # Multi-week Setup: Evaluates relative market sensitivity calculated over a 1-year weekly window.
         # -----------------------------------------------------------------------------------------
-        ("beta", "1week", {"time_period": 52, "outputsize": outputs_twelvedata_context}),
+        # Claude-authored (2026-10-16): off. Twelve Data's "beta" is TA-Lib's statistical beta between two price series
+        # of the same stock (open vs close by default), not sensitivity to the market: it read 0.02 for SNPS, whose
+        # market beta is ~1.1. It cost a credit per ticker and could mislead Claude. Yahoo's market beta is already
+        # in the data as price_action.beta.
+        # ("beta", "1week", {"time_period": 52, "outputsize": outputs_twelvedata_context}),
     ],
     # 1. Recommendation Trends (SDK only accepts 'symbol')
     # "RECOMMENDATION_TRENDS": {},
@@ -229,7 +250,7 @@ params_dict = {
     },
     
     "CLAUDE_CONFIG": {
-        "model": "claude-opus-5",
+        "model": "claude-sonnet-5-5",
         "max_tokens": 16000,           # Caps thinking + tool output together, so leave headroom
         "effort": "medium",              # low | medium | high | xhigh | max - primary cost/latency lever
         # No temperature: sampling params are rejected by current models
@@ -265,15 +286,53 @@ params_dict = {
     #   technical_indicators (series, newest first): rsi_14_1day, ema_9_1day, ema_21_1day, bbands_20_1day, sar_1day,
     #       beta_52_1week
     #   recent_headlines_and_catalysts (a whole section: the list of headlines)
+    # A number picks a list item: series are newest first, so "technical_indicators.rsi_14_1day.0.rsi" is the latest
+    # RSI, and upcoming_earnings is soonest first, so ".0.date" is the next report.
+    # Units as the sources give them: margins, growth, and returns are fractions (0.25 = 25%), debt_to_equity is a
+    # percentage (150 = 1.5x), market_cap and free_cash_flow are in dollars, prices are in the trading currency.
+    # Claude's own output is added to every pick by the scorer, not here: sentiment, thesis, sub_scores, plus
+    # key_risk (long-term) and entry_price / stop_loss / price_target / risk_reward (swing).
     "RECOMMENDATION_FIELDS": {
-        "all": {},
+        # Who the company is, where the price sits, and what analysts and the calendar say
+        "all": {
+            "name": "profile.name",
+            "sector": "profile.sector",
+            "industry": "profile.industry",
+            "current_price": "price_action.current_price",
+            "market_cap": "valuation_and_fundamentals.market_cap",
+            "52_week_low": "price_action.52_week_low",
+            "52_week_high": "price_action.52_week_high",
+            "52_week_change_percent": "price_action.52_week_change_percent",
+            "analyst_rating": "sentiment_and_analysts.recommendation_key",
+            "analyst_target_price": "sentiment_and_analysts.target_mean_price",
+            "analyst_count": "sentiment_and_analysts.analyst_opinions_count",
+            "next_earnings_date": "catalysts_and_earnings.upcoming_earnings.0.date",
+        },
+        # Is the business worth owning at this price
         "top_long_term": {
             "pe_trailing": "valuation_and_fundamentals.pe_trailing",
-            "recommendation_key": "sentiment_and_analysts.recommendation_key",
+            "pe_forward": "valuation_and_fundamentals.pe_forward",
+            "peg_ratio": "valuation_and_fundamentals.peg_ratio",
+            "revenue_growth_yoy": "valuation_and_fundamentals.revenue_growth_yoy",
+            "earnings_growth_yoy": "valuation_and_fundamentals.earnings_growth_yoy",
+            "profit_margin": "valuation_and_fundamentals.profit_margin",
+            "return_on_equity": "valuation_and_fundamentals.return_on_equity",
+            "debt_to_equity": "valuation_and_fundamentals.debt_to_equity",
+            "free_cash_flow": "valuation_and_fundamentals.free_cash_flow",
         },
+        # Where the trade stands technically, to judge the entry, stop, and target Claude gives
         "top_swing": {
-            "52_week_high": "price_action.52_week_high",
+            "rsi_14": "technical_indicators.rsi_14_1day.0.rsi",
+            "ema_9": "technical_indicators.ema_9_1day.0.ema",
+            "ema_21": "technical_indicators.ema_21_1day.0.ema",
+            "bollinger_upper": "technical_indicators.bbands_20_1day.0.upper_band",
+            "bollinger_lower": "technical_indicators.bbands_20_1day.0.lower_band",
+            "parabolic_sar": "technical_indicators.sar_1day.0.sar",
             "50_day_average": "price_action.50_day_average",
+            "200_day_average": "price_action.200_day_average",
+            "beta": "price_action.beta",
+            "volume": "price_action.volume",
+            "average_volume_3m": "price_action.average_volume_3m",
         },
     },
 
@@ -292,6 +351,14 @@ params_dict = {
     # than this share of the screened tickers (src/universal/recommendations/data_source_guard.py)
     "UNIVERSAL_DATA_QUALITY": {
         "MAX_MISSING_PCT": 20,
+    },
+
+    # Claude-authored (2026-10-16): the rest of the universal content (src/universal/universal_consolidated.py).
+    # Both run in the background while the picks are built; set one to False to leave it out (e.g. to save the
+    # Gemini call while testing).
+    "UNIVERSAL_EXTRAS": {
+        "MACRO_NEWS": True,        # Top 5 macro stories from Gemini with Google Search, shared GEMINI_API_KEY
+        "MARKET_DASHBOARD": True,  # Index/VIX/yield moves, 10Y-2Y spread (FRED_API_KEY), Fear & Greed, S&P breadth
     },
 
     # Claude-authored (2026-10-16): list prices for the cost estimates in each digest (src/usage_tracking.py).
