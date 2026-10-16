@@ -177,6 +177,22 @@ From the project root on the VM. The watchdog, the digest, and the backup share 
 
 Check what the digest would do at any moment without sending anything: `venv/bin/python src/digest/digest_payload.py --check [--now 2026-10-15T16:10:00-04:00]`.
 
+**Build real payloads without HTML or email** with `--payload-only` (added 2026-10-16), e.g. for a local test run:
+
+```bash
+venv/bin/python src/digest/digest_payload.py --payload-only                      # the digest that's due now, if any
+venv/bin/python src/digest/digest_payload.py --payload-only --period Pre-Market  # build it now, at any time
+```
+
+- **Same pipeline as a real run:** live data and real Claude and Gemini calls (so it costs the same), the universal content and users in parallel, and recent watchdog evaluations reused.
+- **Output:** each recipient's full payload goes to `test_output/digest_payloads/<user>_<date>_<period>_<HHMM ET>.json` (gitignored). That's exactly what `create_html` would receive.
+- **Skipped:** `create_html` and the email. Nothing is recorded as sent, and missed digests aren't checked, so a test run never changes what cron sends.
+- **Who gets built:** recipients still need `<NAME>_RECEIVE_PRE/POSTMARKET_DIGEST=True`.
+- **Still recorded:** new evaluations are saved to the watchdog state and the track record, and spend to the usage ledger, like any other run.
+- **Still alerted:** problems found while building, such as a broken holdings connection or a bad key, send their usual notices.
+
+On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1"` first.
+
 ### Fresh data in each digest
 
 The pre- and post-market digests on the same day are built independently; nothing from the morning digest is copied into the afternoon one:

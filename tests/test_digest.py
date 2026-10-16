@@ -368,3 +368,39 @@ def test_payload_has_the_section_start_time(personal_env):
 def test_check_only_never_alerts_about_missed_digests(digest_run, telegram):
     ok, status = dp.run_daily_digests(["U0"], now=datetime(2026, 10, 15, 10, 10, tzinfo=ET), check_only=True)
     assert not ok and "Missed today" in status and telegram.messages == []
+
+
+# --------------------------------------------------------------------------------------------- --payload-only
+def test_payload_only_saves_json_and_changes_nothing(digest_run, monkeypatch, tmp_path, telegram):
+    import numpy as np
+
+    monkeypatch.setattr(dp, "PAYLOAD_DIR", tmp_path / "payloads")
+    monkeypatch.setattr(dp, "users_already_sent", lambda day, period: {"U0"})  # Built anyway
+    monkeypatch.setattr(dp, "record_sent", lambda *args: pytest.fail("a payload-only run recorded a send"))
+    monkeypatch.setattr(dp.DigestPayload, "personal_content", lambda self, user: {"holdings": [{
+        "symbol": "AAA", "rsi": float("nan"), "shares": np.float64(2.5), "next_earnings": pd.Timestamp("2026-10-20"),
+        "ex_date": pd.NaT}]})
+    noon = datetime(2026, 10, 15, 12, 0, tzinfo=ET)  # Outside both windows, after the Pre-Market one closed
+
+    ok, status = dp.run_daily_digests(["U0", "U1"], now=noon, payload_only=True, period="Post-Market")
+
+    assert ok and status.startswith("Post-Market 2026-10-15: saved 2, failed 0")
+    assert digest_run.sent == [] and telegram.messages == []  # No email, and no "missed digest" alert
+    files = sorted((tmp_path / "payloads").glob("*.json"))
+    assert [f.name.rsplit("_", 1)[0] for f in files] == ["U0_2026-10-15_Post-Market", "U1_2026-10-15_Post-Market"]
+
+    def strict(constant):
+        raise ValueError(f"not valid JSON: {constant}")
+
+    payload = json.loads(files[0].read_text(encoding="utf-8"), parse_constant=strict)
+    assert payload["subject"] == "Finnbot Post-Market Digest 2026-10-15" and payload["user_name"] == "U0"
+    assert "recommendations" in payload
+    assert payload["holdings"][0] == {"symbol": "AAA", "rsi": None, "shares": 2.5,
+                                      "next_earnings": "2026-10-20T00:00:00", "ex_date": None}
+
+
+def test_payload_only_without_a_period_waits_for_a_window(digest_run, tmp_path, monkeypatch):
+    monkeypatch.setattr(dp, "PAYLOAD_DIR", tmp_path / "payloads")
+    assert dp.run_daily_digests(["U0"], now=datetime(2026, 10, 15, 12, 0, tzinfo=ET), payload_only=True) == (
+        True, "No digest due.")
+    assert not (tmp_path / "payloads").exists()

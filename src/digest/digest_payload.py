@@ -2,6 +2,8 @@
 # Claude-authored (2026-10-15): cron now runs this every hour at :10; src/digest/digest_schedule.py decides whether a
 # Pre-Market or Post-Market digest is due (see docs/watchdog.md, "Running it").
 import argparse
+import json
+import math
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -25,9 +27,38 @@ from src.universal.universal_consolidated import get_universal_content
 from src.personalized.personalized_consolidated import get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
+from src.market_session import market_date
 from src.run_logging import name_thread, start_run_log, write_run_status
 from src.telegram_alert.notices import alert_admins
 import copy
+
+# Claude-authored (2026-10-16): where --payload-only writes each user's payload (test_output/ is gitignored, since the
+# files hold holdings and email addresses)
+PAYLOAD_DIR = project_root / "test_output" / "digest_payloads"
+PERIODS = ("Pre-Market", "Post-Market")
+
+
+def _jsonable(value):
+    """Payload values as plain JSON: NaN/inf become null, and numpy, pandas, and date values become numbers/strings."""
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(item) for item in value]
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):  # numpy scalars
+        try:
+            value = value.item()
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if hasattr(value, "model_dump"):  # Pydantic models
+        return _jsonable(value.model_dump())
+    if hasattr(value, "isoformat"):  # date, datetime, pandas Timestamp
+        return None if str(value) == "NaT" else value.isoformat()
+    return str(value)
+
 
 class DigestPayload:
     def __init__(self, period: Optional[str] = None, day: Optional[date] = None):
@@ -38,6 +69,7 @@ class DigestPayload:
         now_et = datetime.now(ZoneInfo("America/New_York"))
         curr_date = day or now_et.date()
         digest_period = period or get_digest_period(now_et)
+        self.period = digest_period
         self.payload = {
             "date": curr_date,
             "subject": f"Finnbot {digest_period} Digest {curr_date}",
@@ -88,6 +120,20 @@ class DigestPayload:
         print(f"Sending daily digest to {user_name} with personalized payload")
         return True
 
+    def save_payload(self, user_name: str, personal: Optional[dict] = None, out_dir: Optional[Path] = None) -> Path:
+        """
+        Claude-authored (2026-10-16): --payload-only. Writes the user's complete digest payload (universal + personal,
+        exactly what send_daily_digest_to would hand to create_html) to out_dir as JSON, instead of rendering and
+        emailing it. Named <user>_<date>_<period>_<HHMM ET>.json, so earlier runs aren't overwritten.
+        """
+        user_payload = self.personalized_content(user_name, personal)
+        out_dir = out_dir or PAYLOAD_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+        saved_at = datetime.now(ZoneInfo("America/New_York")).strftime("%H%M")
+        path = out_dir / f"{user_name}_{self.payload['date']}_{self.period}_{saved_at}.json"
+        path.write_text(json.dumps(_jsonable(user_payload), indent=2, ensure_ascii=False), encoding="utf-8")
+        return path
+
 
 def missed_digests(recipients: list[str], now: datetime, alert: bool = True) -> list[str]:
     """
@@ -108,7 +154,11 @@ def missed_digests(recipients: list[str], now: datetime, alert: bool = True) -> 
 
 
 def run_daily_digests(
-    recipients: list[str], now: Optional[datetime] = None, check_only: bool = False
+    recipients: list[str],
+    now: Optional[datetime] = None,
+    check_only: bool = False,
+    payload_only: bool = False,
+    period: Optional[str] = None,
 ) -> tuple[bool, str]:
     """
     Builds and sends the digest for every recipient scheduled for this period (called by cron via __main__).
@@ -120,25 +170,33 @@ def run_daily_digests(
     2026-10-16: returns (ok, status) for the heartbeat (scripts/cron_job.sh). ok is False when the universal content
     or any user's digest failed, or an earlier digest today never went out (missed_digests). status is one line
     with counts only.
+
+    2026-10-16, `payload_only` (--payload-only): builds everything the same way (universal content and users in
+    parallel, recent watchdog evaluations reused), but saves each user's payload as JSON (DigestPayload.save_payload)
+    instead of running create_html and emailing it. Nothing is recorded as sent, users who already received the
+    digest are built anyway, and missed digests aren't checked, so a test run never changes what cron sends.
+    `period` ("Pre-Market" / "Post-Market", payload-only) builds that digest now, even outside its send window.
     """
     now = now or datetime.now(timezone.utc)
     stamp = now.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M ET")
-    print(f"[{stamp}] Starting digest check...")
-    missed = missed_digests(recipients, now, alert=not check_only)
+    print(f"[{stamp}] Starting digest {'payload build' if payload_only else 'check'}...")
+    missed = [] if payload_only else missed_digests(recipients, now, alert=not check_only)
     missed_note = f" Missed today: {'; '.join(missed)}." if missed else ""
 
-    due = due_digest(now)
+    due = (market_date(now), period) if period else due_digest(now)
     if due is None:
-        print(f"[{stamp}] No digest is due now (outside the Pre-/Post-Market windows, or no exchange trades today).")
+        hint = " Pass --period Pre-Market or --period Post-Market to build one anyway." if payload_only else ""
+        print(f"[{stamp}] No digest is due now (outside the Pre-/Post-Market windows, or no exchange trades today).{hint}")
         return not missed, f"No digest due.{missed_note}"
     day, period = due
-    already_sent = users_already_sent(day, period)
+    already_sent = set() if payload_only else users_already_sent(day, period)
     digest_recipients = [
         user for user in determine_recipients(recipients, period) if user not in already_sent
     ]
 
     if not digest_recipients:
-        print(f"[{stamp}] {period} digest for {day}: no recipients left to send to. Exiting.")
+        print(f"[{stamp}] {period} digest for {day}: no recipients left to send to (a user only receives it when "
+              f"<NAME>_RECEIVE_{'PRE' if period == 'Pre-Market' else 'POST'}MARKET_DIGEST=True). Exiting.")
         return not missed, f"{period} {day}: already sent to every recipient.{missed_note}"
     if check_only:
         print(f"[{stamp}] {period} digest for {day} is due for: {digest_recipients} (check only; nothing sent).")
@@ -176,14 +234,18 @@ def run_daily_digests(
                 future.cancel()  # Users not started yet are skipped; running ones finish but nothing is sent
             print(f"[{stamp}] Failed to generate universal content. Digest aborted.")
         else:
-            print(f"[{stamp}] Universal content loaded. Sending digests...")
+            print(f"[{stamp}] Universal content loaded. {'Saving payloads' if payload_only else 'Sending digests'}...")
             for future in as_completed(personal_futures):
                 user = personal_futures[future]
                 try:
-                    digest.send_daily_digest_to(user, personal=future.result())
-                    record_sent(day, period, user)  # Not sent again if a later hourly run is still in the window
+                    if payload_only:  # Claude-authored (2026-10-16): no create_html, no email, not recorded as sent
+                        path = digest.save_payload(user, personal=future.result())
+                        print(f"[{stamp}] Saved {user}'s payload to {path}")
+                    else:
+                        digest.send_daily_digest_to(user, personal=future.result())
+                        record_sent(day, period, user)  # Not sent again if a later hourly run is still in the window
+                        print(f"[{stamp}] Successfully sent digest to {user}.")
                     sent.append(user)
-                    print(f"[{stamp}] Successfully sent digest to {user}.")
                 except Exception as e:
                     failed.append(user)
                     print(f"[{stamp}] ERROR sending digest to {user}: {e}")
@@ -192,9 +254,10 @@ def run_daily_digests(
 
     # Claude-authored (2026-10-15): one summary line per run, easy to grep in logs/digest.log
     elapsed = time.monotonic() - started
-    print(f"[{stamp}] {period} digest run finished in {elapsed:.0f}s: sent {sent or 'none'}, failed {failed or 'none'}.")
-    universal_note = "" if universal_ok else " Universal content failed, so nothing was sent."
-    status = f"{period} {day}: sent {len(sent)}, failed {len(failed)} in {elapsed:.0f}s.{universal_note}{missed_note}"
+    verb = "saved" if payload_only else "sent"
+    print(f"[{stamp}] {period} digest run finished in {elapsed:.0f}s: {verb} {sent or 'none'}, failed {failed or 'none'}.")
+    universal_note = "" if universal_ok else f" Universal content failed, so nothing was {verb}."
+    status = f"{period} {day}: {verb} {len(sent)}, failed {len(failed)} in {elapsed:.0f}s.{universal_note}{missed_note}"
     return universal_ok and not failed and not missed, status
 
 
@@ -212,20 +275,40 @@ if __name__ == "__main__":
         default=None,
         help="Pretend it is this ISO-8601 time with UTC offset, e.g. 2026-10-15T16:10:00-04:00 (requires --check).",
     )
+    # Claude-authored (2026-10-16): build real payloads without create_html or email, e.g. for a local test run
+    parser.add_argument(
+        "--payload-only",
+        action="store_true",
+        help="Build the due digest with live data and save each user's payload as JSON in "
+             "test_output/digest_payloads/; no HTML, no email, nothing recorded as sent.",
+    )
+    parser.add_argument(
+        "--period",
+        choices=PERIODS,
+        default=None,
+        help="With --payload-only: build this digest now, even outside its send window.",
+    )
     args = parser.parse_args()
     if args.now is not None and (args.now.tzinfo is None or not args.check):
         parser.error("--now must include a UTC offset and can only be used with --check.")
+    if args.payload_only and args.check:
+        parser.error("--payload-only and --check can't be combined.")
+    if args.period and not args.payload_only:
+        parser.error("--period can only be used with --payload-only.")
     # Claude-authored (2026-10-15): everything goes to logs/digest.log; an unexpected crash also alerts the admins
     start_run_log("digest")
+    reports_status = not (args.check or args.payload_only)  # Only cron runs feed the healthchecks.io heartbeat
     try:
-        ok, status = run_daily_digests(get_active_users(), now=args.now, check_only=args.check)
+        ok, status = run_daily_digests(
+            get_active_users(), now=args.now, check_only=args.check, payload_only=args.payload_only, period=args.period
+        )
     except Exception as e:
         traceback.print_exc()
         alert_admins("digest run crashed", repr(e))
-        if not args.check:
+        if reports_status:
             write_run_status("digest", f"Run crashed: {type(e).__name__} (traceback in logs/digest.log).")
         raise
     # Claude-authored (2026-10-16): the exit code and status line are what the healthchecks.io heartbeat reports
-    if not args.check:
+    if reports_status:
         write_run_status("digest", status)
     sys.exit(0 if ok else 1)
