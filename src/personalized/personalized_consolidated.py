@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import os
 from typing import Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 
@@ -97,6 +98,33 @@ def get_portfolio_review(
     notes, key_error = review_portfolio(holdings, portfolio_beta, api_key, user_name=user_name)
     return [note.model_dump() for note in notes], key_error
 
+US_EASTERN = ZoneInfo("America/New_York")
+
+def _display_time(moment: datetime) -> str:
+    """e.g. "Friday, October 16, 2026, 7:02 AM EDT" (built by hand: %-I isn't available on Windows)."""
+    return f"{moment:%A, %B} {moment.day}, {moment.year}, {moment.hour % 12 or 12}:{moment:%M %p} {moment.tzname()}"
+
+def section_started_at(started_at: datetime, home_timezone: str, user_name: str) -> dict:
+    """
+    Claude-authored (2026-10-16): when this user's personal section started, in their home timezone (the IANA name in
+    their <NAME>_TIMEZONE setting) and in US Eastern, the market's clock. Display strings are ready for the email;
+    the ISO values are there for any other formatting. An invalid timezone leaves the home fields None (with a
+    warning) instead of stopping the digest; `python -m src.check_config` reports it as INVALID.
+    """
+    eastern = started_at.astimezone(US_EASTERN)
+    try:
+        home = started_at.astimezone(ZoneInfo(home_timezone))
+    except (ZoneInfoNotFoundError, ValueError):
+        print(f"[WARNING] '{home_timezone}' is not a valid IANA timezone for {user_name}; showing US Eastern time only.")
+        home = None
+    return {
+        "home_timezone": home_timezone if home else None,
+        "home": _display_time(home) if home else None,
+        "home_iso": home.isoformat(timespec="seconds") if home else None,
+        "us_eastern": _display_time(eastern),
+        "us_eastern_iso": eastern.isoformat(timespec="seconds"),
+    }
+
 def _key_issue_notices(holdings_dict: dict, *key_errors: Optional[ApiKeyUnusable]) -> list[dict]:
     """One notice per (provider, reason): the Anthropic issue from the holdings payload plus any Gemini issues."""
     notices = list(holdings_dict.get("api_key_issues") or [])
@@ -158,6 +186,8 @@ def get_personal_content(user_name: str = "Andres"):
         "account_company": account_company,
         "destination_email": destination_email,
         "home_timezone": home_timezone,
+        # Claude-authored (2026-10-16): when this section started, in the user's home timezone and US Eastern
+        "personal_started_at": section_started_at(started_at, home_timezone, user_name),
         "holdings": holdings,
         "portfolio_beta": holdings_dict.get("portfolio_beta"),
         "portfolio_review": portfolio_review,

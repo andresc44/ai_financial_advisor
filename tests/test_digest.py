@@ -339,6 +339,31 @@ def test_run_status_file(tmp_path, monkeypatch):
     assert (tmp_path / "logs" / "digest.status").read_text() == "Pre-Market 2026-10-15: sent 2, failed 0 in 31s.\n"
 
 
+# --------------------------------------------------------------------------------------------- section start time
+def test_section_start_in_home_and_eastern_time():
+    started = datetime(2026, 10, 16, 11, 2, 30, tzinfo=timezone.utc)
+    assert pc.section_started_at(started, "America/Bogota", "U") == {
+        "home_timezone": "America/Bogota",
+        "home": "Friday, October 16, 2026, 6:02 AM -05",
+        "home_iso": "2026-10-16T06:02:30-05:00",
+        "us_eastern": "Friday, October 16, 2026, 7:02 AM EDT",
+        "us_eastern_iso": "2026-10-16T07:02:30-04:00",
+    }
+    noon = pc.section_started_at(datetime(2026, 12, 1, 17, 5, tzinfo=timezone.utc), "Europe/Madrid", "U")
+    assert noon["home"] == "Tuesday, December 1, 2026, 6:05 PM CET" and noon["us_eastern"].endswith("12:05 PM EST")
+
+
+def test_invalid_home_timezone_shows_eastern_only():
+    times = pc.section_started_at(datetime(2026, 10, 16, 4, 30, tzinfo=timezone.utc), "Toronto", "U")
+    assert times["home"] is None and times["home_timezone"] is None
+    assert times["us_eastern"] == "Friday, October 16, 2026, 12:30 AM EDT"
+
+
+def test_payload_has_the_section_start_time(personal_env):
+    times = pc.get_personal_content("TestUser")["personal_started_at"]
+    assert times["home_timezone"] == "America/Toronto"
+    assert times["home"].rsplit(" ", 1)[1] in ("EDT", "EST") and times["us_eastern"].rsplit(" ", 1)[1] in ("EDT", "EST")
+
 
 def test_check_only_never_alerts_about_missed_digests(digest_run, telegram):
     ok, status = dp.run_daily_digests(["U0"], now=datetime(2026, 10, 15, 10, 10, tzinfo=ET), check_only=True)

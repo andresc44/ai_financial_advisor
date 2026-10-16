@@ -254,6 +254,8 @@ Every Claude and Gemini response is recorded in `data/usage/api_usage.jsonl`: ho
 
 These are estimates from token counts and list prices. They can't see credits, discounts, or use of the same key outside Finnbot. If a model has no price, its calls are still counted but cost $0, and it is listed under `unpriced_models`. Gemini's Google Search grounding is free for the first `GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH` (5,000) requests per key each month, so search cost only counts once a user passes that.
 
+**When the section started:** each user's payload also has `personal_started_at`, the moment their personal section began. It's given in their home timezone (`<NAME>_TIMEZONE`) and in US Eastern: `{"home_timezone", "home", "home_iso", "us_eastern", "us_eastern_iso"}`. The display strings look like `Friday, October 16, 2026, 7:02 AM EDT`. If the timezone isn't a valid IANA name, the home fields are `null` and only Eastern time is shown; `check_config` reports the setting as INVALID.
+
 **Keeping prices current:** prices are in `params_dict["API_PRICES"]` as dated lists. To add a price change, append an entry with its `"from"` date. Usage before that date keeps the old price, so past months don't change. For example, the gemini-3.6-flash entry already holds the doubled price that starts 2027-01-01. Update `AS_OF` when you check the price pages listed in `SOURCES`. Model ids match on the longest prefix, so `claude-opus-5-5` gets its own price, not `claude-opus-5`'s.
 
 ## Known limitations
