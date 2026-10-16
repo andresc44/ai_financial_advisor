@@ -129,6 +129,7 @@ def select_top_candidates(
             "ticker": ticker,
             "longScore": scores.get("longScore", 0.0),
             "swingScore": scores.get("swingScore", 0.0),
+            "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
             **long_term_reasoning(scores),  # Claude-authored (2026-10-16)
         }
         for ticker, scores in top_long_tuples
@@ -166,6 +167,7 @@ def select_top_candidates(
             "ticker": ticker,
             "swingScore": scores.get("swingScore", 0.0),
             "longScore": scores.get("longScore", 0.0),
+            "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
             **swing_reasoning(ticker, scores),  # Claude-authored (2026-10-16)
         }
         for ticker, scores in top_swing_tuples

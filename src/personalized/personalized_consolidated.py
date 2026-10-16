@@ -18,7 +18,7 @@ from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.portfolio_review import review_portfolio
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
-from src.personalized.user_settings import get_gemini_api_key
+from src.personalized.user_settings import get_gemini_api_key, wants_holding_news
 from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
 from src.usage_tracking import usage_summary
 
@@ -174,7 +174,12 @@ def get_personal_content(user_name: str = "Andres"):
     # thread while market data and Claude run below. The portfolio review then waits for both. Evaluations the
     # watchdog made in the last hour are reused instead of calling Claude again.
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"{user_name}-news") as pool:
-        news_future = pool.submit(fetch_holdings_news, user_name, _holding_companies(portfolio.full_data))
+        # Claude-authored (2026-10-16): <NAME>_RECEIVE_HOLDING_NEWS=False skips the Gemini news (no calls, empty bullets)
+        news_on = wants_holding_news(user_name)
+        if not news_on:
+            print(f"Holding news is off for {user_name} (RECEIVE_HOLDING_NEWS); no Gemini news requests.")
+        companies = _holding_companies(portfolio.full_data) if news_on else {}
+        news_future = pool.submit(fetch_holdings_news, user_name, companies)
         holdings_dict = portfolio.get_holdings_digest_payload(reuse_recent_evaluations=True)
         news, news_key_error = news_future.result()
     holdings = attach_news_bullets(holdings_dict.get("holdings"), news)

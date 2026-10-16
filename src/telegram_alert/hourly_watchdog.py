@@ -57,7 +57,7 @@ from src.personalized.holdings_state import (
     update_user_state,
 )
 from src.personalized.pull_holdings_data import PortfolioFetcher
-from src.personalized.recommendation import resolve_anthropic_key
+from src.personalized.recommendation import resolve_llm_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
 from src.run_logging import name_thread, start_run_log, write_run_status
@@ -370,7 +370,7 @@ def check_user(
     claude_calls = 0
     if reasons:
         try:
-            resolve_anthropic_key(user_name)
+            resolve_llm_key(user_name, fetcher.llm_settings["provider"])  # 2026-10-16: Claude or DeepSeek key
         except ApiKeyUnusable as e:
             key_error = e
         else:
@@ -378,7 +378,7 @@ def check_user(
                 desired_columns=["symbol", "recommendation", "recommendation_rationale"],
                 symbols=list(reasons),
             )
-            key_error = fetcher.claude_key_error
+            key_error = fetcher.llm_key_error
             evaluated = {h["symbol"] for h in payload["holdings"] if isinstance(h.get("recommendation"), str)}
             claude_calls = len(evaluated) if key_error else len(reasons)  # Key-rejected requests aren't billed
         if key_error is not None:

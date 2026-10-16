@@ -18,6 +18,10 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   watchdog and digest can react (see api_errors.py).
 - 2026-10-15: the digest can reuse a watchdog evaluation from the last hour (reuse_recent_evaluations), so
   stocks that were just evaluated and haven't moved aren't sent to Claude twice.
+- 2026-10-16: the model can be Claude or DeepSeek (src/llm_models.py), per user (PortfolioFetcher.llm_settings,
+  formerly claude_overrides). DeepSeek requests go through src/deepseek_client.py with the same tool schema, the
+  same validation, and the same stop-at-the-first-key-error handling; resolve_llm_key checks the user's key for
+  whichever provider their model needs (formerly resolve_anthropic_key), and the error is self.llm_key_error.
 """
 import asyncio
 import json
@@ -30,15 +34,17 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 from anthropic import APIError, AsyncAnthropic
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src import llm_models
+from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, tool_call_arguments
 from src.market_session import market_phase
 from src.parameters import params_dict
-from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, verify_anthropic_key
+from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error, verify_llm_key
 from src.personalized.holdings_state import record_evaluations, reusable_evaluations
 from src.personalized.LLM_hold_instr import (
     RECOMMENDATION_DESCRIPTION,
@@ -49,9 +55,9 @@ from src.personalized.LLM_hold_instr import (
     SYSTEM_PROMPT,
     format_user_prompt,
 )
-from src.personalized.user_settings import get_anthropic_api_key
+from src.personalized.user_settings import get_llm_api_key
 from src.track_record import log_personal
-from src.usage_tracking import record_anthropic_response
+from src.usage_tracking import record_anthropic_response, record_deepseek_response
 
 logging.basicConfig(
     level=logging.INFO,
@@ -102,11 +108,9 @@ EVALUATION_TOOL_SPEC = {
 
 
 class ParallelHoldingEvaluator:
-    # Only used when CLAUDE_CONFIG and the user's settings leave a setting out. Claude-authored (2026-10-16): Sonnet 5.5
+    # Only used for settings nothing else sets (the model and effort come from params_dict["LLM"] or the user)
     DEFAULT_CONFIG = {
-        "model": "claude-sonnet-5-5",
         "max_tokens": 16000,
-        "effort": "high",
         "system_prompt": SYSTEM_PROMPT,
         "max_concurrency": 15,
     }
@@ -119,21 +123,25 @@ class ParallelHoldingEvaluator:
         user_name: Optional[str] = None,
         source: str = "watchdog",
     ):
-        # Reuse the shared model settings; prompts come only from LLM_hold_instr.py, never from CLAUDE_CONFIG.
-        # `config` (e.g. a user's model/effort from user_settings.get_claude_overrides) is applied last.
-        model_settings = {
-            key: value
-            for key, value in params_dict.get("CLAUDE_CONFIG", {}).items()
-            if key != "system_prompt"
-        }
+        # Claude-authored (2026-10-16): the model and effort are params_dict["LLM"]["HOLDINGS"] with `config` (a user's
+        # settings from user_settings.get_llm_settings) on top; the model decides the provider, whose request settings
+        # (CLAUDE_CONFIG / DEEPSEEK_CONFIG) fill in the rest. Prompts come only from LLM_hold_instr.py.
+        chosen = {**llm_models.job_settings("HOLDINGS"), **(config or {})}
+        efforts = llm_models.allowed_models().get(chosen["model"])
+        if efforts is not None and chosen.get("effort") not in efforts:
+            chosen["effort"] = llm_models.default_effort(chosen["model"])
+        self.provider = llm_models.provider_of(chosen["model"])
+        provider_config = params_dict.get("DEEPSEEK_CONFIG" if self.provider == llm_models.DEEPSEEK else "CLAUDE_CONFIG", {})
         self.config = {
             **self.DEFAULT_CONFIG,
-            **model_settings,
-            **(config or {}),
+            **{key: value for key, value in provider_config.items() if key in ("max_tokens", "max_concurrency", "effort")},
+            **chosen,
         }
         self.market_session = market_session or "unknown"
 
-        self.client = AsyncAnthropic(api_key=api_key)  # The evaluated user's own key (user_settings.get_anthropic_api_key)
+        # The evaluated user's own key for this provider (user_settings.get_llm_api_key)
+        self.deepseek = DeepSeekClient(api_key=api_key) if self.provider == llm_models.DEEPSEEK else None
+        self.client = AsyncAnthropic(api_key=api_key) if self.deepseek is None else None
         self.user_name = user_name
         self.source = source  # "digest" or "watchdog", for the usage ledger (src/usage_tracking.py)
         self.key_error: Optional[ApiKeyUnusable] = None  # First key failure; later requests are skipped
@@ -161,6 +169,21 @@ class ParallelHoldingEvaluator:
             )
         return await self.client.messages.create(**request)
 
+    async def _evaluate_with_deepseek(self, symbol: str, user_prompt: str) -> Optional[HoldingEvaluation]:
+        """Claude-authored (2026-10-16): one evaluation on DeepSeek, with the same tool schema and validation."""
+        request = build_request(
+            self.config["model"], self.config["effort"], self.config["system_prompt"], user_prompt, EVALUATION_TOOL_SPEC
+        )
+        response = await self.deepseek.chat(request)
+        record_deepseek_response(self.user_name, self.source, self.config["model"], response)
+        result = tool_call_arguments(response, EVALUATION_TOOL_NAME)
+        if result.arguments is None:
+            logger.error(f"[{symbol}] No recommendation recorded: {result.problem}.")
+            return None
+        evaluation = HoldingEvaluation(**result.arguments)
+        logger.info(f"[{symbol}] Evaluated -> {evaluation.recommendation}")
+        return evaluation
+
     async def _evaluate_single_holding(
         self, symbol: str, holding_payload: Dict[str, Any]
     ) -> Optional[HoldingEvaluation]:
@@ -173,6 +196,8 @@ class ParallelHoldingEvaluator:
             )
 
             try:
+                if self.deepseek is not None:
+                    return await self._evaluate_with_deepseek(symbol, user_prompt)
                 response = await self._create_message(user_prompt)
                 # Claude-authored (2026-10-16): every answered request is billed, refusals and truncations included
                 record_anthropic_response(self.user_name, self.source, response)
@@ -208,13 +233,15 @@ class ParallelHoldingEvaluator:
                 logger.info(f"[{symbol}] Evaluated -> {evaluation.recommendation}")
                 return evaluation
 
-            except APIError as e:
-                key_error = anthropic_key_error(e, self.user_name)
+            except (APIError, DeepSeekError) as e:
+                key_error = (deepseek_key_error if isinstance(e, DeepSeekError) else anthropic_key_error)(e, self.user_name)
                 if key_error is None:
-                    logger.error(f"[{symbol}] Anthropic API Error: {e.message}")
+                    logger.error(f"[{symbol}] {self.provider} API Error: {e.message}")
                 elif self.key_error is None:
                     self.key_error = key_error
                     logger.error(f"[{symbol}] {key_error}")
+            except ValidationError as e:
+                logger.error(f"[{symbol}] The model's answer didn't match the expected fields: {e}")
             except Exception as e:
                 logger.error(
                     f"[{symbol}] Unexpected Error during evaluation: {str(e)}"
@@ -237,6 +264,8 @@ class ParallelHoldingEvaluator:
         ]
 
         results: List[Optional[HoldingEvaluation]] = await asyncio.gather(*tasks)
+        if self.deepseek is not None:
+            await self.deepseek.aclose()
         evaluations: Dict[str, Dict[str, Any]] = {
             symbol: result.model_dump()
             for symbol, result in zip(symbols, results)
@@ -245,7 +274,7 @@ class ParallelHoldingEvaluator:
 
         logger.info(
             f"Evaluation complete. Successfully evaluated {len(evaluations)}/{len(symbols)} holdings."
-            + (f" Stopped early: Anthropic key problem ({self.key_error.reason})." if self.key_error else "")
+            + (f" Stopped early: {self.provider} key problem ({self.key_error.reason})." if self.key_error else "")
         )
         return evaluations
 
@@ -269,13 +298,14 @@ def run_holding_evaluation(
     return evaluations, evaluator.key_error
 
 
-def resolve_anthropic_key(user_name: Optional[str]) -> str:
+def resolve_llm_key(user_name: Optional[str], provider: str = llm_models.ANTHROPIC) -> str:
     """
-    The user's own Anthropic key after a free validity check. Raises ApiKeyUnusable when it is missing, invalid,
-    revoked, expired, or lacks permission, so callers can stop before fetching any market data for Claude.
+    The user's own key for `provider` ("Anthropic" or "DeepSeek") after a free check (Anthropic: lists a model;
+    DeepSeek: reads the balance). Raises ApiKeyUnusable when it is missing, invalid, revoked, expired, unpermitted,
+    or (DeepSeek) out of balance, so callers can stop before fetching any market data for the evaluation.
     """
-    api_key = get_anthropic_api_key(user_name)
-    verify_anthropic_key(api_key, user_name)
+    api_key = get_llm_api_key(user_name, provider)
+    verify_llm_key(provider, api_key, user_name)
     return api_key
 
 
@@ -314,17 +344,18 @@ def add_recommendations(
     """
     Uses Claude to add a 'recommendation' (hold / trim / risk_alert / urgent_sell), a 'sentiment'
     (Bullish / Neutral / Bearish), and a 'recommendation_rationale' to each holding, based on the position
-    data and the 'market_context' column added by add_metrics_to_holdings. Uses the user's own Anthropic key
-    and model/effort (self.claude_overrides) and records results in the watchdog state file.
+    data and the 'market_context' column added by add_metrics_to_holdings. Uses the user's model/effort
+    (self.llm_settings: Claude or DeepSeek) with their own key for it, and records results in the watchdog state file.
 
-    Sets self.claude_key_error to the ApiKeyUnusable that stopped the evaluation (None otherwise). Holdings
+    Sets self.llm_key_error to the ApiKeyUnusable that stopped the evaluation (None otherwise). Holdings
     evaluated before a mid-run key failure (e.g. a spend limit reached) keep their recommendations.
 
     With reuse_recent_evaluations (the digest), stocks evaluated within DIGEST.REUSE_EVALUATION_MAX_AGE_MINUTES
     that have moved less than WATCHDOG.REEVAL_NATR_MULTIPLE x NATR since keep that evaluation instead of calling
     Claude again. The watchdog leaves it off: it has already decided which stocks need a fresh evaluation.
     """
-    self.claude_key_error = None
+    self.llm_key_error = None
+    settings = getattr(self, "llm_settings", None) or llm_models.job_settings("HOLDINGS")
     if holdings_df.empty:
         print("Holdings DataFrame is empty. No recommendations to add.")
         return holdings_df
@@ -345,26 +376,26 @@ def add_recommendations(
             max_natr_move=params_dict["WATCHDOG"]["REEVAL_NATR_MULTIPLE"],
         )
         if reused:
-            print(f"Reusing {len(reused)} recent evaluation(s) instead of calling Claude: {sorted(reused)}")
+            print(f"Reusing {len(reused)} recent evaluation(s) instead of calling the LLM again: {sorted(reused)}")
     to_evaluate = {symbol: payload for symbol, payload in holding_payloads.items() if symbol not in reused}
 
     evaluations: Dict[str, Dict[str, Any]] = {}
     if to_evaluate:
         try:
-            evaluations, self.claude_key_error = run_holding_evaluation(
+            evaluations, self.llm_key_error = run_holding_evaluation(
                 to_evaluate,
-                api_key=resolve_anthropic_key(user_name),
-                config=getattr(self, "claude_overrides", None),
+                api_key=resolve_llm_key(user_name, settings.get("provider") or llm_models.provider_of(settings.get("model"))),
+                config=settings,
                 market_session=market_phase(now),
                 user_name=user_name,
                 source="digest" if reuse_recent_evaluations else "watchdog",  # Only the digest reuses evaluations
             )
         except ApiKeyUnusable as e:
-            self.claude_key_error = e
+            self.llm_key_error = e
         except ValueError as e:
             print(f"[ERROR] Could not initialize holding evaluator: {e}")
-        if self.claude_key_error is not None:
-            print(f"[ERROR] {self.claude_key_error}")
+        if self.llm_key_error is not None:
+            print(f"[ERROR] {self.llm_key_error}")
 
     results = {**reused, **evaluations}
     df["recommendation"] = df["symbol"].map(
@@ -389,6 +420,6 @@ def add_recommendations(
             evaluated,
             now,
             source="digest" if reuse_recent_evaluations else "watchdog",
-            model=(getattr(self, "claude_overrides", None) or {}).get("model"),
+            model=settings.get("model"),
         )
     return df

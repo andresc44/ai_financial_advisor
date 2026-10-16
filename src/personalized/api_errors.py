@@ -1,4 +1,4 @@
-# File to classify Anthropic and Gemini API errors that make a user's key unusable, and to retry only what can recover.
+# File to classify Anthropic, DeepSeek, and Gemini API errors that make a user's key unusable, and to retry only what can recover.
 """
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's request.
 - 2026-10-15: created. Why: each user now brings their own Anthropic and Gemini keys, so a missing, invalid,
@@ -9,6 +9,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-16: the same handling for the shared keys used by the universal content (ANTHROPIC_API_KEY for the
   candidate scoring, GEMINI_API_KEY for the macro news): ApiKeyUnusable with user_name=None names the shared
   variable, and shared_api_key() raises it when the key isn't set.
+- 2026-10-16: DeepSeek, which can now do any job a Claude model does (src/llm_models.py): deepseek_key_error,
+  verify_deepseek_key (the free balance check), and verify_llm_key, which picks the provider's check.
 
 Error formats (checked 2026-10-15):
 - Anthropic (platform.claude.com/docs/en/api/errors, /api/rate-limits): 401 invalid/revoked/expired key;
@@ -20,6 +22,9 @@ Error formats (checked 2026-10-15):
   billing is required; 403 PERMISSION_DENIED (incl. keys reported as leaked); 429 for both per-minute limits
   (retryable, short RetryInfo delay) and daily quotas (quotaId "...PerDay...", status "quota_exceeded").
   The google-genai SDK does not retry by default, so GEMINI_RETRY below is the only retry layer.
+- DeepSeek (api-docs.deepseek.com/quick_start/error_codes, checked 2026-10-16): 401 wrong key; 402 insufficient
+  balance; 429 too fast (retried by src/deepseek_client.py); 400 / 422 are per-request. GET /user/balance reports
+  is_available: false when the balance can't pay for calls.
 """
 import hashlib
 import os
@@ -39,9 +44,10 @@ if str(project_root) not in sys.path:
 
 from src.personalized.user_profiles import USER_PROFILES
 
-PROFILE_KEYS = {"Anthropic": "anthropic_api_key", "Gemini": "gemini_api_key"}
-CONSOLES = {"Anthropic": "platform.claude.com", "Gemini": "Google AI Studio"}
-SHARED_ENV_KEYS = {"Anthropic": ("ANTHROPIC_API_KEY",), "Gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY")}
+PROFILE_KEYS = {"Anthropic": "anthropic_api_key", "Gemini": "gemini_api_key", "DeepSeek": "deepseek_api_key"}
+CONSOLES = {"Anthropic": "platform.claude.com", "Gemini": "Google AI Studio", "DeepSeek": "platform.deepseek.com"}
+SHARED_ENV_KEYS = {"Anthropic": ("ANTHROPIC_API_KEY",), "Gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+                   "DeepSeek": ("DEEPSEEK_API_KEY",)}
 
 REASON_TEXT = {
     "missing": "is not set",
@@ -187,6 +193,59 @@ def verify_anthropic_key(api_key: str, user_name: Optional[str]) -> None:
         print(f"[WARNING] Could not verify the Anthropic key for '{user_name}' ({e}); continuing.")
         return
     _VERIFIED_ANTHROPIC_KEYS.add(fingerprint)
+
+
+# ---------------------------------------------------------------------------------------------------------
+# DeepSeek (Claude-authored, 2026-10-16)
+# ---------------------------------------------------------------------------------------------------------
+def deepseek_key_error(error: BaseException, user_name: Optional[str]) -> Optional[ApiKeyUnusable]:
+    """
+    ApiKeyUnusable when `error` (a deepseek_client.DeepSeekError, after its retries) means the key can't be used this
+    run: a wrong key, no balance, or rate limits that outlasted the retries. None for per-request errors.
+    """
+    from src.deepseek_client import DeepSeekError  # Imported here: api_errors is imported before it by most callers
+
+    if not isinstance(error, DeepSeekError):
+        return None
+    reason = {401: "invalid", 402: "no_credits", 403: "permission", 429: "rate_limited"}.get(error.status_code)
+    return ApiKeyUnusable("DeepSeek", reason, user_name, error.message) if reason else None
+
+
+_VERIFIED_DEEPSEEK_KEYS: set[str] = set()
+
+
+def verify_deepseek_key(api_key: str, user_name: Optional[str]) -> None:
+    """
+    Free check (GET /user/balance) that raises ApiKeyUnusable for a wrong key or a balance that can't pay for calls,
+    before any market data is fetched for the evaluation. Outages don't block: the real request decides. A key that
+    passes is not re-checked in the same process.
+    """
+    from src.deepseek_client import check_balance
+
+    fingerprint = key_fingerprint(api_key)
+    if fingerprint in _VERIFIED_DEEPSEEK_KEYS:
+        return
+    try:
+        status, body = check_balance(api_key)
+    except httpx.HTTPError as e:
+        print(f"[WARNING] Could not verify the DeepSeek key for '{user_name}' ({type(e).__name__}); continuing.")
+        return
+    if status == 401:
+        raise ApiKeyUnusable("DeepSeek", "invalid", user_name, str((body or {}).get("error") or "Authentication Fails"))
+    if status == 200 and body is not None and body.get("is_available") is False:
+        raise ApiKeyUnusable("DeepSeek", "no_credits", user_name, "is_available: false")
+    if status != 200:
+        print(f"[WARNING] Could not verify the DeepSeek key for '{user_name}' (HTTP {status}); continuing.")
+        return
+    _VERIFIED_DEEPSEEK_KEYS.add(fingerprint)
+
+
+def verify_llm_key(provider: str, api_key: str, user_name: Optional[str]) -> None:
+    """The free key check for `provider` ("Anthropic" or "DeepSeek"): raises ApiKeyUnusable when the key can't work."""
+    if provider == "DeepSeek":
+        verify_deepseek_key(api_key, user_name)
+    else:
+        verify_anthropic_key(api_key, user_name)
 
 
 # ---------------------------------------------------------------------------------------------------------

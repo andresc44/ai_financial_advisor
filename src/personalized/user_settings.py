@@ -9,6 +9,9 @@ as part of the per-user watchdog scheduling and model selection plan (see docs/w
 - 2026-10-15: a missing key raises api_errors.ApiKeyUnusable (still a ValueError), so callers handle it the same
   way as an invalid, expired, or out-of-credit key. Added get_active_users (params_dict["ACTIVE_USERS"]), the
   one list of users shared by the digest and the watchdog.
+- 2026-10-16: get_llm_settings replaces get_claude_overrides: a user's holdings model can be Claude or DeepSeek
+  (src/llm_models.py), with their own key for that provider (get_llm_api_key). wants_holding_news reads the
+  per-user switch for the digest's holding news.
 
 Why this module exists:
 - USER_PROFILES stores the *names* of .env keys, not values. This is the one place that reads those keys,
@@ -28,6 +31,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src import llm_models
 from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.user_profiles import USER_PROFILES
@@ -119,39 +123,35 @@ def get_watchdog_settings(user_name: str) -> WatchdogSettings:
     return WatchdogSettings(interval_hours=interval_hours, session=session, tripwire=tripwire)
 
 
-def get_claude_overrides(user_name: str) -> dict[str, str]:
+def get_llm_settings(user_name: str) -> dict[str, str]:
     """
-    Returns {"model": ..., "effort": ...} for this user's holdings evaluation, layered on CLAUDE_CONFIG.
+    {"provider", "model", "effort"} for this user's holdings evaluation (watchdog and digest).
 
-    The model must be listed in params_dict["ALLOWED_CLAUDE_MODELS"] and the effort must be one that model
-    accepts; otherwise the global CLAUDE_CONFIG value is used. If even the resulting combination is not
-    accepted (e.g. a model added to the allowlist without "xhigh" while the global effort is "xhigh"), effort
-    drops to "high", which every allowed model supports.
+    Claude-authored (2026-10-16), replacing get_claude_overrides. The model is <NAME>_HOLDINGS_LLM_MODEL (or the
+    older <NAME>_HOLDINGS_CLAUDE_MODEL) when it's in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS, otherwise
+    params_dict["LLM"]["HOLDINGS"]. The effort is <NAME>_HOLDINGS_LLM_EFFORT (or HOLDINGS_CLAUDE_EFFORT) when the
+    model accepts it; otherwise LLM["HOLDINGS"]'s effort if that model is the default one, else the provider's
+    default (CLAUDE_CONFIG / DEEPSEEK_CONFIG "effort"). The provider follows from the model.
     """
-    claude_config = params_dict.get("CLAUDE_CONFIG", {})
-    allowed_models: dict[str, list[str]] = params_dict.get("ALLOWED_CLAUDE_MODELS", {})
+    default = llm_models.job_settings("HOLDINGS")
+    models = llm_models.allowed_models()
 
-    model = _resolve(
-        user_name,
-        "holdings_claude_model",
-        claude_config.get("model"),
-        parse=str,
-        is_valid=lambda v: v in allowed_models,
-    )
+    model = _resolve(user_name, "holdings_llm_model", None, parse=str, is_valid=lambda v: v in models)
+    if model is None:
+        model = _resolve(user_name, "holdings_claude_model", default["model"], parse=str, is_valid=lambda v: v in models)
 
-    allowed_efforts = allowed_models.get(model)  # None if the global model isn't in the allowlist: leave it as configured
-    effort = _resolve(
-        user_name,
-        "holdings_claude_effort",
-        claude_config.get("effort"),
-        parse=str.lower,
-        is_valid=lambda v: allowed_efforts is None or v in allowed_efforts,
-    )
-    if allowed_efforts is not None and effort not in allowed_efforts:
-        print(f"[WARNING] {user_name}: effort '{effort}' is not supported by {model}. Using 'high'.")
-        effort = "high"
+    efforts = models.get(model, [])
+    fallback = default["effort"] if model == default["model"] else llm_models.default_effort(model)
+    effort = _resolve(user_name, "holdings_llm_effort", None, parse=str.lower, is_valid=lambda v: v in efforts)
+    if effort is None:
+        effort = _resolve(user_name, "holdings_claude_effort", fallback, parse=str.lower, is_valid=lambda v: v in efforts)
 
-    return {"model": model, "effort": effort}
+    return {"provider": llm_models.provider_of(model), "model": model, "effort": effort}
+
+
+def wants_holding_news(user_name: str) -> bool:
+    """Claude-authored (2026-10-16): <NAME>_RECEIVE_HOLDING_NEWS (default True): Gemini news bullets per holding."""
+    return _resolve(user_name, "receive_holding_news", True, parse=_parse_bool, is_valid=lambda v: True)
 
 
 def get_active_users() -> list[str]:
@@ -184,6 +184,13 @@ def _require_api_key(user_name: str, profile_key: str, provider: str) -> str:
 def get_anthropic_api_key(user_name: str) -> str:
     """The user's own Anthropic key for holdings evaluation (no fallback to the shared ANTHROPIC_API_KEY)."""
     return _require_api_key(user_name, "anthropic_api_key", "Anthropic")
+
+
+def get_llm_api_key(user_name: str, provider: str) -> str:
+    """Claude-authored (2026-10-16): the user's own key for `provider` ("Anthropic" or "DeepSeek"), no shared fallback."""
+    if provider == llm_models.DEEPSEEK:
+        return _require_api_key(user_name, "deepseek_api_key", "DeepSeek")
+    return get_anthropic_api_key(user_name)
 
 
 def get_gemini_api_key(user_name: str) -> str:

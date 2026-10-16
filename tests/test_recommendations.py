@@ -87,7 +87,7 @@ def fake_claude(monkeypatch):
         return {s: {"recommendation": "risk_alert", "sentiment": "Bearish", "rationale": "new"} for s in payloads}, None
 
     monkeypatch.setattr(rec, "run_holding_evaluation", evaluate)
-    monkeypatch.setattr(rec, "resolve_anthropic_key", lambda user: "k")
+    monkeypatch.setattr(rec, "resolve_llm_key", lambda user, provider="Anthropic": "k")
     return sent
 
 
@@ -105,7 +105,7 @@ def test_digest_reuses_recent_stable_evaluations(state_file, fake_claude):
         "BBB": {"evaluated_at": (now - timedelta(minutes=90)).isoformat(), "price": 50.0, "recommendation": "trim"},
         "CCC": {"evaluated_at": (now - timedelta(minutes=5)).isoformat(), "price": 20.0, "recommendation": "hold"},
     }}}}, state_file)
-    fetcher = SimpleNamespace(user_name="Andres", claude_overrides={"model": "claude-opus-5"})
+    fetcher = SimpleNamespace(user_name="Andres", llm_settings={"model": "claude-opus-5"})
 
     out = rec.add_recommendations(fetcher, holdings(), reuse_recent_evaluations=True)
 
@@ -121,19 +121,19 @@ def test_digest_reuses_recent_stable_evaluations(state_file, fake_claude):
 
 
 def test_watchdog_never_reuses(state_file, fake_claude):
-    rec.add_recommendations(SimpleNamespace(user_name="Andres", claude_overrides=None), holdings())
+    rec.add_recommendations(SimpleNamespace(user_name="Andres", llm_settings=None), holdings())
     assert fake_claude[-1] == ["AAA", "BBB", "CCC", "DDD"]
     assert set(track_record.load_records(track_record.PERSONAL_PATH)["source"]) == {"watchdog"}
 
 
 def test_missing_key_leaves_recommendations_empty(state_file, monkeypatch):
-    def missing(user):
+    def missing(user, provider="Anthropic"):
         raise api_errors.ApiKeyUnusable("Anthropic", "missing", user)
 
-    monkeypatch.setattr(rec, "resolve_anthropic_key", missing)
-    fetcher = SimpleNamespace(user_name="Andres", claude_overrides=None)
+    monkeypatch.setattr(rec, "resolve_llm_key", missing)
+    fetcher = SimpleNamespace(user_name="Andres", llm_settings=None)
     out = rec.add_recommendations(fetcher, holdings())
-    assert fetcher.claude_key_error.reason == "missing"
+    assert fetcher.llm_key_error.reason == "missing"
     assert out["recommendation"].isna().all()
 
 

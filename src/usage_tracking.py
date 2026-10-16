@@ -16,6 +16,9 @@ Finnbot. Details:
   grounding is free for the first GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH requests per key per month, so search cost
   is only counted for requests beyond that within the month (Finnbot's own requests only).
 The shared keys used for the universal content are recorded under user "_shared".
+- 2026-10-16: DeepSeek (when a job uses a DeepSeek model, src/llm_models.py): cache misses, cache hits, and output
+  (thinking included) at the price in effect at the time of the call, peak or off-peak (API_PRICES["deepseek"],
+  DEEPSEEK_PEAK_HOURS_UTC). The model recorded is the one requested, which is the one billed.
 """
 import json
 import sys
@@ -36,6 +39,7 @@ SHARED = "_shared"  # Ledger "user" for the universal content's shared keys
 MARKET_TZ = ZoneInfo("America/New_York")
 _LOCK = threading.Lock()  # Users and their news requests run in parallel threads
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_write_tokens", "cache_read_tokens", "search_queries")
+PROVIDERS = ("anthropic", "deepseek", "gemini")  # Each gets its own block in the digest's api_usage
 
 
 def _count(value: Any) -> int:
@@ -66,6 +70,27 @@ def anthropic_cost(model: Optional[str], tokens: dict, on: date) -> Optional[flo
         tokens["input_tokens"] * price["input"]
         + tokens["output_tokens"] * price["output"]
         + tokens["cache_write_tokens"] * price["input"] * params_dict["API_PRICES"]["ANTHROPIC_CACHE_WRITE_MULTIPLIER"]
+        + tokens["cache_read_tokens"] * price["cache_read"]
+    ) / 1_000_000
+
+
+def is_deepseek_peak(at: datetime) -> bool:
+    """Whether `at` falls in DeepSeek's peak hours: DEEPSEEK_PEAK_HOURS_UTC on Monday to Friday, UTC."""
+    utc = at.astimezone(timezone.utc)
+    hours = params_dict["API_PRICES"].get("DEEPSEEK_PEAK_HOURS_UTC", [])
+    return utc.weekday() < 5 and any(start <= utc.hour < end for start, end in hours)
+
+
+def deepseek_cost(model: Optional[str], tokens: dict, at: datetime) -> Optional[float]:
+    """Estimated USD for one DeepSeek call at the peak or off-peak price in effect at `at`; None if unpriced."""
+    price = _price("deepseek", model, at.astimezone(timezone.utc).date())
+    if price is None:
+        return None
+    if not is_deepseek_peak(at) and price.get("off_peak"):
+        price = {**price, **price["off_peak"]}
+    return (
+        tokens["input_tokens"] * price["input"]
+        + tokens["output_tokens"] * price["output"]
         + tokens["cache_read_tokens"] * price["cache_read"]
     ) / 1_000_000
 
@@ -112,6 +137,27 @@ def record_anthropic_response(user_name: Optional[str], source: str, response: A
                      "model": model, **tokens, "cost_usd": cost})
     except Exception as e:  # Usage tracking must never break an evaluation
         print(f"[WARNING] Could not record Claude usage: {e}")
+
+
+def record_deepseek_response(user_name: Optional[str], source: str, model: str, response: dict) -> None:
+    """Records a DeepSeek chat-completions response (its JSON): cache misses, cache hits, and output tokens."""
+    try:
+        usage = response.get("usage") or {}
+        hit = _count(usage.get("prompt_cache_hit_tokens"))
+        miss = usage.get("prompt_cache_miss_tokens")
+        miss = _count(miss) if miss is not None else max(_count(usage.get("prompt_tokens")) - hit, 0)
+        tokens = {
+            "input_tokens": miss,
+            "output_tokens": _count(usage.get("completion_tokens")),  # Reasoning tokens included
+            "cache_write_tokens": 0,
+            "cache_read_tokens": hit,
+            "search_queries": 0,
+        }
+        now = datetime.now(timezone.utc)
+        _append({"at": now.isoformat(), "user": user_name or SHARED, "source": source, "provider": "deepseek",
+                 "model": model, **tokens, "cost_usd": deepseek_cost(model, tokens, now)})
+    except Exception as e:  # Usage tracking must never break an evaluation
+        print(f"[WARNING] Could not record DeepSeek usage: {e}")
 
 
 def record_gemini_response(user_name: Optional[str], source: str, model: str, response: Any) -> None:
@@ -167,10 +213,10 @@ def _with_search_cost(records: list[dict]) -> None:
 
 def _totals(records: list[dict]) -> dict:
     out: dict[str, Any] = {}
-    for provider in ("anthropic", "gemini"):
+    for provider in PROVIDERS:
         mine = [record for record in records if record["provider"] == provider]
         totals = {"calls": len(mine), **{field: sum(_count(r.get(field)) for r in mine) for field in TOKEN_FIELDS}}
-        if provider == "anthropic":
+        if provider != "gemini":  # Only Gemini calls run Google searches
             totals.pop("search_queries")
         cost = sum((r.get("cost_usd") or 0.0) + r.get("search_cost_usd", 0.0) for r in mine)
         totals["cost_usd"] = round(cost, 4)
@@ -178,7 +224,7 @@ def _totals(records: list[dict]) -> dict:
         if unpriced:
             totals["unpriced_models"] = unpriced  # No price in API_PRICES: their tokens are counted but not costed
         out[provider] = totals
-    out["total_cost_usd"] = round(out["anthropic"]["cost_usd"] + out["gemini"]["cost_usd"], 4)
+    out["total_cost_usd"] = round(sum(out[provider]["cost_usd"] for provider in PROVIDERS), 4)
     return out
 
 

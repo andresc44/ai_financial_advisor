@@ -64,14 +64,54 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 | `watchdog_interval_hours` | `ANDRES_WATCHDOG_INTERVAL_HOURS=4` | `0` (off) to `168` |
 | `watchdog_session` | `ANDRES_WATCHDOG_SESSION=extended` | `regular`, `extended`, `24_7` |
 | `watchdog_tripwire` | `ANDRES_WATCHDOG_TRIPWIRE=true` | `true` / `false` (also `yes`/`no`, `1`/`0`) |
-| `holdings_claude_model` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-sonnet-5-5` | any key of `ALLOWED_CLAUDE_MODELS` |
-| `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_EFFORT=high` | `low` `medium` `high` `xhigh` `max`, if the model supports it |
-| `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic API key (required) |
-| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the digest's per-holding news (required for news) |
+| `holdings_llm_model` | `ANDRES_HOLDINGS_LLM_MODEL=deepseek-flash` | any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS` (default `LLM["HOLDINGS"]`) |
+| `holdings_llm_effort` | `ANDRES_HOLDINGS_LLM_EFFORT=none` | Claude: `low` `medium` `high` `xhigh` `max`; DeepSeek: `none` (no thinking) `low` `high` `max` |
+| `holdings_claude_model` / `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-sonnet-5-5` | older names, still read when the `LLM` ones above are unset |
+| `receive_holding_news` | `ANDRES_RECEIVE_HOLDING_NEWS=True` | `True` / `False` (default `True`): Gemini news bullets for each holding |
+| `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic key (required when their model is Claude) |
+| `deepseek_api_key` | `ANDRES_DEEPSEEK_API_KEY=sk-...` | the user's own DeepSeek key (required when their model is DeepSeek) |
+| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news and the portfolio review |
 
-If the chosen model doesn't support the effort, the user's effort is ignored and the global `CLAUDE_CONFIG.effort` is used. If the model doesn't support that either, effort becomes `high`, which every allowed model supports. The model and effort apply wherever holdings are evaluated: watchdog runs and the digest.
+If the model doesn't accept the effort, the effort falls back to `LLM["HOLDINGS"]`'s effort when that's the same model, and otherwise to the provider's default (`CLAUDE_CONFIG` / `DEEPSEEK_CONFIG` `"effort"`). The model and effort apply wherever holdings are evaluated: watchdog runs and the digest.
 
-The API keys are the only settings with no default: they never fall back to the shared `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` used for the universal content. If a user's Anthropic key is unset, their holdings get no recommendation; if their Gemini key is unset, their holding cards get no news bullets. Either way an `[ERROR]` line is printed and other users are unaffected.
+The API keys are the only settings with no default: they never fall back to the shared `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` used for the universal content. If a user's LLM key is unset, their holdings get no recommendation; if their Gemini key is unset, their holding cards get no news bullets. Either way an `[ERROR]` line is printed and other users are unaffected.
+
+#### Choosing the LLM: Claude or DeepSeek (added 2026-10-16)
+
+Every job that took a Claude model can take a DeepSeek model instead. `src/llm_models.py` picks the provider from the model name, and `src/deepseek_client.py` makes the DeepSeek calls.
+
+| Job | Set in | Key |
+|---|---|---|
+| New-stock scoring (~37 calls a run) | `LLM["UNIVERSAL"]` in `parameters.py` | shared `ANTHROPIC_API_KEY` or `DEEPSEEK_API_KEY` |
+| Holdings evaluation (watchdog and digest) | `LLM["HOLDINGS"]`, overridden per user by `<NAME>_HOLDINGS_LLM_MODEL` / `_EFFORT` | the user's own `<NAME>_ANTHROPIC_API_KEY` or `<NAME>_DEEPSEEK_API_KEY` |
+
+**DeepSeek models** (checked 2026-10-16):
+- **`deepseek-flash`** (V4.1-Flash): cheap and fast.
+- **`deepseek-v4-pro`**: the stronger tier.
+
+DeepSeek retired R1 and V3. Their difference is now the effort setting on either model: `none` turns thinking off (like V3 / `deepseek-chat`), and `low` / `high` / `max` turn it on (like R1 / `deepseek-reasoner`).
+
+**What stays the same:**
+- DeepSeek calls use the same tool schema and validation as Claude's.
+- They retry rate limits and outages the same way, and stop at the first key error (wrong key, empty balance).
+- The pre-run key check is free: it reads the account balance.
+
+**Costs:**
+- **Pricing:** DeepSeek prices are in `API_PRICES["deepseek"]`. Off-peak calls cost half; peak is `DEEPSEEK_PEAK_HOURS_UTC`, weekdays, and the digest and the watchdog run off-peak.
+- **In the digest:** each payload's `api_usage` has a `deepseek` block.
+- **In the track record:** it keeps the model behind each pick, so Claude and DeepSeek can be compared.
+
+Estimated per run of ~37 candidates, from the 2026-10-16 run's token counts:
+
+| Model | Per run |
+|---|---|
+| `claude-sonnet-5-5` | ~$1.23 |
+| `deepseek-v4-pro` | ~$0.38 |
+| `deepseek-flash` (`none`) | ~$0.09 |
+
+Thinking adds output tokens.
+
+**Privacy:** with a DeepSeek model, the prompts go to DeepSeek's servers. For holdings, that includes the user's positions.
 
 #### When holdings can't be read (`PortfolioFetcher.holdings_issues`)
 
@@ -308,7 +348,7 @@ These are estimates from token counts and list prices. They can't see credits, d
 - **Sheets timestamp.** The Sheets source records `data_as_of` as naive local time. The price age is clipped at 0 rather than corrected.
 - **Session windows** must stay within one market-local day. The default offsets do.
 - **Digest recording.** Evaluations from the digest are recorded automatically through `add_recommendations`, but `src/digest/digest_payload.py` itself still needs its own fixes before it can run.
-- **New-stock scoring.** `src/universal/recommendations/LLM_recommendation.py` doesn't use per-user models; it's shared across users and uses `CLAUDE_CONFIG`. Like the holdings evaluator, it sends a strict tool schema with `tool_choice: auto` and refusal fallbacks, so `CLAUDE_CONFIG.model` must be one of `ALLOWED_CLAUDE_MODELS`.
+- **New-stock scoring.** `src/universal/recommendations/LLM_recommendation.py` doesn't use per-user models; it's shared across users and uses `LLM["UNIVERSAL"]` (Claude or DeepSeek). On Claude it sends a strict tool schema with `tool_choice: auto` and refusal fallbacks, like the holdings evaluator.
 
 ## Authorship
 

@@ -266,8 +266,33 @@ params_dict = {
         "MACRO_NEWS": "gemini-3.6-flash",        # Top macro stories in the universal content (src/universal/market_news.py)
     },
 
+    # Claude-authored (2026-10-16): which LLM does each job. "model" is any key of ALLOWED_CLAUDE_MODELS (Anthropic) or
+    # ALLOWED_DEEPSEEK_MODELS (DeepSeek); the provider follows from it (src/llm_models.py). "effort" must be one the
+    # model accepts:
+    #   Claude:   low | medium | high | xhigh | max
+    #   DeepSeek: none (non-thinking, like the old V3 / deepseek-chat) | low | high | max (thinking, like the old R1 /
+    #             deepseek-reasoner). DeepSeek retired R1 and V3; deepseek-flash and deepseek-v4-pro both do either.
+    # Costs follow the model automatically (API_PRICES, shown in each digest's api_usage). Per run of ~37 candidates
+    # (2026-10-16 token counts): claude-sonnet-5-5 ~$1.23, deepseek-v4-pro ~$0.38, deepseek-flash ~$0.09 (off-peak,
+    # effort "none"; thinking adds output tokens).
+    "LLM": {
+        "UNIVERSAL": {"model": "claude-sonnet-5-5", "effort": "medium"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
+        "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"},   # Default for holdings; each user's own key.
+        # A user overrides it with <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT in .env.
+    },
+    # Claude-authored (2026-10-16): DeepSeek request settings (src/deepseek_client.py). Note: prompts and the user's
+    # holdings data go to DeepSeek's servers when a DeepSeek model is chosen.
+    "DEEPSEEK_CONFIG": {
+        "base_url": "https://api.deepseek.com",
+        "effort": "none",          # Default when a DeepSeek model is chosen without an effort: non-thinking
+        "max_tokens": None,        # None = DeepSeek's default (8K without thinking, 64K with); thinking counts toward it
+        "max_concurrency": 10,     # Requests in flight at once (DeepSeek has no fixed rate limit; it slows down instead)
+        "timeout_seconds": 300,    # Thinking responses can take minutes
+    },
+
     "CLAUDE_CONFIG": {
-        "model": "claude-sonnet-5-5",
+        # Claude-authored (2026-10-16): the model moved to LLM above; "effort" here is only the default for a Claude
+        # model chosen without one
         "max_tokens": 16000,           # Caps thinking + tool output together, so leave headroom
         "effort": "medium",              # low | medium | high | xhigh | max - primary cost/latency lever
         # No temperature: sampling params are rejected by current models
@@ -383,7 +408,8 @@ params_dict = {
     # from its date. Update AS_OF and the entries when prices change; models missing here are counted but not costed.
     "API_PRICES": {
         "AS_OF": "2026-10-16",
-        "SOURCES": ["https://platform.claude.com/docs/en/about-claude/pricing", "https://ai.google.dev/gemini-api/docs/pricing"],
+        "SOURCES": ["https://platform.claude.com/docs/en/about-claude/pricing", "https://ai.google.dev/gemini-api/docs/pricing",
+                    "https://api-docs.deepseek.com/quick_start/pricing"],
         "ANTHROPIC_CACHE_WRITE_MULTIPLIER": 1.25,  # 5-minute cache writes cost 1.25x the input price
         "GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH": 5000,  # Google Search grounding, shared across Gemini 3+ models per key
         "anthropic": {
@@ -405,6 +431,20 @@ params_dict = {
                 {"from": "2027-01-01", "input": 1.50, "output": 7.50, "cached_input": 0.15, "search_per_1000": 14.0},
             ],
         },
+        # Claude-authored (2026-10-16): peak prices, with "off_peak" ones (50%) outside DEEPSEEK_PEAK_HOURS_UTC.
+        # "input" is a cache miss, "cache_read" a cache hit (DeepSeek caches repeated prompt prefixes automatically).
+        # Output includes thinking tokens. deepseek-v4-flash is the legacy name, billed as deepseek-flash.
+        "deepseek": {
+            "deepseek-flash": [{"from": "2026-10-16", "input": 0.30, "output": 1.20, "cache_read": 0.006,
+                                "off_peak": {"input": 0.15, "output": 0.60, "cache_read": 0.003}}],
+            "deepseek-v4-flash": [{"from": "2026-10-16", "input": 0.30, "output": 1.20, "cache_read": 0.006,
+                                   "off_peak": {"input": 0.15, "output": 0.60, "cache_read": 0.003}}],
+            "deepseek-v4-pro": [{"from": "2026-10-16", "input": 1.32, "output": 3.96, "cache_read": 0.044,
+                                 "off_peak": {"input": 0.66, "output": 1.98, "cache_read": 0.022}}],
+        },
+        # Peak = these UTC hours, Monday to Friday (Chinese public holidays are off-peak too, which isn't modelled, so
+        # those days are slightly overestimated). The digest (11:10 / 20:10 UTC) and the watchdog run off-peak.
+        "DEEPSEEK_PEAK_HOURS_UTC": [[1, 4], [6, 10]],
     },
 
     # Claude-authored (2026-10-15): failure alerts and run logs (src/telegram_alert/notices.py, src/run_logging.py)
@@ -443,7 +483,7 @@ params_dict = {
         "ALERT_RECOMMENDATIONS": ["urgent_sell"],  # Recommendations that trigger a Telegram alert
         "ALERT_COOLDOWN_HOURS": 24,              # Suppress a repeat alert for the same (user, symbol, recommendation)
         "ALERT_LOG_RETENTION_DAYS": 30,          # Days of alert history kept in data/alerts_sent/
-        "MAX_CLAUDE_CALLS_PER_USER_DAY": 40,     # Cap on watchdog Claude calls per user per market-local day (digest calls not counted)
+        "MAX_CLAUDE_CALLS_PER_USER_DAY": 40,     # Cap on watchdog LLM calls (Claude or DeepSeek) per user per market-local day (digest calls not counted)
         "FRESH_CONTEXT_MAX_AGE_MINUTES": 30,     # Quote + news in the cached market context older than this are re-fetched
         "CONTEXT_CACHE_RETENTION_DAYS": 7,       # Drop cached market context for symbols not refreshed within this many days
         "MAX_PARALLEL_USERS": 4,                 # Claude-authored (2026-10-15): users checked at the same time each hour
@@ -467,10 +507,9 @@ params_dict = {
     # (new-stock scoring) and src/personalized/recommendation.py (holdings). Only sent for the models listed below.
     "CLAUDE_REFUSAL_FALLBACK": True,
     "CLAUDE_FALLBACK_DEFAULT_MODELS": ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"],
-    # Models a user may select for holdings evaluation (holdings_claude_model), with the effort levels each accepts.
+    # Claude models that LLM (above) and each user's HOLDINGS_LLM_MODEL may use, with the effort levels each accepts.
     # Both evaluators send a strict tool schema with tool_choice "auto", so every model here must support strict
-    # tool use (2026-10-13: Opus 4.7, Opus 4.6, and Sonnet 4.6 removed because they don't). CLAUDE_CONFIG["model"]
-    # above should also be one of these.
+    # tool use (2026-10-13: Opus 4.7, Opus 4.6, and Sonnet 4.6 removed because they don't).
     "ALLOWED_CLAUDE_MODELS": {
         "claude-fable-5-1": ["low", "medium", "high", "xhigh", "max"],
         "claude-fable-5": ["low", "medium", "high", "xhigh", "max"],
@@ -480,5 +519,11 @@ params_dict = {
         "claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
         "claude-sonnet-5": ["low", "medium", "high", "xhigh", "max"],
         "claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
+    },
+    # Claude-authored (2026-10-16): DeepSeek models LLM and HOLDINGS_LLM_MODEL may use. "none" = non-thinking (V3-like),
+    # low / high / max = thinking (R1-like). Flash is the cheap fast tier, v4-pro the stronger one.
+    "ALLOWED_DEEPSEEK_MODELS": {
+        "deepseek-flash": ["none", "low", "high", "max"],
+        "deepseek-v4-pro": ["none", "low", "high", "max"],
     },
 }

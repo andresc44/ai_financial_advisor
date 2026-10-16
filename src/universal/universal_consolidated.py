@@ -22,7 +22,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.parameters import params_dict
-from src.personalized.api_errors import ApiKeyUnusable, shared_api_key, shared_key_issue, verify_anthropic_key
+from src import llm_models
+from src.personalized.api_errors import ApiKeyUnusable, shared_api_key, shared_key_issue, verify_llm_key
 from src.universal.recommendations.ticker_fetcher import Tickers
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 from src.universal.recommendations.scorer import select_top_candidates
@@ -80,10 +81,12 @@ def get_universal_content():
 def _get_recommendations() -> dict:
     """The scored, enriched picks and the problems found building them: {"recommendations", "universal_issues"}."""
     issues: list[dict] = []
-    # Claude-authored (2026-10-16): a missing, invalid, expired, or unpermitted shared Anthropic key is found here,
-    # for free, before the screener and market data are fetched for scoring that couldn't run
+    # Claude-authored (2026-10-16): a missing, invalid, expired, unpermitted, or (DeepSeek) unfunded shared LLM key is
+    # found here, for free, before the screener and market data are fetched for scoring that couldn't run
+    # 2026-10-16: the shared key of whichever provider LLM["UNIVERSAL"] uses (ANTHROPIC_API_KEY or DEEPSEEK_API_KEY)
+    provider = llm_models.job_settings("UNIVERSAL")["provider"]
     try:
-        verify_anthropic_key(shared_api_key("Anthropic"), None)
+        verify_llm_key(provider, shared_api_key(provider), None)
     except ApiKeyUnusable as e:
         return _without_recommendations([shared_key_issue(e)])
 

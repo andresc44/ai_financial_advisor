@@ -244,7 +244,8 @@ def test_generated_profiles_keep_the_existing_env_names():
     profile = build_profile("Andres")
     assert profile["account_company"] == "ANDRES_INSTITUTION" and profile["google_sheets_id"] == "ANDRES_SHEETS_ID"
     assert profile["Receive_Premarket_Digest"] == "ANDRES_RECEIVE_PREMARKET_DIGEST"
-    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 17
+    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 21
+    assert profile["deepseek_api_key"] == "ANDRES_DEEPSEEK_API_KEY" and profile["holdings_llm_model"] == "ANDRES_HOLDINGS_LLM_MODEL"
     assert env_prefix("Mary-Jo") == "MARY_JO"
 
 
@@ -417,3 +418,11 @@ def test_grounding_redirects_are_verified_without_metadata(monkeypatch):
         redirect + "real", redirect + "made-up-token", "https://www.reuters.com/business/invented")]
     news._verify_source_urls(items, news._grounded_urls(response))
     assert [item.source_url for item in items] == [targets[redirect + "real"], None, None]
+
+
+def test_holding_news_can_be_switched_off(personal_env, monkeypatch):
+    monkeypatch.setitem(pc.USER_PROFILES["TestUser"], "receive_holding_news", "TESTUSER_NEWS")
+    monkeypatch.setenv("TESTUSER_NEWS", "False")
+    monkeypatch.setattr(pc, "fetch_symbol_news", lambda *args, **kwargs: pytest.fail("news fetched while switched off"))
+    content = pc.get_personal_content("TestUser")
+    assert content["holdings"] and all(h["news_bullets"] == [] for h in content["holdings"])

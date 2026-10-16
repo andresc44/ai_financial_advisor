@@ -38,23 +38,24 @@ def watchdog_env(monkeypatch):
             self.holdings_issues = list(behaviour["issues"])
             self.full_data = pd.DataFrame() if behaviour["empty"] else pd.DataFrame(
                 {"symbol": ["AAA", "BBB", "CCC"], "current_price": [10.0, 20.0, 30.0], "natr": [2.0] * 3})
-            self.claude_key_error = None
+            self.llm_key_error = None
+            self.llm_settings = {"provider": "Anthropic", "model": "claude-sonnet-5-5", "effort": "medium"}
 
         def add_session_prices(self, df, phase):
             return df
 
         def get_holdings_digest_payload(self, desired_columns=None, symbols=None):
             behaviour["payload_calls"] += 1
-            self.claude_key_error = behaviour["key_error"]
+            self.llm_key_error = behaviour["key_error"]
             return {"holdings": [{"symbol": s, "recommendation": "hold" if s in behaviour["evaluated"] else None} for s in symbols]}
 
-    def resolve(user):
+    def resolve(user, provider):
         if behaviour["resolve_error"]:
             raise behaviour["resolve_error"]
         return "k"
 
     monkeypatch.setattr(wd, "PortfolioFetcher", FakeFetcher)
-    monkeypatch.setattr(wd, "resolve_anthropic_key", resolve)
+    monkeypatch.setattr(wd, "resolve_llm_key", resolve)
     return SimpleNamespace(state=state, behaviour=behaviour)
 
 

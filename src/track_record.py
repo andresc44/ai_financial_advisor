@@ -114,6 +114,7 @@ def log_universal(
                 "price": _number(price_action.get("current_price")),
                 # Claude-authored (2026-10-16): so the record can show whether sentiment and the swing levels held up
                 "sentiment": pick.get("sentiment"),
+                "model": pick.get("model"),  # So Claude and DeepSeek picks can be compared
                 "entry_price": _number(pick.get("entry_price")),
                 "stop_loss": _number(pick.get("stop_loss")),
                 "price_target": _number(pick.get("price_target")),

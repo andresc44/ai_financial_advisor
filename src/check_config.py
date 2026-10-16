@@ -25,13 +25,16 @@ if str(project_root) not in sys.path:
 
 from src.parameters import params_dict
 from src.personalized.user_profiles import PROFILE_ENV_SUFFIXES, build_profile
-from src.personalized.user_settings import get_active_users
+from src import llm_models
+from src.personalized.user_settings import get_active_users, get_llm_settings
 
 # Shared .env keys: (required, what it's for)
 SHARED_KEYS = {
     "FINNHUB_API_KEY": (True, "Finnhub, shared market data"),
     "TWELVEDATA_API_KEY": (False, "Twelve Data: only indicators not computed from Yahoo prices (TECHNICAL_INDICATOR_SOURCE)"),
-    "ANTHROPIC_API_KEY": (True, "Claude for the universal recommendations (shared)"),
+    # Claude-authored (2026-10-16): only the one LLM["UNIVERSAL"] needs is required (see run_check)
+    "ANTHROPIC_API_KEY": (True, "Claude for the universal recommendations (shared), when LLM['UNIVERSAL'] is Claude"),
+    "DEEPSEEK_API_KEY": (False, "DeepSeek for the universal recommendations (shared), when LLM['UNIVERSAL'] is DeepSeek"),
     "GMAIL_USER": (True, "Gmail account the digest is sent from"),
     "GMAIL_APP_PASSWORD": (True, "App password for that Gmail account"),
     "TELEGRAM_BOT_TOKEN": (True, "Telegram bot for alerts and notices"),
@@ -48,7 +51,8 @@ HOLDINGS_SOURCES = ("SNAPTRADE", "SHEETS", "NO_HOLDINGS")
 WITH_HOLDINGS = ("SNAPTRADE", "SHEETS")
 
 # Per-user profile keys: (when it's required, what to put there). "always", "holdings" (SNAPTRADE or SHEETS),
-# "SNAPTRADE", "SHEETS", or "optional".
+# "holdings_anthropic" / "holdings_deepseek" (holdings, and the user's model is from that provider), "SNAPTRADE",
+# "SHEETS", or "optional".
 USER_KEYS = {
     "holdings_source": ("always", "SNAPTRADE, SHEETS, or NO_HOLDINGS"),
     "destination_email": ("always", "Where the digest is sent"),
@@ -56,7 +60,8 @@ USER_KEYS = {
     "Receive_Postmarket_Digest": ("always", "True or False: send the after-close digest"),
     "account_company": ("holdings", "Brokerage name shown in the digest, e.g. Questrade"),
     "home_timezone": ("holdings", "IANA timezone, e.g. America/Toronto"),
-    "anthropic_api_key": ("holdings", "The user's own Anthropic key (holdings evaluation)"),
+    "anthropic_api_key": ("holdings_anthropic", "The user's own Anthropic key (holdings evaluation on a Claude model)"),
+    "deepseek_api_key": ("holdings_deepseek", "The user's own DeepSeek key (holdings evaluation on a DeepSeek model)"),
     "gemini_api_key": ("holdings", "The user's own Gemini key (holding news and portfolio review)"),
     "snaptrade_client_id": ("SNAPTRADE", "SnapTrade personal client ID"),
     "snaptrade_consumer_key": ("SNAPTRADE", "SnapTrade personal consumer key"),
@@ -65,8 +70,11 @@ USER_KEYS = {
     "watchdog_interval_hours": ("optional", f"Hours between watchdog checks, 0 = off (default {params_dict['WATCHDOG']['DEFAULT_INTERVAL_HOURS']})"),
     "watchdog_session": ("optional", "regular, extended, or 24_7 (default regular)"),
     "watchdog_tripwire": ("optional", "true or false: hourly price check between checks"),
-    "holdings_claude_model": ("optional", "Claude model for holdings, from ALLOWED_CLAUDE_MODELS"),
-    "holdings_claude_effort": ("optional", "low, medium, high, xhigh, or max"),
+    "holdings_llm_model": ("optional", "LLM for holdings: a model in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS (default LLM['HOLDINGS'])"),
+    "holdings_llm_effort": ("optional", "Claude: low..max; DeepSeek: none (no thinking), low, high, or max"),
+    "receive_holding_news": ("optional", "True or False: Gemini news bullets for each holding (default True)"),
+    "holdings_claude_model": ("optional", "Older name for HOLDINGS_LLM_MODEL (used when that's unset)"),
+    "holdings_claude_effort": ("optional", "Older name for HOLDINGS_LLM_EFFORT (used when that's unset)"),
 }
 
 
@@ -97,7 +105,11 @@ VALUE_CHECKS: dict[str, tuple[Callable[[str], bool], str]] = {
     ),
     "watchdog_session": (lambda v: v.lower() in params_dict["WATCHDOG"]["SESSIONS"], "regular, extended, or 24_7"),
     "watchdog_tripwire": (lambda v: v.lower() in ("true", "false", "1", "0", "yes", "no", "on", "off"), "true or false"),
-    "holdings_claude_model": (lambda v: v in params_dict["ALLOWED_CLAUDE_MODELS"], "a model in ALLOWED_CLAUDE_MODELS"),
+    "holdings_claude_model": (lambda v: v in llm_models.allowed_models(), "a model in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS"),
+    "holdings_llm_model": (lambda v: v in llm_models.allowed_models(), "a model in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS"),
+    "holdings_llm_effort": (lambda v: v.lower() in {e for efforts in llm_models.allowed_models().values() for e in efforts},
+                            "none, low, medium, high, xhigh, or max (and one the model accepts)"),
+    "receive_holding_news": (lambda v: v.lower() in ("true", "false", "1", "0", "yes", "no", "on", "off"), "true or false"),
     "holdings_claude_effort": (lambda v: v.lower() in ("low", "medium", "high", "xhigh", "max"), "low, medium, high, xhigh, or max"),
 }
 
@@ -107,11 +119,13 @@ def _env(key: str) -> Optional[str]:
     return value.strip() if value and value.strip() else None
 
 
-def _required(rule: str, source: Optional[str]) -> bool:
+def _required(rule: str, source: Optional[str], provider: Optional[str] = None) -> bool:
     if rule == "always":
         return True
     if rule == "holdings":
         return source in WITH_HOLDINGS
+    if rule in ("holdings_anthropic", "holdings_deepseek"):  # Claude-authored (2026-10-16): the key the user's model needs
+        return source in WITH_HOLDINGS and provider == (llm_models.ANTHROPIC if rule == "holdings_anthropic" else llm_models.DEEPSEEK)
     return rule == source
 
 
@@ -119,12 +133,13 @@ def check_user(user_name: str) -> list[tuple[str, str, str]]:
     """(status, .env key, note) for each of a user's keys. Status: OK, MISSING, INVALID, or unset (optional)."""
     profile = build_profile(user_name)
     source = _env(profile["holdings_source"])
+    provider = get_llm_settings(user_name)["provider"]
     rows = []
     for key, (rule, description) in USER_KEYS.items():
         env_key = profile[key]
         value = _env(env_key)
         if value is None:
-            status = "MISSING" if _required(rule, source) else "unset"
+            status = "MISSING" if _required(rule, source, provider) else "unset"
             rows.append((status, env_key, description))
             continue
         check = VALUE_CHECKS.get(key)
@@ -140,8 +155,17 @@ def run_check() -> bool:
     load_dotenv(project_root / ".env", override=True)
     ok = True
 
+    # Claude-authored (2026-10-16): which LLM each job uses, and so which shared key the universal content needs
+    universal, holdings = llm_models.job_settings("UNIVERSAL"), llm_models.job_settings("HOLDINGS")
+    print("LLM")
+    print(f"  UNIVERSAL  {universal['model']} (effort {universal['effort']}, {universal['provider']})")
+    print(f"  HOLDINGS   {holdings['model']} (effort {holdings['effort']}, {holdings['provider']}; default for users)\n")
+    needs = {"ANTHROPIC_API_KEY": universal["provider"] == llm_models.ANTHROPIC,
+             "DEEPSEEK_API_KEY": universal["provider"] == llm_models.DEEPSEEK}
+
     print("Shared keys")
     for env_key, (required, description) in SHARED_KEYS.items():
+        required = needs.get(env_key, required)
         status = "OK" if _env(env_key) else ("MISSING" if required else "unset")
         ok &= status != "MISSING"
         print(f"  {status:8} {env_key:34} {description}")
@@ -150,7 +174,8 @@ def run_check() -> bool:
     print(f"\nACTIVE_USERS: {users or 'none'}")
     for user_name in users:
         source = _env(build_profile(user_name)["holdings_source"]) or "no holdings source"
-        print(f"\n{user_name} ({source})")
+        settings = get_llm_settings(user_name)
+        print(f"\n{user_name} ({source}; holdings LLM {settings['model']}, effort {settings['effort']})")
         for status, env_key, note in check_user(user_name):
             ok &= status not in ("MISSING", "INVALID")
             print(f"  {status:8} {env_key:34} {note}")
@@ -165,9 +190,9 @@ def env_template(user_name: str) -> str:
     lines = [f"# --- {user_name} (python -m src.check_config --template {user_name}) ---"]
     for key in PROFILE_ENV_SUFFIXES:
         rule, description = USER_KEYS[key]
-        needed = {"always": "required", "holdings": "required with holdings", "optional": "optional"}.get(
-            rule, f"required for {rule}"
-        )
+        needed = {"always": "required", "holdings": "required with holdings", "optional": "optional",
+                  "holdings_anthropic": "required with holdings on a Claude model",
+                  "holdings_deepseek": "required with holdings on a DeepSeek model"}.get(rule, f"required for {rule}")
         lines.append(f"{profile[key]}=  # {needed}: {description}")
     return "\n".join(lines)
 

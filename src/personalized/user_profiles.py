@@ -33,15 +33,20 @@ PROFILE_ENV_SUFFIXES = {
     "Receive_Premarket_Digest": "RECEIVE_PREMARKET_DIGEST",    # True | False
     "Receive_Postmarket_Digest": "RECEIVE_POSTMARKET_DIGEST",  # True | False
     # Per-user watchdog + model settings (resolved by user_settings.py; unset or invalid values fall back to
-    # params_dict["WATCHDOG"] / ["CLAUDE_CONFIG"]). See docs/watchdog.md.
+    # params_dict["WATCHDOG"] / ["LLM"]["HOLDINGS"]). See docs/watchdog.md.
     "watchdog_interval_hours": "WATCHDOG_INTERVAL_HOURS",      # int hours between checks; 0 = off
     "watchdog_session": "WATCHDOG_SESSION",                    # "regular" | "extended" | "24_7"
     "watchdog_tripwire": "WATCHDOG_TRIPWIRE",                  # true/false: hourly price check between checks
-    "holdings_claude_model": "HOLDINGS_CLAUDE_MODEL",          # must be in params_dict["ALLOWED_CLAUDE_MODELS"]
-    "holdings_claude_effort": "HOLDINGS_CLAUDE_EFFORT",        # low | medium | high | xhigh | max
-    # The user's own Anthropic key (holdings evaluation) and Gemini key (digest holding news and portfolio review).
-    # Neither falls back to the shared keys.
+    # Claude-authored (2026-10-16): the LLM for this user's holdings, Claude or DeepSeek (src/llm_models.py)
+    "holdings_llm_model": "HOLDINGS_LLM_MODEL",                # a model in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS
+    "holdings_llm_effort": "HOLDINGS_LLM_EFFORT",              # Claude: low..max; DeepSeek: none (no thinking) | low | high | max
+    "holdings_claude_model": "HOLDINGS_CLAUDE_MODEL",          # Older name for HOLDINGS_LLM_MODEL, still read when that's unset
+    "holdings_claude_effort": "HOLDINGS_CLAUDE_EFFORT",        # Older name for HOLDINGS_LLM_EFFORT, still read when that's unset
+    "receive_holding_news": "RECEIVE_HOLDING_NEWS",            # True | False: Gemini news bullets for each holding (default True)
+    # The user's own Anthropic or DeepSeek key (holdings evaluation, whichever their model needs) and Gemini key
+    # (digest holding news and portfolio review). None falls back to the shared keys.
     "anthropic_api_key": "ANTHROPIC_API_KEY",
+    "deepseek_api_key": "DEEPSEEK_API_KEY",
     "gemini_api_key": "GEMINI_API_KEY",
 }
 

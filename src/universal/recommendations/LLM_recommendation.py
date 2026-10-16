@@ -13,9 +13,13 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src import llm_models
+from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, tool_call_arguments
 from src.parameters import params_dict
-from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, shared_api_key, shared_key_issue
-from src.usage_tracking import record_anthropic_response
+from src.personalized.api_errors import (
+    ApiKeyUnusable, anthropic_key_error, deepseek_key_error, shared_api_key, shared_key_issue,
+)
+from src.usage_tracking import record_anthropic_response, record_deepseek_response
 from src.universal.recommendations.LLM_rec_instr import (
     VALUATION_SCORE_DESCRIPTION,
     FINANCIAL_HEALTH_SCORE_DESCRIPTION,
@@ -154,11 +158,9 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 
 class ParallelStockEvaluator:
-    # Only used when CLAUDE_CONFIG leaves a setting out (CLAUDE_CONFIG wins). Claude-authored (2026-10-16): Sonnet 5.5
+    # Only used for settings nothing else sets (the model and effort come from params_dict["LLM"]["UNIVERSAL"])
     DEFAULT_CONFIG = {
-        "model": "claude-sonnet-5-5",
         "max_tokens": 16000,
-        "effort": "high",
         "system_prompt": SYSTEM_PROMPT,
         "max_concurrency": 15,
     }
@@ -172,15 +174,18 @@ class ParallelStockEvaluator:
         # Claude-authored (2026-10-13): CLAUDE_CONFIG supplies model settings only. Its "system_prompt" key (if
         # present) is ignored so the rubric in LLM_rec_instr.SYSTEM_PROMPT is always what Claude receives.
         # A caller can still pass a different system_prompt explicitly via `config`.
-        model_settings = {
-            key: value
-            for key, value in params_dict.get("CLAUDE_CONFIG", {}).items()
-            if key != "system_prompt"
-        }
+        # 2026-10-16: the model and effort are params_dict["LLM"]["UNIVERSAL"] (Claude or DeepSeek, src/llm_models.py);
+        # the provider's request settings (CLAUDE_CONFIG / DEEPSEEK_CONFIG) fill in the rest.
+        chosen = {**llm_models.job_settings("UNIVERSAL"), **(config or {})}
+        efforts = llm_models.allowed_models().get(chosen["model"])
+        if efforts is not None and chosen.get("effort") not in efforts:
+            chosen["effort"] = llm_models.default_effort(chosen["model"])
+        self.provider = llm_models.provider_of(chosen["model"])
+        provider_config = params_dict.get("DEEPSEEK_CONFIG" if self.provider == llm_models.DEEPSEEK else "CLAUDE_CONFIG", {})
         self.config = {
             **self.DEFAULT_CONFIG,
-            **model_settings,
-            **(config or {}),
+            **{key: value for key, value in provider_config.items() if key in ("max_tokens", "max_concurrency", "effort")},
+            **chosen,
         }
         self.tool_spec = tool_spec or EVALUATION_TOOL_SPEC
         # Claude-authored (2026-10-13): "auto" instead of forcing the tool ({"type": "tool", ...}), which returns a
@@ -190,11 +195,30 @@ class ParallelStockEvaluator:
 
         # Claude-authored (2026-10-16): the shared key, with the same failure handling as users' keys
         # (src/personalized/api_errors.py). A missing key raises ApiKeyUnusable, which is a ValueError as before.
-        api_key = shared_api_key("Anthropic")
+        api_key = shared_api_key(self.provider)  # ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
         self.key_error: Optional[ApiKeyUnusable] = None  # First key failure; later tickers are skipped
 
-        self.client = AsyncAnthropic(api_key=api_key)
+        self.deepseek = DeepSeekClient(api_key=api_key) if self.provider == llm_models.DEEPSEEK else None
+        self.client = AsyncAnthropic(api_key=api_key) if self.deepseek is None else None
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
+
+    async def _evaluate_with_deepseek(self, symbol: str, user_prompt: str) -> Optional[StockEvaluationBreakdown]:
+        """Claude-authored (2026-10-16): one candidate scored on DeepSeek, with the same tool schema and validation."""
+        request = build_request(
+            self.config["model"], self.config["effort"], self.config["system_prompt"], user_prompt, self.tool_spec
+        )
+        response = await self.deepseek.chat(request)
+        record_deepseek_response(None, "universal", self.config["model"], response)
+        result = tool_call_arguments(response, self.tool_spec["name"])
+        if result.arguments is None:
+            logger.error(f"[{symbol}] Not scored: {result.problem}.")
+            return None
+        breakdown = StockEvaluationBreakdown(**result.arguments)
+        logger.info(
+            f"[{symbol}] Evaluated -> swingScore: {breakdown.swing.total_score:.1f}, "
+            f"longScore: {breakdown.long_term.total_score:.1f}"
+        )
+        return breakdown
 
     async def _evaluate_single_ticker(
         self, symbol: str, sanitized_payload: Dict[str, Any]
@@ -208,6 +232,8 @@ class ParallelStockEvaluator:
             user_prompt = format_user_prompt(symbol, sanitized_prompt_data)
 
             try:
+                if self.deepseek is not None:
+                    return await self._evaluate_with_deepseek(symbol, user_prompt)
                 request = {
                     "model": self.config["model"],
                     "max_tokens": self.config["max_tokens"],
@@ -265,10 +291,10 @@ class ParallelStockEvaluator:
                 # Claude-authored (2026-10-13): score ranges are no longer in the API schema (strict mode
                 # rejects them), so an out-of-range score is caught here and the ticker is skipped.
                 logger.error(f"[{symbol}] Sub-scores failed validation (e.g. outside rubric range): {e}")
-            except APIError as e:
-                key_error = anthropic_key_error(e, None)
+            except (APIError, DeepSeekError) as e:
+                key_error = (deepseek_key_error if isinstance(e, DeepSeekError) else anthropic_key_error)(e, None)
                 if key_error is None:
-                    logger.error(f"[{symbol}] Anthropic API Error: {e.message}")
+                    logger.error(f"[{symbol}] {self.provider} API Error: {e.message}")
                 elif self.key_error is None:
                     self.key_error = key_error
                     logger.error(f"[{symbol}] {key_error}")
@@ -284,7 +310,8 @@ class ParallelStockEvaluator:
     ) -> Dict[str, Dict[str, Any]]:
         symbols = list(sanitized_inputs.keys())
         logger.info(
-            f"Starting parallel evaluation for {len(symbols)} candidate payloads..."
+            f"Starting parallel evaluation for {len(symbols)} candidate payloads "
+            f"({self.config['model']}, effort={self.config['effort']})..."
         )
 
         tasks = [
@@ -295,6 +322,8 @@ class ParallelStockEvaluator:
         results: List[Optional[StockEvaluationBreakdown]] = await asyncio.gather(
             *tasks
         )
+        if self.deepseek is not None:
+            await self.deepseek.aclose()
         evaluations: Dict[str, Dict[str, Any]] = {}
 
         for symbol, result in zip(symbols, results):
@@ -305,6 +334,7 @@ class ParallelStockEvaluator:
                 "swingScore": result.swing.total_score,
                 "longScore": result.long_term.total_score,
                 "sub_scores": result.model_dump(),
+                "model": self.config["model"],  # Claude-authored (2026-10-16): which LLM scored it (track record)
             }
 
         logger.info(

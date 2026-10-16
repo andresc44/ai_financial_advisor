@@ -22,11 +22,11 @@ from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 
 # --------------------------------------------------------------------------------------------- shared Anthropic key
 def test_bad_shared_key_skips_data_fetch_and_alerts(monkeypatch, telegram):
-    def rejected(api_key, user_name):
+    def rejected(provider, api_key, user_name):
         raise ApiKeyUnusable("Anthropic", "no_credits", None, "Your credit balance is too low.")
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-shared")
-    monkeypatch.setattr(universal, "verify_anthropic_key", rejected)
+    monkeypatch.setattr(universal, "verify_llm_key", rejected)
     monkeypatch.setattr(universal, "Tickers", lambda: pytest.fail("screener fetched despite an unusable key"))
     content = universal.get_universal_content()
     assert content["recommendations"]["top_long_term"] == [] and content["recommendations"]["top_swing"] == []
@@ -37,7 +37,7 @@ def test_bad_shared_key_skips_data_fetch_and_alerts(monkeypatch, telegram):
 
 def test_missing_finnhub_key_no_longer_aborts_every_digest(monkeypatch, telegram):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-shared")
-    monkeypatch.setattr(universal, "verify_anthropic_key", lambda api_key, user_name: None)
+    monkeypatch.setattr(universal, "verify_llm_key", lambda provider, api_key, user_name: None)
     monkeypatch.setattr(universal, "Tickers", lambda: SimpleNamespace(fetch_ticker_data=lambda **kwargs: None))
 
     def no_finnhub():

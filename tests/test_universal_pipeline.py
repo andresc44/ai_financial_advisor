@@ -238,7 +238,7 @@ def test_breadth_uses_enough_history_and_fred_errors_hide_the_key(monkeypatch):
 
 
 def test_macro_content_is_included_even_without_picks(monkeypatch, telegram):
-    def rejected(api_key, user_name):
+    def rejected(provider, api_key, user_name):
         raise ApiKeyUnusable("Anthropic", "invalid", None, "invalid x-api-key")
 
     stories = market_news.DigestPayload(macro_stories=[market_news.MacroStory(
@@ -246,7 +246,7 @@ def test_macro_content_is_included_even_without_picks(monkeypatch, telegram):
     news_issue = {"source": "Gemini (macro news)", "reason": "failed", "message": "x"}
     dashboard_issue = {"source": "Market dashboard: fear_and_greed", "reason": "failed", "message": "403"}
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-shared")
-    monkeypatch.setattr(universal, "verify_anthropic_key", rejected)
+    monkeypatch.setattr(universal, "verify_llm_key", rejected)
     monkeypatch.setattr(universal, "get_macro_stories", lambda: (stories, [news_issue]))
     monkeypatch.setattr(universal, "get_market_dashboard", lambda: ({"sp500_breadth": {"% > 50MA": "61%"}}, [dashboard_issue]))
 

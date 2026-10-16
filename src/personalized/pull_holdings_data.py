@@ -26,7 +26,7 @@ from src.parameters import params_dict
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import add_metrics_to_holdings
 from src.personalized.recommendation import add_recommendations
-from src.personalized.user_settings import get_claude_overrides
+from src.personalized.user_settings import get_llm_settings
 from src.personalized.digest_fields import add_digest_fields, portfolio_beta
 from src.market_session import exchange_calendar_code, latest_regular_session
 from src.fx_rates import normalize_currency, usd_rates
@@ -77,8 +77,9 @@ class PortfolioFetcher:
         # Claude-authored (2026-10-13): remember who this is for, and their holdings-evaluation model/effort.
         # add_recommendations reads both via `self` (it is bound as a method of this class).
         self.user_name = user_name
-        self.claude_overrides = get_claude_overrides(user_name)
-        self.claude_key_error = None  # Set by add_recommendations when the user's Anthropic key can't be used
+        # 2026-10-16: Claude or DeepSeek, and the key error for whichever provider that is (formerly claude_*)
+        self.llm_settings = get_llm_settings(user_name)
+        self.llm_key_error = None  # Set by add_recommendations when the user's LLM key can't be used
         # Claude-authored (2026-10-15): problems reading the holdings source, as {"source", "reason", "message"}.
         # Without them a disabled brokerage connection or unreadable sheet looks the same as an empty portfolio.
         self.holdings_issues: list[dict] = []
@@ -908,7 +909,7 @@ class PortfolioFetcher:
             "holdings": filtered_df.to_dict(orient="records"),
             "portfolio_beta": portfolio_beta(holdings_for_digest),
             # Claude-authored (2026-10-15): why recommendations are missing, e.g. an expired or out-of-credit key
-            "api_key_issues": [self.claude_key_error.as_notice()] if self.claude_key_error else [],
+            "api_key_issues": [self.llm_key_error.as_notice()] if self.llm_key_error else [],
         }
         
         
