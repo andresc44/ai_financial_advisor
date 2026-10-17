@@ -64,6 +64,13 @@ NOT_EVALUATED = ("Not evaluated", "#475569", "#F1F5F9", "#CBD5E1", 4)
 SENTIMENTS = {"Bullish": ("#166534", "#DCFCE7"), "Bearish": ("#991B1B", "#FEE2E2"), "Neutral": ("#475569", "#F1F5F9")}
 PRIORITY_DOTS = {"HIGH": "#DC2626", "MEDIUM": "#F59E0B", "LOW": "#94A3B8"}
 CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£"}
+# Claude-authored (2026-10-17): the currency of the holdings' money amounts (market value, daily and unrealized
+# P/L, cost): pull_holdings_data converts them to USD (USD_MONEY_COLUMNS). Per-share prices stay in each holding's
+# listing currency, its `currency` field. Picks and market prices carry no currency, so USD is assumed for them
+# (DEFAULT_CURRENCY) and build_view notes it in the run log.
+MONEY_CURRENCY = "USD"
+DEFAULT_CURRENCY = "USD"
+ETF_TICKERS = ("SPY", "QQQ", "DIA", "IWM")  # Market rows priced in USD (the others are index levels or rates)
 ANALYST_RATINGS = {
     "strong_buy": "Strong buy", "buy": "Buy", "hold": "Hold",
     "underperform": "Underperform", "sell": "Sell", "strong_sell": "Strong sell",
@@ -312,15 +319,16 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     shares = sum(_num(lot.get("shares")) or 0.0 for lot in lots)
     gain, gain_pct = _unrealized(lots)
     accounts = sorted({lot["account_name"] for lot in lots if _text(lot.get("account_name"))})
-    currency = _text(first.get("currency")) or "USD"
+    listed_currency = _text(first.get("currency"))
+    currency = listed_currency or DEFAULT_CURRENCY
     daily_pct = _num(first.get("daily_pnl_pct"))
     weight = _num(first.get("portfolio_weight_pct"))
     rsi = _num(first.get("rsi"))
 
     stats = [
-        _stat("Price", _money(first.get("current_price"), symbol=CURRENCY_SYMBOLS.get(currency, f"{currency} ")),
+        _stat(f"Price · {currency}", _money(first.get("current_price"), symbol=CURRENCY_SYMBOLS.get(currency, f"{currency} ")),
               sub=f"{_signed_pct(daily_pct, 2)} {day}" if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
-        _stat("Unrealized", _signed_money(gain), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
+        _stat(f"Unrealized · {MONEY_CURRENCY}", _signed_money(gain), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
         _stat("RSI 14", _fixed(rsi, 0),
               sub="Overbought" if rsi is not None and rsi >= 70 else "Oversold" if rsi is not None and rsi <= 30
               else "Neutral" if rsi is not None else "",
@@ -388,6 +396,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         "news": news,
         "links": _quote_links(symbol),
         "currency": currency,
+        "currency_assumed": listed_currency is None,
         "chart": None,  # Set by build_view
         # Claude-authored (2026-10-17): the row's id in the AMP version, so the overview's chips can open it
         "anchor": "h-" + re.sub(r"[^a-z0-9]", "-", symbol.lower()),
@@ -408,6 +417,7 @@ def _holdings_note(cards: list[dict], holdings: list[dict], day: str) -> str:
     """The line atop the open holdings section, which also dates the price changes on the cards."""
     note = "Most urgent signal first"
     session = _session_date(holdings)
+    note += f" · Values in {MONEY_CURRENCY}"
     return f"{note} · {day.capitalize()} = the {session} session" if session else note
 
 
@@ -455,7 +465,7 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
     )
     daily_pct = _num(totals["daily_pnl_pct"])
     return {
-        "label": "Your portfolio" + (" · in USD" if len(totals["currencies"]) > 1 else ""),
+        "label": f"Your portfolio · {MONEY_CURRENCY}",
         "value": _money(totals["total_market_value"]),
         # e.g. "▼ $17.29 · 0.20%" in a red pill
         "change": (f"{'▲' if daily_pnl >= 0 else '▼'} {_money(abs(daily_pnl))}"
@@ -601,6 +611,8 @@ def _market(market_data: Any, day: str) -> Optional[dict]:
             last = f"${latest:.2f}"
         else:
             last = f"{latest:,.0f}" if latest >= 10_000 else f"{latest:,.2f}"
+            if ticker in ETF_TICKERS:  # An ETF's share price (assumed USD: the dashboard carries no currency)
+                last = f"{CURRENCY_SYMBOLS[DEFAULT_CURRENCY]}{latest:,.2f}"
         rows.append({"name": short, "ticker": ticker, "last": last,
                      "d1": _change(metric.get("1D %")), "d5": _change(metric.get("5D %")),
                      "m1": _change(metric.get("1M %"))})
@@ -625,7 +637,8 @@ def _market(market_data: Any, day: str) -> Optional[dict]:
     if not rows and not chips:
         return None
     # Claude-authored (2026-10-17): the four tiles shown first when the section opens; the rest are one tap away
-    key = [_stat(row["name"], row["last"], sub=f"{row['d1']['text']} {day}", sub_tone=row["d1"]["tone"])
+    key = [_stat(f"{row['name']} · {row['ticker']}" if row["ticker"] in ETF_TICKERS else row["name"], row["last"],
+                 sub=f"{row['d1']['text']} {day}", sub_tone=row["d1"]["tone"])
            for row in rows if row["name"] in KEY_MARKETS]
     return {"rows": rows, "chips": chips, "key": key}
 
@@ -773,6 +786,7 @@ def _long_term_card(pick: dict, today: Optional[date]) -> dict:
 def _usage(api_usage: Any) -> list[tuple[str, str]]:
     if not isinstance(api_usage, dict):
         return []
+    code = _text(api_usage.get("currency")) or DEFAULT_CURRENCY
     rows = []
     for key, label in (("this_digest", "This digest"), ("today", "Today"), ("month_to_date", "Month to date")):
         block = api_usage.get(key) or {}
@@ -784,7 +798,7 @@ def _usage(api_usage: Any) -> list[tuple[str, str]]:
             for name, label in (("anthropic", "Anthropic"), ("deepseek", "DeepSeek"), ("gemini", "Gemini"))
             if isinstance(block.get(name), dict) and (_num(block[name].get("cost_usd")) or 0) > 0
         ]
-        rows.append((label, _money(total) + (f" ({' · '.join(providers)})" if providers else "")))
+        rows.append((label, f"{_money(total)} {code}" + (f" ({' · '.join(providers)})" if providers else "")))
     return rows
 
 
@@ -792,7 +806,7 @@ def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market:
     """The inbox preview line under the subject."""
     parts = []
     if portfolio:
-        parts.append(f"Portfolio {portfolio['value']} ({portfolio['change_pct']} {day})")
+        parts.append(f"Portfolio {portfolio['value']} {MONEY_CURRENCY} ({portfolio['change_pct']} {day})")
     flagged = Counter(card["signal"]["text"] for card in cards if card["signal_key"] in ("urgent_sell", "risk_alert", "trim"))
     parts += [f"{count} {label.lower()}{'s' if count > 1 and label != 'Trim' else ''}" for label, count in flagged.items()]
     parts.append(f"{ideas} new idea{'s' if ideas != 1 else ''}")
@@ -837,6 +851,20 @@ def build_view(payload: dict) -> dict:
         card["chart"] = _chart(card["symbol"], version) if card["currency"] == "USD" else None
     for card in swing + long_term:
         card["chart"] = _chart(card["ticker"], version) if card["ticker"] else None
+    # Claude-authored (2026-10-17): currencies the payload doesn't give are assumed USD, and listed for the run log
+    picks = (recommendations.get("top_swing") or []) + (recommendations.get("top_long_term") or [])
+    pick_currencies = {str(pick["currency"]) for pick in picks if _text(pick.get("currency"))}
+    ideas_currency = pick_currencies.pop() if len(pick_currencies) == 1 else DEFAULT_CURRENCY
+    currency_notes = []
+    if [card["symbol"] for card in cards if card["currency_assumed"]]:
+        currency_notes.append("holdings without a currency, shown as USD: "
+                              + ", ".join(card["symbol"] for card in cards if card["currency_assumed"]))
+    if picks and not all(_text(pick.get("currency")) for pick in picks):
+        currency_notes.append("swing and long-term picks have no currency; their prices are shown as USD")
+    if market and market["rows"]:
+        currency_notes.append("the market dashboard has no currency; ETF and oil prices are shown as USD")
+    if isinstance(payload.get("api_usage"), dict) and not _text(payload["api_usage"].get("currency")):
+        currency_notes.append("API usage has no currency; costs are shown as USD")
 
     return {
         "subject": str(payload.get("subject") or "Finnbot Digest"),
@@ -877,6 +905,8 @@ def build_view(payload: dict) -> dict:
         # fit_for_gmail, before anything else, when the digest would pass Gmail's clipping limit
         "glossary": [{"category": category, "terms": terms} for category, terms in GLOSSARY],
         "glossary_summary": [_part("Terms, abbreviations, and indicators explained")],
+        "ideas_currency": ideas_currency,
+        "currency_notes": currency_notes,
         # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
         "open_sections": set(params_dict["DIGEST"].get("OPEN_SECTIONS") or ()),
     }
@@ -988,7 +1018,7 @@ def render_text(view: dict) -> str:
         lines.append(f"! {issue['title']}: {issue['message']}")
     portfolio, risk, account = view["portfolio"], view["risk"], view["account"]
     if portfolio:
-        lines += [f"PORTFOLIO {portfolio['value']}  {portfolio['change']} ({portfolio['session']})"]
+        lines += [f"PORTFOLIO ({MONEY_CURRENCY}) {portfolio['value']}  {portfolio['change']} ({portfolio['session']})"]
         lines += [f"  {s['label']}: {s['value']} {s['sub']}".rstrip() for s in portfolio["stats"]]
     if risk:
         lines += ["", "PORTFOLIO RISK"]
@@ -1071,6 +1101,8 @@ def html_main(payload: dict, here: Path = Path(__file__).resolve().parent) -> Re
     text = render_text(view)  # Before fit_for_gmail, so the plain-text version keeps everything
     html = fit_for_gmail(view, template_dir=here)
     verify_output(html, view)
+    for note in view["currency_notes"]:
+        print(f"[NOTE] {payload.get('user_name')}'s digest: {note} (not in the payload).")
     path = report_path(payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")

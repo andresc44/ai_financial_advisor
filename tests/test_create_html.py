@@ -248,7 +248,7 @@ def test_a_portfolio_too_big_for_gmail_still_renders_and_warns(capsys):
 
 def test_plain_text_version_covers_every_section():
     text = ch.render_text(ch.build_view(payload()))
-    for expected in ("Good morning, Test.", "PORTFOLIO $4,000.00", "PORTFOLIO RISK", "CONNECTED ACCOUNT Questrade",
+    for expected in ("Good morning, Test.", "PORTFOLIO (USD) $4,000.00", "PORTFOLIO RISK", "CONNECTED ACCOUNT Questrade",
                      "MARKETS", "The central bank held rates.", "CCC - Urgent sell", "SWING IDEAS", "SWA (score 85)",
                      "LONG-TERM IDEAS", "LTA (score 91)"):
         assert expected in text, expected
@@ -417,7 +417,7 @@ def test_review_notes_and_stories_are_rows_with_titles():
         assert html.index("</summary>", summary_start) > html.index(title)  # The title is the row's header
     # Markets opens on its key tiles; the full table is one tap away
     assert ">All indicators<" in html and ">Why it matters<" in html
-    assert [tile["label"] for tile in view["market"]["key"]] == ["S&P 500", "10Y Yield"]  # The key ones it has
+    assert [tile["label"] for tile in view["market"]["key"]] == ["S&P 500 · SPY", "10Y Yield"]  # The key ones it has
 
 
 def test_send_html_email_needs_gmail_credentials(monkeypatch):
@@ -479,3 +479,29 @@ def test_the_glossary_is_static_and_left_out_first():
     assert html.index(">Glossary<") > html.index(">Long-term ideas ")  # At the very bottom
     assert "<b>RSI 14</b><br>Relative Strength Index" in html and "<b>Beta</b><br>" in html
     assert ch.TRIM_STEPS[0].__name__ == "_drop_glossary"  # The least important content goes first
+
+
+def test_currencies_come_from_the_payload_or_default_to_usd():
+    view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.TO", currency="CAD"), holding("NOC", currency=None)]))
+    cards = {card["symbol"]: card for card in view["holdings"]}
+    # A holding's Price box is in its listing currency; position values and P/L are converted to USD
+    assert (cards["AAA"]["stats"][0]["label"], cards["AAA"]["stats"][0]["value"]) == ("Price · USD", "$100.00")
+    assert (cards["XYZ.TO"]["stats"][0]["label"], cards["XYZ.TO"]["stats"][0]["value"]) == ("Price · CAD", "C$100.00")
+    assert cards["NOC"]["stats"][0]["label"] == "Price · USD" and cards["NOC"]["currency_assumed"] is True
+    assert all(card["stats"][1]["label"] == "Unrealized · USD" for card in view["holdings"])
+    assert view["portfolio"]["label"] == "Your portfolio · USD" and "Values in USD" in view["holdings_note"]
+    # Picks, the market dashboard, and (in this payload) API usage carry no currency: USD is assumed and noted
+    assert view["ideas_currency"] == "USD"
+    assert view["market"]["rows"][0]["last"] == "$700.00"  # SPY's share price
+    assert view["currency_notes"] == [
+        "holdings without a currency, shown as USD: NOC",
+        "swing and long-term picks have no currency; their prices are shown as USD",
+        "the market dashboard has no currency; ETF and oil prices are shown as USD",
+        "API usage has no currency; costs are shown as USD",
+    ]
+    assert dict(view["usage"])["This digest"].startswith("$0.30 USD")
+    # A currency the payload gives is used as given
+    priced = payload(recommendations={"top_long_term": [long_pick(currency="EUR")], "top_swing": []},
+                     api_usage={"currency": "USD", "this_digest": {"total_cost_usd": 0.3}})
+    assert ch.build_view(priced)["ideas_currency"] == "EUR"
+    assert "Prices in EUR" in ch.render_html(ch.build_view(priced), TEMPLATE_DIR)

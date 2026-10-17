@@ -440,7 +440,7 @@ u + .body .cv{display:none;}
 
 {# ---------- Swing ideas ---------- #}
 {% call section("swing", "Swing ideas", swing_summary, swing|length, empty=(not swing)) %}
-<div class="xs mu" style="padding-bottom:4px;">Short-term setups: days to a few weeks</div>
+<div class="xs mu" style="padding-bottom:4px;">Short-term setups: days to a few weeks · Prices in {{ ideas_currency }}</div>
 {% for c in swing %}
 {% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
 <div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
@@ -459,7 +459,7 @@ u + .body .cv{display:none;}
 
 {# ---------- Long-term ideas ---------- #}
 {% call section("long_term", "Long-term ideas", long_summary, long_term|length, empty=(not long_term)) %}
-<div class="xs mu" style="padding-bottom:4px;">Businesses worth owning for years</div>
+<div class="xs mu" style="padding-bottom:4px;">Businesses worth owning for years · Prices in {{ ideas_currency }}</div>
 {% for c in long_term %}
 {% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
 <div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>

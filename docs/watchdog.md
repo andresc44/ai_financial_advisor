@@ -270,6 +270,18 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 9. **Glossary** (added 2026-10-17): a collapsed card with five category rows: signals and ideas, your portfolio, technical indicators, valuation and fundamentals, and market indicators. Each row lists the terms, abbreviations and indicators the email uses, and how to read them. The text is static, in `src/digest/glossary.py`.
 10. **Footer:** "About this digest", showing what it cost and which model scored the ideas.
 
+**Currencies (added 2026-10-17).**
+
+| Amounts | Shown in | Source |
+|---|---|---|
+| Portfolio total, position values, P/L, account values | USD ("Your portfolio · USD", "Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
+| A holding's share price | Its listing currency ("Price · CAD", "C$46.94") | The holding's `currency` field |
+| Ideas: prices, trade levels, targets | "Prices in USD" | Assumed: picks carry no currency |
+| Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Assumed: the dashboard carries no currency |
+| API costs | Their `currency` | `api_usage.currency` |
+
+Wherever USD is assumed, the run log gets a `[NOTE] ... (not in the payload)` line.
+
 **"Prev. day" and "Day" labels (added 2026-10-17).** Every daily change covers one full trading session, close to close: the previous session in a Pre-Market digest, today's in a Post-Market one. To make that clear, every daily change is labelled "Prev. day" in Pre-Market digests and "Day" in Post-Market ones:
 - the overview's change pill;
 - each holding's collapsed row and its Price box;
