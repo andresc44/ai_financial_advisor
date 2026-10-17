@@ -273,7 +273,12 @@ It is built for a phone first: one column up to 600 px wide, checked at 360 and 
 
 - **Starting state:** everything starts collapsed. List any of `"risk"`, `"account"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
 - **Note titles:** Gemini's portfolio review now writes a 3–8 word title for each note. Payloads saved before 2026-10-17 use the note's first clause instead.
-- **Narrow phones:** on screens up to 420 px, the side margins, stat boxes and fonts tighten. With every dropdown open, nothing runs past the right edge at 300, 320, 360 or 390 px wide.
+- **Narrow phones:** the layout fits a small phone without any width-specific CSS, because the Gmail app may not apply it.
+  - **Figure boxes:** sets of four (a stock's figures, a trade plan, valuation) form a 2×2 grid.
+  - **Row headers:** a signal badge can wrap under its ticker.
+  - **Margins:** narrow everywhere.
+  - **Extra tightening:** on screens up to 420 px, margins and fonts tighten further where supported.
+  - **Tested:** with every dropdown open, in both versions, nothing runs past the right edge at 280–390 px wide, with or without that CSS. The test also covered six-figure values and the longest badges.
 
 Where they work:
 - **Collapse in the HTML version:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.

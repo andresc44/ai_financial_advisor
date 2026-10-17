@@ -43,13 +43,19 @@
 <div class="lb" style="color:{{ color }};padding-top:{{ top }};">{{ text }}</div>
 {%- endmacro -%}
 
+{#- Figure boxes: up to three side by side; four as a 2x2 grid, so figures like "-$1,107.47" never push the card
+    wider than a phone screen. -#}
 {%- macro stats(items) -%}
+{% set per_row = 2 if items|length == 4 else items|length %}
 <table {{ T }} style="background-color:#F5F7FA;border-radius:10px;">
+{% for line in items|batch(per_row) %}
+{% set later_row = not loop.first %}
 <tr>
-{% for s in items %}
-<td width="{{ 100 // items|length }}%" valign="top" class="st{{ '' if loop.first else ' sb' }}"><div class="sl">{{ s.label }}</div><div class="sv"{% if s.tone != "ink" %} style="color:{{ TONES[s.tone] }};"{% endif %}>{{ s.value }}</div>{% if s.sub %}<div class="ss"{% if s.sub_tone != "muted" %} style="color:{{ TONES[s.sub_tone] }};"{% endif %}>{{ s.sub }}</div>{% endif %}</td>
+{% for s in line %}
+<td width="{{ 100 // per_row }}%" valign="top" class="st{{ '' if loop.first else ' sb' }}{{ ' sh' if later_row else '' }}"><div class="sl">{{ s.label }}</div><div class="sv"{% if s.tone != "ink" %} style="color:{{ TONES[s.tone] }};"{% endif %}>{{ s.value }}</div>{% if s.sub %}<div class="ss"{% if s.sub_tone != "muted" %} style="color:{{ TONES[s.sub_tone] }};"{% endif %}>{{ s.sub }}</div>{% endif %}</td>
 {% endfor %}
 </tr>
+{% endfor %}
 </table>
 {%- endmacro -%}
 
@@ -81,9 +87,9 @@
 {%- macro section(key, title, summary="", count="") -%}
 {% set body = caller() %}
 {% set cells %}<td valign="top"><div class="h1">{{ title }}</div>{% if summary %}<div class="sm mu" style="padding-top:2px;">{{ summary }}</div>{% endif %}</td>{% if count %}<td align="right" valign="top" style="padding-left:10px;"><span class="bd" style="background-color:#E2E8F0;color:#0F2A44;font-size:12px;">{{ count }}</span></td>{% endif %}{% endset %}
-<tr><td class="gutter"{% if not amp %} style="padding:0 12px 12px 12px;"{% endif %}>
+<tr><td class="gutter"{% if not amp %} style="padding:0 10px 12px 10px;"{% endif %}>
 <table {{ T }} style="background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;">
-<tr><td class="c cp"{% if not amp %} style="padding:0 16px;"{% endif %}>
+<tr><td class="c cp"{% if not amp %} style="padding:0 14px;"{% endif %}>
 {% call fold(cells=cells, open=(key in open_sections), pad="p16", top="", big=true) %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
 </td></tr>
 </table>
@@ -100,7 +106,7 @@
 
 {#- A stock's row: ticker and badge over its name; value over a detail line on the right. -#}
 {%- macro row_header(title, badge_html, subtitle, value, detail) -%}
-<td valign="top"><span class="tk">{{ title }}</span>&nbsp; {{ badge_html }}<div class="xs mu" style="padding-top:2px;">{{ subtitle }}</div></td>
+<td valign="top"><span class="tk">{{ title }}</span> {{ badge_html }}<div class="xs mu" style="padding-top:2px;">{{ subtitle }}</div></td>
 <td valign="top" align="right" style="padding-left:8px;white-space:nowrap;"><div class="pv">{{ value }}</div><div class="xs">{{ detail }}</div></td>
 {%- endmacro -%}
 
@@ -122,9 +128,9 @@
 {%- endmacro -%}
 
 {%- macro card(vpad="16px", bg="#FFFFFF", border="#E2E8F0") -%}
-<tr><td class="gutter"{% if not amp %} style="padding:0 12px 12px 12px;"{% endif %}>
+<tr><td class="gutter"{% if not amp %} style="padding:0 10px 12px 10px;"{% endif %}>
 <table {{ T }} style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:14px;">
-<tr><td class="c cp" style="padding-top:{{ vpad }};padding-bottom:{{ vpad }};{% if not amp %}padding-left:16px;padding-right:16px;{% endif %}">
+<tr><td class="c cp" style="padding-top:{{ vpad }};padding-bottom:{{ vpad }};{% if not amp %}padding-left:14px;padding-right:14px;{% endif %}">
 {{ caller() }}
 </td></tr>
 </table>
@@ -184,7 +190,7 @@
 <style{{ " amp-custom" if amp else "" }}>
 {% if amp %}
 body{margin:0;padding:0;}
-.gutter{padding:0 12px 12px 12px;}
+.gutter{padding:0 10px 12px 10px;}
 amp-accordion .fh{margin:0;background-color:transparent;border:0;padding-right:0;}
 section[expanded]>header .a1{display:none;}
 section[expanded]>header .a2{display:inline;}
@@ -202,7 +208,8 @@ a{text-decoration:none;}
 .lb{font-size:11px;line-height:15px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
 .sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
 .st{padding:10px 7px;}
-.cp{padding-left:16px;padding-right:16px;}
+.cp{padding-left:14px;padding-right:14px;}
+.sh{border-top:1px solid #E5EAF0;}
 .sb{border-left:1px solid #E5EAF0;}
 .sv{font-size:15px;line-height:20px;font-weight:700;padding-top:3px;color:#0F2A44;}
 .ss{font-size:11px;line-height:15px;color:#64748B;}

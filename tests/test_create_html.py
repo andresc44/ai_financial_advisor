@@ -346,6 +346,19 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     assert ch.render_amp(view, TEMPLATE_DIR).count("<section expanded>") == 2
 
 
+def test_four_figure_boxes_form_a_2x2_grid():
+    # Four boxes side by side ran past a phone's right edge in the Gmail app (2026-10-17), so they wrap 2x2;
+    # up to three stay in one row
+    html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
+    row_start = html.rfind("<details>", 0, html.index(">AAA<"))
+    grid = html[html.index('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+                           'style="background-color:#F5F7FA;', row_start):]
+    grid = grid[:grid.index("</table>")]
+    assert grid.count("<tr>") == 2 and grid.count('width="50%"') == 4
+    overview = html[html.index("Your portfolio"):html.index(">Portfolio risk<")]
+    assert overview.count('width="33%"') == 3
+
+
 def test_a_stocks_chart_shows_as_soon_as_its_row_opens():
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
     assert ">Chart<" not in html  # No dropdown of its own
