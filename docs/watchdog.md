@@ -262,12 +262,17 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 
 It is built for a phone first: one column up to 600 px wide, checked at 360 and 390 px.
 
-**Dropdowns.** Long content sits in dropdowns:
-- each holding's and pick's chart;
-- each holding's reasoning and news;
-- each macro story's impact;
-- each pick's extra figures;
-- the cost of the digest.
+**Dropdowns (nested since 2026-10-17).** The email opens as a short overview, and everything else is a dropdown inside a dropdown:
+
+| Level | What's shown while collapsed | Inside |
+|---|---|---|
+| Always open | Greeting, notices, portfolio overview | – |
+| Main section | Title and a one-line summary, e.g. "Your holdings · 6 risk alerts · 4 holds" | The section's content and its rows |
+| Row (one per holding or idea) | Ticker, signal or score, value, weight and day change | Figures, catalysts, and the smaller dropdowns |
+| Detail | Chart, Reasoning, News, What to watch, Top macro stories, Why it matters, extra figures, cost | The content |
+
+- **Starting state:** everything starts collapsed. List any of `"risk"`, `"account"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
+- **Charts:** `DIGEST["CHARTS_OPEN"]` does the same for the charts.
 
 Where they work:
 - **Collapse in the HTML version:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
@@ -296,7 +301,7 @@ One-time setup (per recipient):
 
 Other limits:
 - **Expiry:** Gmail shows an AMP email's HTML version once it is 30 days old.
-- **Size:** the AMP spec allows 200 KB, about twice a typical digest.
+- **Size:** the AMP spec allows 200 KB, but Gmail doesn't document its own limit. Some guides say 100 KB, and a 90 KB digest is known to render. So the AMP version is trimmed toward 100 KB the same way as the HTML version (below), and is only left out above 200 KB.
 - **Validation:** Gmail falls back to HTML when the AMP version isn't valid. After editing the template, check the saved `src/digest/html_reports/<user>_<date>_<period>.amp.html` with Google's validator:
 
   ```bash
@@ -310,11 +315,11 @@ Other limits:
 - **Apple Mail:** keeps the light design.
 
 **Gmail's size limit.** Gmail hides everything past about 102 KB of the HTML version behind "[Message clipped]".
-- **Normal size:** a typical digest is about 85 KB.
+- **Normal size:** a typical digest is about 90 KB.
 - **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions.
 - **Never removed:** each holding's signal, figures and reasoning.
-- **Capacity:** about 25 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
-- **Untrimmed:** the plain-text and AMP versions are always complete.
+- **Capacity:** about 20 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
+- **Untrimmed:** the plain-text version is always complete.
 
 ### Fresh data in each digest
 

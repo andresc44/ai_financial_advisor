@@ -4,15 +4,19 @@
   placeholder template.
 
   Built for phones first: one fluid column up to 600px wide in table layout, which Gmail, Apple Mail and Outlook
-  all render. Every value arrives as a ready-made string, so this file is layout only. Order: header and greeting,
-  notices, portfolio overview, portfolio risk, connected account, markets and macro news, holdings, swing ideas,
-  long-term ideas, footer.
+  all render. Every value arrives as a ready-made string, so this file is layout only.
 
-  Two outputs from this one file (2026-10-17):
+  Layout (2026-10-17, nested dropdowns): the greeting, any notices, and the portfolio overview are always shown.
+  Every other main section is one card that collapses to its title and a one-line summary (DIGEST.OPEN_SECTIONS
+  picks any to start open): portfolio risk, connected account, markets and macro, holdings, swing ideas,
+  long-term ideas. Inside, each holding and idea is its own collapsed row (ticker, signal or score, value), and
+  each row holds smaller dropdowns: chart, reasoning, news, extra figures.
+
+  Two outputs from this one file:
   - HTML (`amp` false), which every mail app shows. Dropdowns are <details>/<summary> (the `fold` macro): Apple Mail
     and Samsung Email collapse them, while Outlook strips the tags and Gmail swaps them for <u>, so both show the
-    content expanded under its label (the `u` rule removes the underline Gmail would draw under all of it; spacing
-    sits on the wrapping <div>, since the bare <u> tags carry no styles).
+    content expanded (the `u` rule removes the underline Gmail would draw under all of it, and `u + .body` hides
+    the arrows there, since nothing can be collapsed).
   - AMP for Email (`amp` true), which only Gmail renders, and only for senders the recipient allowed in Gmail's
     settings. Its dropdowns are amp-accordion, so they work in the Gmail app. AMP allows no <img>, conditional
     comments, !important, or Outlook-only CSS, so those are left out of it; check changes with Google's validator
@@ -20,13 +24,16 @@
 
   Size: Gmail clips an email after ~102 KB of HTML ("[Message clipped]"), so typography lives in the short classes
   of the <style> block instead of being repeated inline hundreds of times. Colours, backgrounds and spacing stay
-  inline, so the HTML version still reads if a client drops the <style> block.
+  inline, so the HTML version still reads if a client drops the <style> block. The <details> rules sit in a second
+  <style> block, so a client that rejects them can't take the main block down with them.
 
   Dark mode: the Gmail app recolours emails itself and ignores prefers-color-scheme, so every block is a light
   background with dark text, which it converts cleanly. Dark backgrounds with white text are avoided: the Gmail
   iOS app turns white text dark.
 -#}
 {%- set IMP = "" if amp else "!important" -%}
+{#- Table attributes: AMP drops the ones only Outlook needs (its CSS sets the same), saving ~7 KB. -#}
+{%- set T %}{% if amp %}width="100%"{% else %}role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"{% endif %}{% endset -%}
 
 {%- macro badge(b) -%}
 <span class="bd" style="background-color:{{ b.bg }};color:{{ b.fg }};">{{ b.text }}</span>
@@ -37,7 +44,7 @@
 {%- endmacro -%}
 
 {%- macro stats(items) -%}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F5F7FA;border-radius:10px;">
+<table {{ T }} style="background-color:#F5F7FA;border-radius:10px;">
 <tr>
 {% for s in items %}
 <td width="{{ 100 // items|length }}%" valign="top" class="st{{ '' if loop.first else ' sb' }}"><div class="sl">{{ s.label }}</div><div class="sv"{% if s.tone != "ink" %} style="color:{{ TONES[s.tone] }};"{% endif %}>{{ s.value }}</div>{% if s.sub %}<div class="ss"{% if s.sub_tone != "muted" %} style="color:{{ TONES[s.sub_tone] }};"{% endif %}>{{ s.sub }}</div>{% endif %}</td>
@@ -46,25 +53,58 @@
 </table>
 {%- endmacro -%}
 
-{%- macro fold(title, open=false) -%}
-{% if amp %}
-<amp-accordion animate class="ac"><section{{ " expanded" if open else "" }}><h4 class="fh"><span class="a1">&#9656;</span><span class="a2">&#9662;</span> {{ title }}</h4><div class="fb">{{ caller() }}</div></section></amp-accordion>
+{#- A dropdown: `title` (plain text) or `cells` (ready-made <td> cells) is the always-visible line, next to an arrow
+    that turns when it opens; the call block's body is what opens. `pad` and `top` are spacing classes. -#}
+{%- macro fold(title="", cells=none, open=false, pad="p6", top="t6") -%}
+{% set arrow %}<b class="cv"><i class="a1">&#9656;</i><i class="a2">&#9662;</i></b>{% endset %}
+{% if cells %}
+{% set head %}<table {{ T }}><tr><td width="15" valign="top">{{ arrow }}</td>{{ cells }}</tr></table>{% endset %}
 {% else %}
-<div style="padding-top:6px;"><details{{ " open" if open else "" }}>
-<summary style="padding:6px 0;color:#0B6BCB;"><span class="ft">{{ title }}</span></summary>
-<div style="padding-top:4px;">{{ caller() }}</div>
-</details></div>
+{% set head %}{{ arrow }}<span class="ft">{{ title }}</span>{% endset %}
 {% endif %}
+<div{% if top %} class="{{ top }}"{% endif %}>
+{% if amp %}
+<amp-accordion animate><section{{ " expanded" if open else "" }}><header class="fh {{ pad }}">{{ head }}</header><div>{{ caller() }}</div></section></amp-accordion>
+{% else %}
+<details{{ " open" if open else "" }}><summary class="{{ pad }}">{{ head }}</summary><div>{{ caller() }}</div></details>
+{% endif %}
+</div>
+{%- endmacro -%}
+
+{#- A main section: a card that collapses to its title and summary. -#}
+{%- macro section(key, title, summary="", right="") -%}
+{% set body = caller() %}
+{% set cells %}<td valign="top"><div class="h2">{{ title }}</div>{% if summary %}<div class="xs mu" style="padding-top:2px;">{{ summary }}</div>{% endif %}</td>{% if right %}<td align="right" valign="top" class="h2" style="padding-left:10px;">{{ right }}</td>{% endif %}{% endset %}
+<tr><td class="gutter"{% if not amp %} style="padding:0 12px 12px 12px;"{% endif %}>
+<table {{ T }} style="background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;">
+<tr><td class="c" style="padding:2px 16px;">
+{% call fold(cells=cells, open=(key in open_sections), pad="p14", top="") %}<div style="padding-bottom:14px;">{{ body }}</div>{% endcall %}
+</td></tr>
+</table>
+</td></tr>
+{%- endmacro -%}
+
+{#- One holding or idea inside a section: a collapsed row with a line between rows. -#}
+{%- macro row(cells, first) -%}
+{% set body = caller() %}
+<div style="{{ '' if first else 'border-top:1px solid #EEF2F6;' }}">
+{% call fold(cells=cells, pad="p12", top="") %}<div style="padding:0 0 14px 15px;">{{ body }}</div>{% endcall %}
+</div>
+{%- endmacro -%}
+
+{%- macro row_header(title, badge_html, subtitle, value, detail) -%}
+<td valign="top"><span class="tk">{{ title }}</span>&nbsp; {{ badge_html }}<div class="xs mu" style="padding-top:2px;">{{ subtitle }}</div></td>
+<td valign="top" align="right" style="padding-left:8px;white-space:nowrap;"><div class="pv">{{ value }}</div><div class="xs">{{ detail }}</div></td>
 {%- endmacro -%}
 
 {%- macro chart(ch, open) -%}
-{% call fold("Chart", open) %}
-<a href="{{ ch.link }}" style="display:block;">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" style="display:block;width:100%;max-width:{{ ch.width }}px;height:auto;border:0;border-radius:8px;">{% endif %}</a>
+{% call fold("Chart", open=open) %}
+<a href="{{ ch.link }}" style="display:block;padding-top:4px;">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" style="display:block;width:100%;max-width:{{ ch.width }}px;height:auto;border:0;border-radius:8px;">{% endif %}</a>
 {% endcall %}
 {%- endmacro -%}
 
 {%- macro kv(rows) -%}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<table {{ T }}>
 {% for row_label, row_value in rows %}
 <tr><td class="kl">{{ row_label }}</td><td align="right" class="kv">{{ row_value }}</td></tr>
 {% endfor %}
@@ -73,7 +113,7 @@
 
 {%- macro card(pad="16px", bg="#FFFFFF", border="#E2E8F0") -%}
 <tr><td class="gutter"{% if not amp %} style="padding:0 12px 12px 12px;"{% endif %}>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:14px;">
+<table {{ T }} style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:14px;">
 <tr><td class="c" style="padding:{{ pad }};">
 {{ caller() }}
 </td></tr>
@@ -81,31 +121,33 @@
 </td></tr>
 {%- endmacro -%}
 
-{%- macro heading(title, sub="") -%}
-<tr><td class="c" style="padding:16px 20px 10px 20px;">
-<div class="hd">{{ title }}</div>
-{% if sub %}<div class="xs mu" style="padding-top:2px;">{{ sub }}</div>{% endif %}
-</td></tr>
-{%- endmacro -%}
-
 {%- macro stripe(color) -%}
 <td width="4" style="width:4px;background-color:{{ color }};border-radius:2px;font-size:1px;line-height:1px;">&nbsp;</td>
+{%- endmacro -%}
+
+{%- macro notes(items, color) -%}
+{% for n in items %}
+<table {{ T }} style="margin-top:8px;"><tr>{{ stripe(color) }}<td style="padding:1px 0 1px 10px;">{{ n.text }}</td></tr></table>
+{% endfor %}
 {%- endmacro -%}
 
 {%- macro links(l) -%}
 <div class="sm lk" style="padding-top:12px;"><a href="{{ l.yahoo }}" class="lk">Yahoo</a><span style="color:#CBD5E1;">&nbsp; | &nbsp;</span><a href="{{ l.finviz }}" class="lk">Finviz</a><span style="color:#CBD5E1;">&nbsp; | &nbsp;</span><a href="{{ l.tradingview }}" class="lk">TradingView</a></div>
 {%- endmacro -%}
 
-{%- macro title_row(href, title, subtitle, value, extra) -%}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-<td valign="top"><a href="{{ href }}" class="tk">{{ title }}</a><div class="sm mu" style="padding-top:1px;">{{ subtitle }}</div></td>
-<td valign="top" align="right" style="padding-left:10px;white-space:nowrap;"><div class="pv">{{ value }}</div>{{ extra }}</td>
-</tr></table>
+{%- macro score(c) -%}
+<span class="bd" style="background-color:#E2E8F0;color:#0F2A44;">Score {{ c.score }}</span>
 {%- endmacro -%}
 
-{%- macro pick_header(c) -%}
-{{ title_row(c.links.yahoo, c.ticker, c.name, c.price, '<div style="padding-top:3px;"><span class="bd" style="background-color:#E2E8F0;color:#0F2A44;font-size:12px;">Score '|safe ~ c.score ~ '</span></div>'|safe) }}
-<div class="xs mu" style="padding-top:10px;line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+{%- macro pick_details(c, title) -%}
+{% if c.chart %}{{ chart(c.chart, charts_open) }}{% endif %}
+{% if c.details or c.score_rows %}
+{% call fold(title) %}
+{{ kv(c.details) }}
+{% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
+{% endcall %}
+{% endif %}
+{{ links(c.links) }}
 {%- endmacro -%}
 <!DOCTYPE html>
 {% if amp %}
@@ -132,22 +174,19 @@
 {% if amp %}
 body{margin:0;padding:0;}
 .gutter{padding:0 12px 12px 12px;}
-amp-accordion .fh{margin:0;padding:6px 0;background-color:transparent;border:0;font-size:13px;line-height:18px;font-weight:700;color:#0B6BCB;}
-.ac{margin-top:4px;}
-.fb{padding-top:4px;}
-.a2{display:none;}
-section[expanded] .a1{display:none;}
-section[expanded] .a2{display:inline;}
+amp-accordion .fh{margin:0;background-color:transparent;border:0;padding-right:0;}
+section[expanded]>header .a1{display:none;}
+section[expanded]>header .a2{display:inline;}
 {% else %}
 body{margin:0!important;padding:0!important;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
 table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
 u{text-decoration:none!important;}
-summary{cursor:pointer;}
 {% endif %}
-table{border-collapse:collapse;}
+table{border-collapse:collapse;border-spacing:0;}
+{% if amp %}td{padding:0;}
+{% endif %}
 a{text-decoration:none;}
 .c{font-family:{{ FONT }};font-size:14px;line-height:21px;color:#334155;}
-.hd{font-size:13px;line-height:18px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:#0F2A44;}
 .h2{font-size:16px;line-height:22px;font-weight:800;color:#0F2A44;}
 .lb{font-size:11px;line-height:15px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
 .sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
@@ -161,9 +200,17 @@ a{text-decoration:none;}
 .ink{color:#0F2A44;}
 .lk{color:#0B6BCB;font-weight:700;}
 .ft{color:#0B6BCB;font-size:13px;line-height:18px;font-weight:700;}
-.tk{font-size:19px;line-height:24px;font-weight:800;color:#0F2A44;}
-.pv{font-size:17px;line-height:24px;font-weight:800;color:#0F2A44;}
-.bd{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;line-height:15px;font-weight:700;white-space:nowrap;}
+.cv{display:inline-block;width:15px;color:#0B6BCB;font-size:14px;line-height:21px;font-weight:400;}
+.cv i{font-style:normal;}
+.a2{display:none;}
+.p6{padding:6px 0;}
+.p12{padding:12px 0;}
+.p14{padding:14px 0;}
+.t6{padding-top:6px;}
+.t10{padding-top:10px;}
+.tk{font-size:17px;line-height:22px;font-weight:800;color:#0F2A44;}
+.pv{font-size:15px;line-height:22px;font-weight:800;color:#0F2A44;}
+.bd{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;line-height:15px;font-weight:700;white-space:nowrap;}
 .dot{display:inline-block;width:7px;height:7px;border-radius:4px;}
 .nd{width:14px;padding-top:7px;}
 .nt{padding-bottom:10px;}
@@ -174,13 +221,22 @@ a{text-decoration:none;}
 .mc{padding:7px 0 7px 6px;border-top:1px solid #EEF2F6;font-size:13px;line-height:17px;white-space:nowrap;}
 @media screen and (max-width:420px){.gutter{padding-left:8px{{ IMP }};padding-right:8px{{ IMP }};}}
 </style>
+{% if not amp %}
+<style>
+summary{list-style:none;cursor:pointer;}
+summary::-webkit-details-marker{display:none;}
+details[open]>summary .a1{display:none;}
+details[open]>summary .a2{display:inline;}
+u + .body .cv{display:none;}
+</style>
+{% endif %}
 </head>
-<body style="margin:0;padding:0;background-color:#EEF2F6;">
+<body{{ '' if amp else ' class="body"' }} style="margin:0;padding:0;background-color:#EEF2F6;">
 <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;{{ '' if amp else 'mso-hide:all;' }}">{{ preheader }}{% for _ in range(30) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EEF2F6;">
+<table {{ T }} style="background-color:#EEF2F6;">
 <tr><td align="center" style="padding:0;font-family:{{ FONT }};">
 {% if not amp %}<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->{% endif %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;margin:0 auto;">
+<table {{ T }} style="max-width:600px;margin:0 auto;">
 
 {# ---------- Header: greeting (light, so Gmail's dark mode converts it cleanly) ---------- #}
 <tr><td style="background-color:#0B6BCB;height:4px;font-size:1px;line-height:4px;">&nbsp;</td></tr>
@@ -191,7 +247,7 @@ a{text-decoration:none;}
 {% if prepared %}<div class="xs mu" style="padding-top:1px;">{{ prepared }}</div>{% endif %}
 </td></tr>
 
-{# ---------- Notices: why parts of the digest are missing ---------- #}
+{# ---------- Notices: why parts of the digest are missing (always shown) ---------- #}
 {% if issues %}
 {% call card("14px 16px", "#FFFBEB", "#FCD34D") %}
 <div style="font-weight:800;color:#92400E;">Some parts of this digest are incomplete</div>
@@ -201,10 +257,10 @@ a{text-decoration:none;}
 {% endcall %}
 {% endif %}
 
-{# ---------- Overview ---------- #}
+{# ---------- Overview (always shown) ---------- #}
 {% if portfolio %}
 {% call card() %}
-{{ label(portfolio.label) }}
+{{ label(portfolio.label, MUTED) }}
 <div style="font-size:32px;line-height:38px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
 <div style="padding-top:2px;"><b style="color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</b> <span class="mu">&nbsp;{{ portfolio.session }}</span></div>
 <div style="padding-top:14px;">{{ stats(portfolio.stats) }}</div>
@@ -213,17 +269,16 @@ a{text-decoration:none;}
 
 {# ---------- Portfolio risk ---------- #}
 {% if risk %}
-{% call card() %}
-<div class="h2">Portfolio risk</div>
+{% call section("risk", "Portfolio risk", risk.summary) %}
 {% if risk.beta %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:10px;"><tr>
+<table {{ T }}><tr>
 <td width="72" valign="top" align="center" style="width:72px;background-color:#F5F7FA;border-radius:10px;padding:8px 0;"><div class="sl">Beta</div><div style="font-size:20px;line-height:26px;font-weight:800;color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.value }}</div></td>
 <td valign="top" style="padding-left:12px;"><b style="color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.label }}</b><div class="sm" style="padding-top:2px;">{{ risk.beta.text }}</div></td>
 </tr></table>
 {% endif %}
 {% if risk.mix %}
-{{ label("Signals, by share of portfolio value", top="16px") }}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><tr>
+{{ label("Signals, by share of portfolio value", MUTED, top="14px") }}
+<table {{ T }} style="margin-top:8px;"><tr>
 {% for m in risk.mix %}<td width="{{ m.width }}%" style="background-color:{{ m.color }};height:10px;font-size:1px;line-height:10px;">&nbsp;</td>{% endfor %}
 </tr></table>
 <div class="xs" style="padding-top:8px;line-height:22px;">
@@ -232,57 +287,41 @@ a{text-decoration:none;}
 {% if risk.largest %}<div class="sm" style="padding-top:4px;">Largest position: <b class="ink">{{ risk.largest }}</b></div>{% endif %}
 {% endif %}
 {% if risk.watch %}
-{{ label("What to watch", top="16px") }}
-{% for n in risk.watch %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;"><tr>{{ stripe("#F97316") }}<td style="padding:1px 0 1px 10px;">{{ n.text }}</td></tr></table>
-{% endfor %}
+{% call fold("What to watch (" ~ risk.watch|length ~ ")", top="t10") %}{{ notes(risk.watch, "#F97316") }}{% endcall %}
 {% endif %}
 {% if risk.notes %}
-{% call fold(("Also worth noting" if risk.watch else "Review notes") ~ " (" ~ risk.notes|length ~ ")") %}
-{% for n in risk.notes %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;"><tr>{{ stripe("#38BDF8") }}<td style="padding:1px 0 1px 10px;">{{ n.text }}</td></tr></table>
-{% endfor %}
-{% endcall %}
+{% call fold(("Also worth noting" if risk.watch else "Review notes") ~ " (" ~ risk.notes|length ~ ")") %}{{ notes(risk.notes, "#38BDF8") }}{% endcall %}
 {% endif %}
 {% endcall %}
 {% endif %}
 
 {# ---------- Connected account ---------- #}
 {% if account %}
-{% call card() %}
-{{ label("Connected account") }}
-<div style="font-size:18px;line-height:24px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ account.company }}</div>
-{% if account.accounts %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+{% call section("account", "Connected account", account.summary) %}
+<table {{ T }}>
 {% for a in account.accounts %}
 <tr><td style="padding:7px 0;border-top:1px solid #EEF2F6;font-weight:600;color:#0F2A44;">{{ a.name }}<div class="xs mu" style="font-weight:400;">{{ a.positions }}</div></td><td align="right" valign="top" style="padding:7px 0 7px 10px;border-top:1px solid #EEF2F6;font-weight:700;color:#0F2A44;">{{ a.value }}</td></tr>
 {% endfor %}
 </table>
-{% endif %}
 {% endcall %}
 {% endif %}
 
 {# ---------- Markets & macro ---------- #}
 {% if market or stories %}
-{{ heading("Markets & macro") }}
-{% if market %}
-{% call card() %}
-{% if market.rows %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+{% call section("markets", "Markets & macro", market.summary if market else (stories|length ~ " stories")) %}
+{% if market and market.rows %}
+<table {{ T }}>
 <tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", "1D", "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
 {% for r in market.rows %}
 <tr><td class="mc" style="padding-left:0;white-space:normal;font-weight:700;color:#0F2A44;">{{ r.name }}{% if r.ticker %} <span class="mu" style="font-size:11px;font-weight:400;">{{ r.ticker }}</span>{% endif %}</td><td align="right" class="mc">{{ r.last }}</td><td align="right" class="mc" style="font-weight:700;color:{{ TONES[r.d1.tone] }};">{{ r.d1.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.d5.tone] }};">{{ r.d5.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.m1.tone] }};">{{ r.m1.text }}</td></tr>
 {% endfor %}
 </table>
 {% endif %}
-{% if market.chips %}<div style="padding-top:{{ '14px' if market.rows else '0' }};">{{ stats(market.chips) }}</div>{% endif %}
-{% endcall %}
-{% endif %}
+{% if market and market.chips %}<div style="padding-top:{{ '14px' if market.rows else '0' }};">{{ stats(market.chips) }}</div>{% endif %}
 {% if stories %}
-{% call card() %}
-<div class="h2">Top macro stories</div>
+{% call fold("Top macro stories (" ~ stories|length ~ ")", top="t10") %}
 {% for s in stories %}
-<div style="{% if loop.first %}padding-top:10px;{% else %}margin-top:14px;padding-top:14px;border-top:1px solid #EEF2F6;{% endif %}">
+<div style="{% if loop.first %}padding-top:6px;{% else %}margin-top:12px;padding-top:12px;border-top:1px solid #EEF2F6;{% endif %}">
 <div class="lb mu" style="letter-spacing:0.6px;"><span class="dot" style="background-color:{{ s.dot }};"></span>&nbsp; {{ s.priority }} priority</div>
 <div style="font-size:15px;line-height:22px;color:#0F2A44;padding-top:4px;">{{ s.summary }}</div>
 {% if s.impact %}
@@ -293,16 +332,18 @@ a{text-decoration:none;}
 {% endfor %}
 {% endcall %}
 {% endif %}
+{% endcall %}
 {% endif %}
 
-{# ---------- Holdings ---------- #}
+{# ---------- Holdings: one collapsed row per stock ---------- #}
 {% if holdings %}
-{{ heading("Your holdings", holdings_note) }}
+{% call section("holdings", "Your holdings", holdings_summary, holdings|length) %}
+<div class="xs mu" style="padding-bottom:4px;">{{ holdings_note }}</div>
 {% for h in holdings %}
-{% call card() %}
-{{ title_row(h.links.yahoo, h.symbol, h.name, h.value, '<div class="xs mu">'|safe ~ h.weight ~ '</div>'|safe) }}
-<div class="xs mu" style="padding-top:10px;line-height:22px;">{{ badge(h.signal) }}{% if h.sentiment %} {{ badge(h.sentiment) }}{% endif %}&nbsp; {{ h.meta }}</div>
-<div style="padding-top:10px;">{{ stats(h.stats) }}</div>
+{% set detail %}<span class="mu">{{ h.weight_short }}</span>{% if h.day.text %} &middot; <span style="color:{{ TONES[h.day.tone] }};">{{ h.day.text }}</span>{% endif %}{% endset %}
+{% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first) %}
+<div class="xs mu" style="line-height:22px;">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta }}</div>
+<div style="padding-top:8px;">{{ stats(h.stats) }}</div>
 {% for c in h.catalysts %}
 <div class="sm" style="padding-top:10px;">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text }}</div>
 {% endfor %}
@@ -315,7 +356,7 @@ a{text-decoration:none;}
 {% endif %}
 {% if h.news %}
 {% call fold("News (" ~ h.news|length ~ ")") %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<table {{ T }}>
 {% for n in h.news %}
 <tr><td width="14" valign="top" class="nd"><span class="dot" style="background-color:{{ n.dot }};"></span></td><td valign="top" class="nt">{{ n.text }}{% if n.url %} <a href="{{ n.url }}" class="lk" style="white-space:nowrap;">Source</a>{% endif %}</td></tr>
 {% endfor %}
@@ -325,73 +366,60 @@ a{text-decoration:none;}
 {{ links(h.links) }}
 {% endcall %}
 {% endfor %}
+{% endcall %}
 {% endif %}
 
 {# ---------- Swing ideas ---------- #}
-{{ heading("Swing ideas", "Short-term setups: days to a few weeks") }}
+{% call section("swing", "Swing ideas", swing_summary, swing|length) %}
+<div class="xs mu" style="padding-bottom:4px;">Short-term setups: days to a few weeks</div>
 {% for c in swing %}
-{% call card() %}
-{{ pick_header(c) }}
+{% call row(row_header(c.ticker, score(c), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
+<div class="xs mu" style="line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
 {% if c.plan %}
-<div style="padding-top:12px;">{{ stats(c.plan) }}</div>
+<div style="padding-top:8px;">{{ stats(c.plan) }}</div>
 {% else %}
-<div class="sm mu" style="padding-top:10px;">No trade levels: the entry, stop, and target the model gave didn't line up.</div>
+<div class="sm mu" style="padding-top:8px;">No trade levels: the entry, stop, and target the model gave didn't line up.</div>
 {% endif %}
-{% if c.thesis %}<div style="padding-top:12px;">{{ c.thesis }}</div>{% endif %}
+{% if c.thesis %}<div style="padding-top:10px;">{{ c.thesis }}</div>{% endif %}
 {% if c.earnings_warning %}<div class="sm" style="color:#92400E;background-color:#FEF3C7;border-radius:8px;padding:8px 10px;margin-top:10px;">{{ c.earnings_warning }}</div>{% endif %}
 {% if c.analyst %}<div class="sm mu" style="padding-top:10px;">{{ c.analyst }}</div>{% endif %}
-{% if c.chart %}{{ chart(c.chart, charts_open) }}{% endif %}
-{% if c.details or c.score_rows %}
-{% call fold("Technicals & score breakdown") %}
-{{ kv(c.details) }}
-{% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
-{% endcall %}
-{% endif %}
-{{ links(c.links) }}
+{{ pick_details(c, "Technicals & score breakdown") }}
 {% endcall %}
 {% else %}
-{% call card() %}
-<div class="mu">No swing setups scored {{ min_swing_score }} or more out of 100 today.</div>
-{% endcall %}
+<div class="mu" style="padding-top:6px;">No swing setups scored {{ min_swing_score }} or more out of 100 today.</div>
 {% endfor %}
+{% endcall %}
 
 {# ---------- Long-term ideas ---------- #}
-{{ heading("Long-term ideas", "Businesses worth owning for years") }}
+{% call section("long_term", "Long-term ideas", long_summary, long_term|length) %}
+<div class="xs mu" style="padding-bottom:4px;">Businesses worth owning for years</div>
 {% for c in long_term %}
-{% call card() %}
-{{ pick_header(c) }}
-{% if c.thesis %}<div style="padding-top:10px;">{{ c.thesis }}</div>{% endif %}
+{% call row(row_header(c.ticker, score(c), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
+<div class="xs mu" style="line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+{% if c.thesis %}<div style="padding-top:8px;">{{ c.thesis }}</div>{% endif %}
 {% if c.key_risk %}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:12px;"><tr>{{ stripe("#F59E0B") }}<td style="padding:1px 0 1px 10px;">{{ label("Key risk", "#92400E") }}<div class="sm" style="padding-top:2px;">{{ c.key_risk }}</div></td></tr></table>
+<table {{ T }} style="margin-top:12px;"><tr>{{ stripe("#F59E0B") }}<td style="padding:1px 0 1px 10px;">{{ label("Key risk", "#92400E") }}<div class="sm" style="padding-top:2px;">{{ c.key_risk }}</div></td></tr></table>
 {% endif %}
 <div style="padding-top:12px;">{{ stats(c.stats) }}</div>
 {% if c.analyst %}<div class="sm mu" style="padding-top:10px;">{{ c.analyst }}</div>{% endif %}
 {% if c.range %}
-{{ label("52-week range", top="12px") }}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:6px;"><tr><td width="{{ c.range.left }}%" style="background-color:#93C5FD;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="4" style="width:4px;background-color:#0F2A44;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="{{ c.range.right }}%" style="background-color:#E2E8F0;height:8px;font-size:1px;line-height:8px;">&nbsp;</td></tr></table>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="xs mu" style="padding-top:4px;">{{ c.range.low }}</td><td align="center" class="xs" style="padding-top:4px;">{{ c.range.note }}</td><td align="right" class="xs mu" style="padding-top:4px;">{{ c.range.high }}</td></tr></table>
+{{ label("52-week range", MUTED, top="12px") }}
+<table {{ T }} style="margin-top:6px;"><tr><td width="{{ c.range.left }}%" style="background-color:#93C5FD;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="4" style="width:4px;background-color:#0F2A44;height:8px;font-size:1px;line-height:8px;">&nbsp;</td><td width="{{ c.range.right }}%" style="background-color:#E2E8F0;height:8px;font-size:1px;line-height:8px;">&nbsp;</td></tr></table>
+<table {{ T }}><tr><td class="xs mu" style="padding-top:4px;">{{ c.range.low }}</td><td align="center" class="xs" style="padding-top:4px;">{{ c.range.note }}</td><td align="right" class="xs mu" style="padding-top:4px;">{{ c.range.high }}</td></tr></table>
 {% endif %}
-{% if c.chart %}{{ chart(c.chart, charts_open) }}{% endif %}
-{% if c.details or c.score_rows %}
-{% call fold("More fundamentals & score breakdown") %}
-{{ kv(c.details) }}
-{% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
-{% endcall %}
-{% endif %}
-{{ links(c.links) }}
+{{ pick_details(c, "More fundamentals & score breakdown") }}
 {% endcall %}
 {% else %}
-{% call card() %}
-<div class="mu">No long-term ideas scored {{ min_long_score }} or more out of 100 today.</div>
-{% endcall %}
+<div class="mu" style="padding-top:6px;">No long-term ideas scored {{ min_long_score }} or more out of 100 today.</div>
 {% endfor %}
+{% endcall %}
 
 {# ---------- Footer ---------- #}
 <tr><td class="c xs mu" style="padding:8px 24px 32px 24px;">
 {% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority news and details were left out to keep this email under Gmail's size limit.</div>{% endif %}
 <div>Ideas appear only when they score {% if min_long_score == min_swing_score %}{{ min_long_score }} or more{% else %}{{ min_long_score }}+ (long-term) or {{ min_swing_score }}+ (swing){% endif %} out of 100{% if models %}; scored by {{ models }}{% endif %}.</div>
 {% if usage %}
-{% call fold("What this digest cost") %}
+{% call fold("What this digest cost", top="t10") %}
 {{ kv(usage) }}
 {% if usage_note %}<div style="padding-top:6px;font-size:11px;line-height:16px;">{{ usage_note }}</div>{% endif %}
 {% endcall %}

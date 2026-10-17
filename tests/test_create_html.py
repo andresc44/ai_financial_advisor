@@ -222,6 +222,10 @@ def test_a_large_portfolio_drops_low_priority_news_to_fit():
     assert all(len(card["news"]) < 3 for card in holds)
     assert all(card["rationale"] for card in view["holdings"])  # Reasoning is never dropped
 
+    amp_view = ch.build_view(large)  # The AMP version is trimmed the same way, toward its own target
+    amp = ch.render_amp(amp_view, TEMPLATE_DIR)
+    assert len(amp.encode("utf-8")) <= ch.AMP_TARGET_BYTES and amp_view["trimmed"] is True
+
 
 def test_a_portfolio_too_big_for_gmail_still_renders_and_warns(capsys):
     huge = payload(holdings=[holding(f"T{i:02d}", "hold", 1.0) for i in range(60)])
@@ -317,6 +321,29 @@ def test_amp_version_uses_amp_markup_only():
 def html_folds(view):
     """How many dropdowns the HTML version has for this view."""
     return ch.render_html(view, TEMPLATE_DIR).count("<details")
+
+
+def test_main_sections_collapse_to_a_summary(monkeypatch):
+    view = ch.build_view(payload())
+    assert view["risk"]["summary"] == "Beta 1.40 · above-market risk · 1 to watch"
+    assert view["account"]["summary"] == "Questrade · 1 account"
+    assert view["market"]["summary"] == "S&P 500 +0.3% · 10Y Yield -1.0% · Fear 32"
+    assert view["holdings_summary"] == "1 urgent sell · 1 risk alert · 1 trim · 1 hold"
+    assert (view["swing_summary"], view["long_summary"]) == ("SWA 85", "LTA 91")
+
+    amp = ch.render_amp(view, TEMPLATE_DIR)
+    html = ch.render_html(view, TEMPLATE_DIR)
+    # Six main sections, a row per holding and idea, and the dropdowns inside them, all collapsed
+    assert "<section expanded>" not in amp and "<details open>" not in html
+    assert amp.count("<amp-accordion") == html.count("<details>")
+    swing_section_start = html.rfind("<details>", 0, html.index(">Swing ideas<"))
+    holdings_section = html[html.index(">Your holdings<"):swing_section_start]
+    assert holdings_section.count("<details>") == 4 * 4  # Each holding's row, chart, reasoning, and news
+
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "OPEN_SECTIONS", ["holdings", "long_term"])
+    view = ch.build_view(payload())
+    assert ch.render_html(view, TEMPLATE_DIR).count("<details open>") == 2
+    assert ch.render_amp(view, TEMPLATE_DIR).count("<section expanded>") == 2
 
 
 def test_charts_open_setting(monkeypatch):

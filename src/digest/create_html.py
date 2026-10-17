@@ -44,6 +44,9 @@ TEMPLATE_NAME = "email_template.html"
 REPORTS_DIR = Path(__file__).resolve().parent / "html_reports"  # gitignored: each report holds the user's holdings
 GMAIL_CLIP_BYTES = 102_000  # Gmail hides everything past ~102 KB of HTML behind "[Message clipped]"
 AMP_MAX_BYTES = 200_000  # The AMP for Email spec's limit for the whole AMP part
+# Gmail doesn't document its own AMP limit (some guides say 100 KB), so the AMP version is trimmed toward this
+# like the HTML one; a ~90 KB digest is known to render
+AMP_TARGET_BYTES = 100_000
 CHART_WIDTH, CHART_HEIGHT = 466, 219  # Finviz's large daily chart (s=l)
 
 FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
@@ -358,6 +361,9 @@ def _holding_card(symbol: str, lots: list[dict]) -> dict:
         "name": _text(first.get("description")) or "",
         "value": _money(value),
         "weight": f"{weight:.1f}% of portfolio" if weight is not None else "",
+        # Claude-authored (2026-10-17): the collapsed row's right-hand line, e.g. "33.6% · +0.82%"
+        "weight_short": f"{weight:.1f}%" if weight is not None else "",
+        "day": {"text": _signed_pct(daily_pct, 2) if daily_pct is not None else "", "tone": _tone(daily_pct)},
         "weight_pct": weight or 0.0,
         "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts),
         "signal": _badge(label, fg, bg),
@@ -382,11 +388,22 @@ def _holding_cards(holdings: list[dict]) -> list[dict]:
     return sorted(cards, key=lambda card: (card["order"], -card["weight_pct"]))
 
 
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
 def _holdings_note(cards: list[dict], holdings: list[dict]) -> str:
-    """The holdings heading's subtitle, which also dates the price changes on the cards."""
-    note = f"{len(cards)} position{'s' if len(cards) != 1 else ''}, most urgent first"
+    """The line atop the open holdings section, which also dates the price changes on the cards."""
+    note = "Most urgent signal first"
     session = _session_date(holdings)
-    return f"{note} · price change: {session} session" if session else note
+    return f"{note} · price changes are for the {session} session" if session else note
+
+
+def _signal_counts(cards: list[dict]) -> str:
+    """The holdings section's summary, e.g. '6 risk alerts · 4 holds', most urgent first."""
+    counts = Counter(card["signal"]["text"].lower() for card in cards)
+    return " · ".join(_plural(count, label) if label != "not evaluated" else f"{count} not evaluated"
+                      for label, count in counts.items())
 
 
 def _portfolio(holdings: list[dict], beta: Any, idea_counts: tuple[int, int]) -> Optional[dict]:
@@ -453,12 +470,18 @@ def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
         for note in review
         if _text(note.get("text"))
     ]
+    beta_view = _beta_view(beta)
+    watch = [note for note in notes if note["category"] == "WATCH"]
+    summary = [f"Beta {beta_view['value']} · {beta_view['label'].lower()}"] if beta_view else []
+    if watch:
+        summary.append(f"{len(watch)} to watch")
     return {
-        "beta": _beta_view(beta),
+        "beta": beta_view,
         "mix": mix,
         "largest": f"{largest['symbol']}, {largest['weight_pct']:.1f}% of the portfolio" if largest else "",
-        "watch": [note for note in notes if note["category"] == "WATCH"],
+        "watch": watch,
         "notes": [note for note in notes if note["category"] != "WATCH"],
+        "summary": " · ".join(summary),  # Claude-authored (2026-10-17): shown while the section is collapsed
     }
 
 
@@ -476,7 +499,9 @@ def _account(company: Any, holdings: list[dict]) -> Optional[dict]:
          "value": _money(entry["value"])}
         for name, entry in sorted(accounts.items(), key=lambda item: -item[1]["value"])
     ]
-    return {"company": _text(company) or "Brokerage", "accounts": rows}
+    company = _text(company) or "Brokerage"
+    summary = f"{company} · {_plural(len(rows), 'account')}" if rows else company
+    return {"company": company, "accounts": rows, "summary": summary}
 
 
 def _change(text: Any) -> dict:
@@ -535,7 +560,11 @@ def _market(market_data: Any) -> Optional[dict]:
                            "above 50-day avg"))
     if not rows and not chips:
         return None
-    return {"rows": rows, "chips": chips}
+    # Claude-authored (2026-10-17): the collapsed section's summary, e.g. "S&P 500 +0.3% · Nasdaq-100 -0.1% · Fear 32"
+    summary = [f"{row['name']} {row['d1']['text']}" for row in rows[:2]]
+    if chips and chips[0]["label"] == "Fear & Greed":
+        summary.append(f"{chips[0]['sub'] or 'Fear & Greed'} {chips[0]['value']}")
+    return {"rows": rows, "chips": chips, "summary": " · ".join(summary)}
 
 
 def _stories(headline_news: Any) -> list[dict]:
@@ -746,8 +775,12 @@ def build_view(payload: dict) -> dict:
         "stories": _stories(payload.get("headline_news")),
         "holdings": cards,
         "holdings_note": _holdings_note(cards, holdings),
+        "holdings_summary": _signal_counts(cards),
         "swing": swing,
         "long_term": long_term,
+        # Claude-authored (2026-10-17): the collapsed sections' summaries, e.g. "TSM 93 · SKHY 92"
+        "swing_summary": " · ".join(f"{card['ticker']} {card['score']}" for card in swing) or "None today",
+        "long_summary": " · ".join(f"{card['ticker']} {card['score']}" for card in long_term) or "None today",
         "min_swing_score": f"{params_dict.get('MIN_SWING_SCORE', 60):.0f}",
         "min_long_score": f"{params_dict.get('MIN_LONG_SCORE', 60):.0f}",
         "models": ", ".join(models),
@@ -755,6 +788,8 @@ def build_view(payload: dict) -> dict:
         "usage_note": str((payload.get("api_usage") or {}).get("note") or ""),
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
         "charts_open": bool(params_dict["DIGEST"].get("CHARTS_OPEN", False)),
+        # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
+        "open_sections": set(params_dict["DIGEST"].get("OPEN_SECTIONS") or ()),
     }
 
 
@@ -788,7 +823,7 @@ def render_amp(view: dict, template_dir: Path) -> Optional[str]:
     (Gmail then shows the HTML version). Gmail renders it, with working dropdowns, only for senders allowed in the
     recipient's Gmail settings (docs/watchdog.md); every other mail app ignores it and shows the HTML version.
     """
-    amp_html = render_html(view, template_dir, amp=True)
+    amp_html = fit_for_gmail(view, template_dir, amp=True)
     size = len(amp_html.encode("utf-8"))
     if size > AMP_MAX_BYTES:
         print(f"[WARNING] The AMP digest is {size / 1000:.0f} KB, over AMP's 200 KB limit; sending HTML only.")
@@ -833,21 +868,22 @@ def _no_news(view: dict) -> None:
 TRIM_STEPS = (_drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news, _no_news)
 
 
-def fit_for_gmail(view: dict, template_dir: Path) -> str:
+def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
     """
     The view's HTML, small enough that Gmail shows all of it. Gmail hides everything past ~102 KB behind
     "[Message clipped]", which would cut off the ideas at the bottom. If the full digest is larger (e.g. a big
     portfolio, three news items per holding), TRIM_STEPS leave out content until it fits, and the footer says so.
-    A portfolio too big to fit even then (around 30 stocks or more) is sent with every step applied, and Gmail's
-    "View entire message" link shows the rest.
+    A portfolio too big to fit even then (around 20 stocks or more) is sent with every step applied, and Gmail's
+    "View entire message" link shows the rest. With amp=True, the same for the AMP version, toward AMP_TARGET_BYTES.
     """
-    html = render_html(view, template_dir)
+    limit = AMP_TARGET_BYTES if amp else GMAIL_CLIP_BYTES
+    html = render_html(view, template_dir, amp=amp)
     for step in TRIM_STEPS:
-        if len(html.encode("utf-8")) <= GMAIL_CLIP_BYTES:
+        if len(html.encode("utf-8")) <= limit:
             break
         step(view)
         view["trimmed"] = True
-        html = render_html(view, template_dir)
+        html = render_html(view, template_dir, amp=amp)
     return html
 
 
@@ -949,7 +985,7 @@ def html_main(payload: dict, here: Path = Path(__file__).resolve().parent) -> Re
 
     amp_html = None
     if params_dict["DIGEST"].get("AMP_EMAIL", False):
-        # A fresh view: the AMP part's 200 KB limit fits what fit_for_gmail may have trimmed from the HTML
+        # A fresh view, since fit_for_gmail trims the HTML and AMP versions separately
         amp_html = render_amp(build_view(payload), template_dir=here)
         if amp_html:
             path.with_suffix(".amp.html").write_text(amp_html, encoding="utf-8")
