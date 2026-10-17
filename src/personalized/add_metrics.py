@@ -64,6 +64,22 @@ def _load_context_cache() -> dict[str, dict[str, Any]]:
         return {}
 
 
+def cached_company_names(symbols: list[str]) -> dict[str, str]:
+    """
+    Claude-authored (2026-10-17): {symbol: Yahoo's company name} from the market-context cache, for symbols seen in
+    an earlier run. The brokerage's own description can be wrong (SnapTrade has called Agilent's "A" "AgileThought,
+    Inc."), and the holding news starts before this run's market context is fetched.
+    """
+    cache = _load_context_cache()
+    names = {}
+    for symbol in symbols:
+        entry = cache.get(symbol) or {}
+        name = ((entry.get("context") or {}).get("profile") or {}).get("name")
+        if isinstance(name, str) and name.strip():
+            names[symbol] = name.strip()
+    return names
+
+
 def _save_context_cache(cache: dict[str, dict[str, Any]]) -> None:
     """Atomically writes the cache (temp file + os.replace) so a crash never leaves a half-written file."""
     CONTEXT_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)

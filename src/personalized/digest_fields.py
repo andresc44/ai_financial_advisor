@@ -10,6 +10,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   for holdings whose evaluation failed. portfolio_beta returns 0.0 instead of None when no holding has a beta,
   so the template's "%.2f" format never receives None. Added a 'sector' column for the portfolio review
   (portfolio_review.py), which needs it to judge sector concentration.
+- 2026-10-17: 'description' takes Yahoo's company name where the market context has one, since the brokerage's
+  can be wrong.
 """
 import sys
 from datetime import date, datetime, timezone
@@ -148,6 +150,14 @@ def add_digest_fields(holdings_df: pd.DataFrame) -> pd.DataFrame:
         [_catalysts(ctx, today, window_days) for ctx in contexts], index=df.index, dtype=object
     )
     df["sector"] = [_section(ctx, "profile").get("sector") for ctx in contexts]
+    # Claude-authored (2026-10-17): Yahoo's company name over the brokerage's description, which can be wrong
+    # (SnapTrade has called Agilent's "A" "AgileThought, Inc."); used by the email and the portfolio review
+    yahoo_names = [_section(ctx, "profile").get("name") for ctx in contexts]
+    current = df["description"] if "description" in df.columns else pd.Series(None, index=df.index)
+    df["description"] = [
+        name.strip() if isinstance(name, str) and name.strip() else description
+        for name, description in zip(yahoo_names, current)
+    ]
     return df
 
 

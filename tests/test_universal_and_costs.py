@@ -380,3 +380,17 @@ def test_every_configured_field_comes_through_from_complete_data():
 def test_score_thresholds_and_news_limit():
     assert params_dict["MIN_LONG_SCORE"] == params_dict["MIN_SWING_SCORE"] == 80.0
     assert params_dict["MAX_NEWS_ARTICLES"] == 20
+
+
+def test_share_class_tickers_use_each_sources_form():
+    # The NASDAQ screener writes BRK/B; Yahoo (and the pipeline) use BRK-B, Finnhub BRK.B
+    assert [guard.yahoo_symbol(s) for s in ("BRK/B", "BF.B", "BRK-B", " AAPL ", "ENB.TO", "A")] == [
+        "BRK-B", "BF-B", "BRK-B", "AAPL", "ENB.TO", "A"]
+    seen = []
+    raw = SimpleNamespace(quote=lambda symbol: seen.append(symbol),
+                          company_news=lambda symbol, _from, to: seen.append(symbol))
+    client = guard.GuardedFinnhubClient(raw, guard.DataSourceIssues())
+    client.quote("BRK-B")
+    client.company_news(symbol="BF-B", _from="2026-10-10", to="2026-10-17")
+    client.quote("AAPL")
+    assert seen == ["BRK.B", "BF.B", "AAPL"]

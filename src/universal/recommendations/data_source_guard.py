@@ -47,8 +47,27 @@ class DataSourceIssues:
             return list(self._items.values())
 
 
+SHARE_CLASS = re.compile(r"^([A-Z]{1,5})[-/.]([A-Z])$")  # e.g. BRK-B, BRK/B, BRK.B
+
+
+def yahoo_symbol(symbol: str) -> str:
+    """
+    Claude-authored (2026-10-17): a share-class ticker in Yahoo's form, BRK-B. The NASDAQ screener writes BRK/B,
+    which Yahoo doesn't know, so Berkshire was dropped from the ideas every run. Other tickers are unchanged.
+    """
+    return SHARE_CLASS.sub(r"\1-\2", symbol.strip()) if isinstance(symbol, str) else symbol
+
+
+def finnhub_symbol(symbol: str) -> str:
+    """Claude-authored (2026-10-17): a share-class ticker in Finnhub's form, BRK.B (the pipeline uses BRK-B)."""
+    return SHARE_CLASS.sub(r"\1.\2", symbol) if isinstance(symbol, str) else symbol
+
+
 class GuardedFinnhubClient:
-    """finnhub.Client with rate-limit retries and a stop after a rejected key (see module docstring)."""
+    """
+    finnhub.Client with rate-limit retries and a stop after a rejected key (see module docstring).
+    2026-10-17: share-class tickers are passed to Finnhub in its own form (finnhub_symbol).
+    """
 
     def __init__(self, client: finnhub.Client, issues: DataSourceIssues) -> None:
         self._client = client
@@ -61,6 +80,10 @@ class GuardedFinnhubClient:
             return attribute
 
         def call(*args: Any, **kwargs: Any) -> Any:
+            if isinstance(kwargs.get("symbol"), str):
+                kwargs["symbol"] = finnhub_symbol(kwargs["symbol"])
+            elif args and isinstance(args[0], str):
+                args = (finnhub_symbol(args[0]), *args[1:])
             if self._key_rejected:
                 raise DataSourceUnavailable("Finnhub key was rejected earlier in this run")
             for delay in (*FINNHUB_RETRY_DELAYS, None):

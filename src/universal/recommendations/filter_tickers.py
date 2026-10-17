@@ -30,7 +30,12 @@ from src.universal.recommendations.yahoo_filter_helper import filter_yahoo_ticke
 from src.universal.recommendations.finnhub_filter_helper import filter_finnhub_tickers
 from src.universal.recommendations.twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
 from src.parameters import params_dict
-from src.universal.recommendations.data_source_guard import DataSourceIssues, GuardedFinnhubClient, twelvedata_request
+from src.universal.recommendations.data_source_guard import (
+    DataSourceIssues,
+    GuardedFinnhubClient,
+    twelvedata_request,
+    yahoo_symbol,
+)
 from src.universal.recommendations import local_indicators
 
 class DataFetcher:
@@ -119,7 +124,10 @@ class DataFetcher:
         """Loads the most recent ticker DataFrame from the ticker directory."""
         latest_file = self.__get_latest_ticker_file()
         print(f"Loading most recent ticker file: {latest_file.name}")
-        return pd.read_csv(latest_file)
+        tickers = pd.read_csv(latest_file)
+        # Claude-authored (2026-10-17): the screener's BRK/B becomes Yahoo's BRK-B; Finnhub calls convert it again
+        tickers["ticker"] = tickers["ticker"].map(yahoo_symbol)
+        return tickers
 
     # ==========================================
     # DATA RETRIEVAL METHODS

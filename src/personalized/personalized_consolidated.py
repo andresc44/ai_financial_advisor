@@ -14,6 +14,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.personalized.user_profiles import USER_PROFILES
+from src.personalized.add_metrics import cached_company_names
 from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.portfolio_review import review_portfolio
@@ -35,6 +36,8 @@ def _holding_companies(full_data: pd.DataFrame) -> dict[str, Optional[str]]:
     for symbol, description in zip(full_data["symbol"], descriptions):
         if isinstance(symbol, str) and symbol and symbol not in companies:
             companies[symbol] = description if isinstance(description, str) and description.strip() else None
+    # Claude-authored (2026-10-17): Yahoo's name from earlier runs wins over the brokerage's, which can be wrong
+    companies.update(cached_company_names(list(companies)))
     return companies
 
 def fetch_holdings_news(
