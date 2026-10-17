@@ -1,5 +1,13 @@
 outputs_twelvedata_context = 20
 params_dict = {
+    # Claude-authored (2026-10-15): the users the digest and the watchdog run for, in this order. Each name needs a
+    # profile in src/personalized/user_profiles.py. Their .env settings still decide what they get: the
+    # pre-/post-market digest (Receive_*_Digest), and the watchdog (holdings source + Telegram chat ID, and
+    # watchdog_interval_hours > 0). Remove a name here to pause both for that user.
+    "ACTIVE_USERS": ["Andres", 
+                    # "Mauricio", 
+                    # "Steven"
+                    ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
     "EARNINGS_FUTURE_LOOKAHEAD_DAYS": 100,
@@ -378,11 +386,6 @@ params_dict = {
         },
     },
 
-    # Claude-authored (2026-10-15): the users the digest and the watchdog run for, in this order. Each name needs a
-    # profile in src/personalized/user_profiles.py. Their .env settings still decide what they get: the
-    # pre-/post-market digest (Receive_*_Digest), and the watchdog (holdings source + Telegram chat ID, and
-    # watchdog_interval_hours > 0). Remove a name here to pause both for that user.
-    "ACTIVE_USERS": ["Andres", "Mauricio", "Steven"],
 
     # Claude-authored (2026-10-15): holdings source health (src/personalized/pull_holdings_data.py)
     "HOLDINGS": {

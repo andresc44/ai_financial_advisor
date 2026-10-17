@@ -22,13 +22,13 @@ from src.parameters import params_dict
 
 # Profile key -> .env key suffix, with what the value should be
 PROFILE_ENV_SUFFIXES = {
-    "account_company": "INSTITUTION",                          # Brokerage name shown in the digest, e.g. Questrade
     "destination_email": "EMAIL",                              # Where the digest is sent
+    "account_company": "INSTITUTION",                          # Brokerage name shown in the digest, e.g. Questrade
     "home_timezone": "TIMEZONE",                               # IANA timezone, e.g. America/Toronto
     "telegram_chat_id": "TELEGRAM_CHAT_ID",                    # Needed for watchdog alerts and notices
-    "holdings_source": "HOLDINGS_SOURCE",                      # SNAPTRADE | SHEETS | NO_HOLDINGS
     "snaptrade_client_id": "SNAPTRADE_CLIENT_ID",              # SNAPTRADE only
     "snaptrade_consumer_key": "SNAPTRADE_CONSUMER_KEY",        # SNAPTRADE only
+    "holdings_source": "HOLDINGS_SOURCE",                      # SNAPTRADE | SHEETS | NO_HOLDINGS
     "google_sheets_id": "SHEETS_ID",                           # SHEETS only
     "Receive_Premarket_Digest": "RECEIVE_PREMARKET_DIGEST",    # True | False
     "Receive_Postmarket_Digest": "RECEIVE_POSTMARKET_DIGEST",  # True | False
