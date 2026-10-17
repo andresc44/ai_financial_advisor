@@ -111,7 +111,7 @@ def test_sections_follow_the_requested_order():
     _, html = render(payload())
     assert html.startswith("<!DOCTYPE html>")
     markers = ["Good morning, Test", "Your portfolio", "Portfolio risk", "Connected account", "Markets &amp; macro",
-               "Top macro stories", "Your holdings", "Swing ideas", "Long-term ideas"]
+               "Top stories", "Your holdings", "Swing ideas", "Long-term ideas"]
     positions = [html.index(marker) for marker in markers]
     assert positions == sorted(positions)
 
@@ -315,7 +315,7 @@ def test_amp_version_uses_amp_markup_only():
     assert amp.count("<amp-accordion") == html_folds(view) and "<amp-img" in amp  # Same dropdowns as the HTML
     for disallowed in ("<details", "<summary", "<img", "!important", "<!--[if", "mso-", "<meta name="):
         assert disallowed not in amp, disallowed
-    assert amp.count("<section>") == amp.count("<amp-accordion")  # All collapsed (CHARTS_OPEN is off)
+    assert amp.count("<section>") == amp.count("<amp-accordion")  # All collapsed
 
 
 def html_folds(view):
@@ -338,7 +338,7 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     assert amp.count("<amp-accordion") == html.count("<details>")
     swing_section_start = html.rfind("<details>", 0, html.index(">Swing ideas<"))
     holdings_section = html[html.index(">Your holdings<"):swing_section_start]
-    assert holdings_section.count("<details>") == 4 * 4  # Each holding's row, chart, reasoning, and news
+    assert holdings_section.count("<details>") == 4 * 3  # Each holding's row, reasoning, and news (the chart is in the row)
 
     monkeypatch.setitem(ch.params_dict["DIGEST"], "OPEN_SECTIONS", ["holdings", "long_term"])
     view = ch.build_view(payload())
@@ -346,11 +346,31 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     assert ch.render_amp(view, TEMPLATE_DIR).count("<section expanded>") == 2
 
 
-def test_charts_open_setting(monkeypatch):
-    monkeypatch.setitem(ch.params_dict["DIGEST"], "CHARTS_OPEN", True)
-    view = ch.build_view(payload(holdings=[holding("AAA")]))
-    assert ch.render_html(view, TEMPLATE_DIR).count("<details open>") == 3  # AAA, SWA, and LTA's charts
-    assert ch.render_amp(view, TEMPLATE_DIR).count("<section expanded>") == 3
+def test_a_stocks_chart_shows_as_soon_as_its_row_opens():
+    html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
+    assert ">Chart<" not in html  # No dropdown of its own
+    row_start = html.rfind("<details>", 0, html.index(">AAA<"))
+    reasoning = html.index(">Reasoning<", row_start)
+    assert row_start < html.index('<img src="https://finviz.com/chart.ashx?t=AAA', row_start) < reasoning
+
+
+def test_review_notes_and_stories_are_rows_with_titles():
+    review = [
+        {"category": "WATCH", "title": "Leveraged ETFs drive a high beta", "text": "SPXL and SOXL are 43% of value."},
+        {"category": "WATCH", "text": "Industrials sector exposure is heavily concentrated at 31.53% across CHRW (13.29%), "
+                                      "AAON (9.77%), and CAT (8.47%). All three are below their EMAs."},
+    ]
+    view = ch.build_view(payload(portfolio_review=review))
+    titles = [note["title"] for note in view["risk"]["watch"]]
+    # Gemini's title when there is one; otherwise the first sentence, cut at a bracket and shortened at a word
+    assert titles == ["Leveraged ETFs drive a high beta", "Industrials sector exposure is heavily concentrated at 31.53%…"]
+    assert view["markets_summary"] == "S&P 500 +0.3% · 1 story"
+
+    html = ch.render_html(view, TEMPLATE_DIR)
+    for title in titles + ["The central bank held rates."]:
+        summary_start = html.rfind("<summary", 0, html.index(title))
+        assert html.index("</summary>", summary_start) > html.index(title)  # The title is the row's header
+    assert ">Market indicators<" in html and ">Why it matters<" in html
 
 
 def test_send_html_email_needs_gmail_credentials(monkeypatch):

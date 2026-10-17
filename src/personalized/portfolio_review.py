@@ -9,6 +9,7 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   precomputed in build_portfolio_summary so Gemini never does its own arithmetic.
 - 2026-10-15: retries now use api_errors.GEMINI_RETRY, and a key failure (invalid, expired, no credits,
   exhausted quota) is returned to the caller instead of only being printed.
+- 2026-10-17: each note also gets a short title, shown as its collapsed dropdown row in the digest email.
 """
 import json
 import sys
@@ -39,6 +40,8 @@ CATEGORIES = ("WATCH", "NOTE")
 # 1. Define Pydantic Schema
 class ReviewNote(BaseModel):
     category: str        # Expects "WATCH" (something to keep an eye on) or "NOTE" (neutral observation or strength)
+    # Claude-authored (2026-10-17): the note's collapsed dropdown row in the digest email
+    title: str           # A 3-8 word headline, e.g. "Leveraged ETFs drive a 2.2 beta"
     text: str            # 1-2 concise sentences citing the figures behind the note
     symbols: list[str]   # Held tickers the note is about; empty for portfolio-wide notes
 
@@ -65,6 +68,7 @@ GROUNDING RULES:
 FORMATTING REQUIREMENTS:
 Keep all fields extremely succinct and direct:
 - category: Must be "WATCH" (something to keep an eye on or consider acting on) or "NOTE" (a neutral observation or strength).
+- title: A 3-8 word headline naming the point, readable on its own (e.g. "Leveraged ETFs drive a 2.2 beta"). The reader sees only the title until they open the note.
 - text: 1-2 concise sentences citing the supporting figures.
 - symbols: The tickers the note is about, exactly as given in the data; an empty list for portfolio-wide notes.
 """

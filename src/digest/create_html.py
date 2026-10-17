@@ -12,8 +12,7 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   Long text (each holding's reasoning and news, a story's market impact, a pick's extra figures) sits in
   <details> dropdowns. Apple Mail and Samsung Email collapse them; Gmail and Outlook can't, so they show them
   expanded under their labels (Gmail turns the tags into <u>, whose underline the template's CSS removes).
-- 2026-10-17: each holding and idea gets a Finviz candlestick chart (in a dropdown; DIGEST.CHARTS_OPEN to show it
-  open), and render_amp builds an AMP for Email version from the same template, whose dropdowns work in the Gmail
+- 2026-10-17: each holding and idea gets a Finviz candlestick chart (shown as soon as its row is opened), and render_amp builds an AMP for Email version from the same template, whose dropdowns work in the Gmail
   app (DIGEST.AMP_EMAIL; setup in docs/watchdog.md). The design now avoids dark backgrounds with white text, which
   the Gmail app's dark mode recolours badly.
 """
@@ -451,6 +450,20 @@ def _beta_view(beta: Any) -> Optional[dict]:
     }
 
 
+def _note_title(text: str, limit: int = 64) -> str:
+    """
+    A headline for a review note that has none (payloads from before 2026-10-17): its first sentence, cut at the
+    first bracket, colon, or comma past 25 characters, then at a word boundary near the limit.
+    """
+    first = re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0].rstrip(".")
+    cuts = [position for mark in (" (", ": ", ", ") if (position := first.find(mark)) >= 25]
+    if cuts:
+        first = first[:min(cuts)]
+    if len(first) > limit:
+        first = first[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return first
+
+
 def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
     if not cards and not review:
         return None
@@ -466,7 +479,11 @@ def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
                         "color": bar})
     largest = max(cards, key=lambda card: card["weight_pct"]) if cards else None
     notes = [
-        {"category": str(note.get("category", "NOTE")).upper(), "text": str(note.get("text", ""))}
+        {
+            "category": str(note.get("category", "NOTE")).upper(),
+            "title": _text(note.get("title")) or _note_title(str(note["text"])),
+            "text": str(note["text"]).strip(),
+        }
         for note in review
         if _text(note.get("text"))
     ]
@@ -749,6 +766,12 @@ def build_view(payload: dict) -> dict:
     long_term = [_long_term_card(pick, today) for pick in recommendations.get("top_long_term") or []]
     portfolio = _portfolio(holdings, payload.get("portfolio_beta"), (len(long_term), len(swing)))
     market = _market(payload.get("market_data"))
+    stories = _stories(payload.get("headline_news"))
+    # Claude-authored (2026-10-17): the collapsed Markets & macro section, e.g. "S&P 500 +0.3% · 5 stories"
+    markets_summary = " · ".join(
+        ([f"{market['rows'][0]['name']} {market['rows'][0]['d1']['text']}"] if market and market["rows"] else [])
+        + ([f"{len(stories)} {'story' if len(stories) == 1 else 'stories'}"] if stories else [])
+    )
     models = sorted({str(pick["model"]) for pick in (recommendations.get("top_swing") or [])
                      + (recommendations.get("top_long_term") or []) if pick.get("model")})
     # Claude-authored (2026-10-17): one chart per stock. Holdings in other currencies are skipped (Finviz covers US
@@ -772,7 +795,8 @@ def build_view(payload: dict) -> dict:
         "risk": _risk(cards, payload.get("portfolio_beta"), payload.get("portfolio_review") or []),
         "account": _account(payload.get("account_company"), holdings),
         "market": market,
-        "stories": _stories(payload.get("headline_news")),
+        "stories": stories,
+        "markets_summary": markets_summary,
         "holdings": cards,
         "holdings_note": _holdings_note(cards, holdings),
         "holdings_summary": _signal_counts(cards),
@@ -787,7 +811,6 @@ def build_view(payload: dict) -> dict:
         "usage": _usage(payload.get("api_usage")),
         "usage_note": str((payload.get("api_usage") or {}).get("note") or ""),
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
-        "charts_open": bool(params_dict["DIGEST"].get("CHARTS_OPEN", False)),
         # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
         "open_sections": set(params_dict["DIGEST"].get("OPEN_SECTIONS") or ()),
     }
@@ -902,7 +925,7 @@ def render_text(view: dict) -> str:
             lines.append(f"  Beta {risk['beta']['value']} ({risk['beta']['label']}). {risk['beta']['text']}")
         if risk["mix"]:
             lines.append("  Signals: " + ", ".join(f"{m['label']} {m['count']} ({m['pct']})" for m in risk["mix"]))
-        lines += [f"  - {note['category']}: {note['text']}" for note in risk["watch"] + risk["notes"]]
+        lines += [f"  - {note['category']}: {note['title']}. {note['text']}" for note in risk["watch"] + risk["notes"]]
     if account:
         lines += ["", f"CONNECTED ACCOUNT {account['company']}"]
         lines += [f"  {row['name']}: {row['value']} ({row['positions']})" for row in account["accounts"]]

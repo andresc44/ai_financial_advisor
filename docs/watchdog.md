@@ -267,12 +267,13 @@ It is built for a phone first: one column up to 600 px wide, checked at 360 and 
 | Level | What's shown while collapsed | Inside |
 |---|---|---|
 | Always open | Greeting, notices, portfolio overview | – |
-| Main section | Title and a one-line summary, e.g. "Your holdings · 6 risk alerts · 4 holds" | The section's content and its rows |
-| Row (one per holding or idea) | Ticker, signal or score, value, weight and day change | Figures, catalysts, and the smaller dropdowns |
-| Detail | Chart, Reasoning, News, What to watch, Top macro stories, Why it matters, extra figures, cost | The content |
+| 1. Section card | Title, a one-line summary and a count, e.g. "Your holdings · 6 risk alerts · 4 holds" | The section's key figures and its rows |
+| 2. Row | **Holdings and ideas:** ticker, signal or score, value, weight and day change<br>**Portfolio risk:** each review note's short title<br>**Markets & macro:** "Market indicators", and each story's headline | **Stock:** figures, catalysts, its chart, then the smaller dropdowns<br>**Note:** its full text<br>**Indicators:** the index table and gauges<br>**Story:** why it matters, and the source |
+| 3. Small dropdown | Reasoning, News, extra figures, the digest's cost | The content |
 
 - **Starting state:** everything starts collapsed. List any of `"risk"`, `"account"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
-- **Charts:** `DIGEST["CHARTS_OPEN"]` does the same for the charts.
+- **Note titles:** Gemini's portfolio review now writes a 3–8 word title for each note. Payloads saved before 2026-10-17 use the note's first clause instead.
+- **Narrow phones:** on screens up to 420 px, the side margins, stat boxes and fonts tighten. With every dropdown open, nothing runs past the right edge at 300, 320, 360 or 390 px wide.
 
 Where they work:
 - **Collapse in the HTML version:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
@@ -280,7 +281,7 @@ Where they work:
 - **Gmail:** gets working dropdowns from the AMP version (below).
 
 **Charts (added 2026-10-17).** Each holding and idea has Finviz's daily candlestick chart: candles, 20/50/200-day moving averages, trendlines and volume.
-- **Collapsed by default.** Set `DIGEST["CHARTS_OPEN"] = True` to show them open.
+- **Shown as soon as the stock's row is opened,** under its figures.
 - **Not shown for holdings listed in another currency,** since Finviz covers US listings.
 - **Freshness:** each digest's chart links are unique, so Gmail's image cache can't show yesterday's chart.
 - **Finviz blocks headless browsers (403).** Previewing the saved HTML in an automated browser needs a normal user agent. Gmail's image proxy and ordinary browsers get the charts.

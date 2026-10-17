@@ -504,7 +504,6 @@ params_dict = {
         "POST_MARKET_SEND_WINDOW_MINUTES": 240,  # A missed Post-Market run is retried for this long after it was due
         # Claude-authored (2026-10-17): the email itself (src/digest/create_html.py)
         "AMP_EMAIL": True,      # Also send an AMP version, whose dropdowns work in the Gmail app (needs setup: docs/watchdog.md)
-        "CHARTS_OPEN": False,   # True: each stock's candlestick chart starts expanded instead of in a collapsed dropdown
         # Main sections that start expanded; the rest start collapsed, showing a one-line summary. Any of:
         # "risk", "account", "markets", "holdings", "swing", "long_term" (the overview at the top is always shown)
         "OPEN_SECTIONS": [],
