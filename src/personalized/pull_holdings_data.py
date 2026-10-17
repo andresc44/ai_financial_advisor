@@ -22,6 +22,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.admins import notice_text
 from src.parameters import params_dict
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import add_metrics_to_holdings
@@ -80,7 +81,8 @@ class PortfolioFetcher:
         # 2026-10-16: Claude or DeepSeek, and the key error for whichever provider that is (formerly claude_*)
         self.llm_settings = get_llm_settings(user_name)
         self.llm_key_error = None  # Set by add_recommendations when the user's LLM key can't be used
-        # Claude-authored (2026-10-15): problems reading the holdings source, as {"source", "reason", "message"}.
+        # Claude-authored (2026-10-15): problems reading the holdings source, as {"source", "reason", "message",
+        # "user_message"} (2026-10-17: message for the admins, user_message worded for this user).
         # Without them a disabled brokerage connection or unreadable sheet looks the same as an empty portfolio.
         self.holdings_issues: list[dict] = []
 
@@ -148,10 +150,18 @@ class PortfolioFetcher:
             return item.__dict__
         return {}
 
-    def _add_holdings_issue(self, source: str, reason: str, message: str) -> None:
-        """Claude-authored (2026-10-15): records one holdings source problem (see self.holdings_issues)."""
+    def _add_holdings_issue(self, source: str, reason: str, problem: str, fix: str = "", detail: str = "") -> None:
+        """
+        Claude-authored (2026-10-15): records one holdings source problem (see self.holdings_issues).
+        2026-10-17: the fix and the API's own message (`detail`) are kept apart from the problem, because only the
+        admins can act on them: other users' user_message ends with "Contact Andres to address this issue."
+        """
+        message = notice_text(problem, fix, None, detail)
         print(f"[ERROR] {source} holdings problem ({reason}): {message}")
-        self.holdings_issues.append({"source": source, "reason": reason, "message": message})
+        self.holdings_issues.append({
+            "source": source, "reason": reason, "message": message,
+            "user_message": notice_text(problem, fix, self.user_name, detail),
+        })
 
     def _check_brokerage_connections(self) -> None:
         """
@@ -174,7 +184,8 @@ class PortfolioFetcher:
             self._add_holdings_issue(
                 "SnapTrade",
                 "connection_disabled",
-                f"Your {name} connection has been disabled{since}. Reconnect it through SnapTrade so holdings sync again.",
+                f"Your {name} connection has been disabled{since}.",
+                "Reconnect it through SnapTrade so holdings sync again.",
             )
 
     def _check_holdings_sync(self, acc_dict: dict, account_label: str) -> None:
@@ -189,7 +200,8 @@ class PortfolioFetcher:
                 "SnapTrade",
                 "stale_sync",
                 f"Holdings for account {account_label} last synced {last_sync:%Y-%m-%d} ({age_hours / 24:.0f} days ago), "
-                "so prices and positions may be out of date. Reconnecting the brokerage in SnapTrade usually fixes this.",
+                "so prices and positions may be out of date.",
+                "Reconnecting the brokerage in SnapTrade usually fixes this.",
             )
 
     def fetch_user_accounts(self) -> list:
@@ -206,8 +218,9 @@ class PortfolioFetcher:
             self._add_holdings_issue(  # Claude-authored (2026-10-15)
                 "SnapTrade",
                 "api_error",
-                f"SnapTrade could not be reached or rejected this user's keys ({str(e)[:200]}). "
+                "SnapTrade could not be reached or rejected this user's keys.",
                 "Check the SnapTrade client ID and consumer key in .env.",
+                detail=str(e),
             )
             return []
 
@@ -234,7 +247,8 @@ class PortfolioFetcher:
             self._add_holdings_issue(  # Claude-authored (2026-10-15)
                 "SnapTrade",
                 "positions_error",
-                f"Positions for one account could not be fetched ({str(e)[:200]}), so its holdings are missing.",
+                "Positions for one account could not be fetched, so its holdings are missing.",
+                detail=str(e),
             )
             return [], {}
 
@@ -245,7 +259,7 @@ class PortfolioFetcher:
         # Claude-authored (2026-10-15): report connection problems instead of returning a silently empty portfolio
         if not accounts and not self.holdings_issues:
             self._add_holdings_issue(
-                "SnapTrade", "no_accounts", "SnapTrade returned no brokerage accounts. Connect one through SnapTrade."
+                "SnapTrade", "no_accounts", "SnapTrade returned no brokerage accounts.", "Connect one through SnapTrade."
             )
         if accounts:
             self._check_brokerage_connections()
@@ -683,14 +697,16 @@ class PortfolioFetcher:
             self._add_holdings_issue(  # Claude-authored (2026-10-15)
                 "Google Sheets",
                 "sheet_unavailable",
-                f"The holdings sheet could not be read ({str(e)[:200]}). Check the sheet ID in .env and that the "
-                "sheet is shared with the service account.",
+                "The holdings sheet could not be read.",
+                "Check the sheet ID in .env and that the sheet is shared with the service account.",
+                detail=str(e),
             )
             return pd.DataFrame()
 
         if raw_df.empty:
             print("[WARNING] Google Sheet returned no data.")
-            self._add_holdings_issue("Google Sheets", "sheet_empty", "The holdings sheet has no rows.")
+            self._add_holdings_issue("Google Sheets", "sheet_empty", "The holdings sheet has no rows.",
+                                     "Add the holdings to the sheet.")
             return pd.DataFrame()
 
         # Validate required columns
@@ -703,6 +719,7 @@ class PortfolioFetcher:
                 "sheet_invalid",
                 f"The holdings sheet is missing the required column(s) {missing_cols} "
                 "(needed: symbol, shares_qty, avg_purchase_price).",
+                "Add the missing columns to the sheet.",
             )
             return pd.DataFrame()
 

@@ -11,6 +11,9 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   variable, and shared_api_key() raises it when the key isn't set.
 - 2026-10-16: DeepSeek, which can now do any job a Claude model does (src/llm_models.py): deepseek_key_error,
   verify_deepseek_key (the free balance check), and verify_llm_key, which picks the provider's check.
+- 2026-10-17: the problem and its fix are kept apart (ApiKeyUnusable.problem / .fix), and text_for(reader) words
+  the error for its reader: only the admins can change .env or the provider accounts, so anyone else gets
+  "Contact Andres to address this issue." instead of the fix (src/admins.py).
 
 Error formats (checked 2026-10-15):
 - Anthropic (platform.claude.com/docs/en/api/errors, /api/rate-limits): 401 invalid/revoked/expired key;
@@ -42,6 +45,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.admins import is_admin, notice_text
 from src.personalized.user_profiles import USER_PROFILES
 
 PROFILE_KEYS = {"Anthropic": "anthropic_api_key", "Gemini": "gemini_api_key", "DeepSeek": "deepseek_api_key"}
@@ -98,21 +102,44 @@ class ApiKeyUnusable(ValueError):
         """False only for rate limits, which can clear within minutes; every other reason needs the user to act."""
         return self.reason != "rate_limited"
 
-    def _describe(self) -> str:
+    def _env_key(self) -> str:
         if self.user_name is None:  # A shared key (universal content), not a user's own
-            env_key = SHARED_ENV_KEYS.get(self.provider, (f"{self.provider.upper()}_API_KEY",))[0]
-            owner = f"Shared {self.provider} API key ({env_key})"
+            return SHARED_ENV_KEYS.get(self.provider, (f"{self.provider.upper()}_API_KEY",))[0]
+        env_key = (USER_PROFILES.get(self.user_name) or {}).get(PROFILE_KEYS.get(self.provider, ""))
+        return env_key or f"<USER>_{self.provider.upper()}_API_KEY"
+
+    @property
+    def problem(self) -> str:
+        """e.g. "Gemini API key for 'Andres' has expired." (the admin's wording, without the fix)"""
+        if self.user_name is None:
+            owner = f"Shared {self.provider} API key ({self._env_key()})"
         else:
-            env_key = (USER_PROFILES.get(self.user_name) or {}).get(PROFILE_KEYS.get(self.provider, ""))
-            env_key = env_key or f"<USER>_{self.provider.upper()}_API_KEY"
             owner = f"{self.provider} API key for '{self.user_name}'"
-        hint = FIX_HINTS[self.reason].format(env_key=env_key, console=CONSOLES.get(self.provider, self.provider))
-        text = f"{owner} {REASON_TEXT[self.reason]}. {hint}"
-        return f"{text} (API said: {self.detail[:200]})" if self.detail else text
+        return f"{owner} {REASON_TEXT[self.reason]}."
+
+    @property
+    def fix(self) -> str:
+        """What to change, e.g. 'Create a new key in Google AI Studio and update ANDRES_GEMINI_API_KEY in .env.'"""
+        return FIX_HINTS[self.reason].format(env_key=self._env_key(), console=CONSOLES.get(self.provider, self.provider))
+
+    def text_for(self, reader: Optional[str]) -> str:
+        """
+        The error worded for `reader`: an admin (or None, the run log) gets the fix and the API's message; anyone
+        else gets "Your <provider> API key ..." and the contact line, since only the admins can fix keys.
+        """
+        problem = self.problem if is_admin(reader) else f"Your {self.provider} API key {REASON_TEXT[self.reason]}."
+        return notice_text(problem, self.fix, reader, self.detail, self_resolving=not self.blocks_run)
+
+    def _describe(self) -> str:
+        return self.text_for(None)
 
     def as_notice(self) -> dict:
-        """Payload-friendly summary for the digest."""
-        return {"provider": self.provider, "reason": self.reason, "message": str(self)}
+        """
+        Payload-friendly summary for the digest. `message` is the full text (for the admins and the run log);
+        `user_message` is worded for the key's owner, who reads the digest (Claude-authored, 2026-10-17).
+        """
+        return {"provider": self.provider, "reason": self.reason, "message": str(self),
+                "user_message": self.text_for(self.user_name)}
 
 
 def _expired_or_invalid(message: str) -> str:

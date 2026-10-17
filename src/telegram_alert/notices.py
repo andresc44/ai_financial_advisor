@@ -116,10 +116,13 @@ def holdings_issue_subject(issue: dict) -> str:
 
 
 def holdings_issue_body(issue: dict) -> str:
-    """Telegram text for a holdings source problem (see PortfolioFetcher.holdings_issues)."""
+    """
+    Telegram text for a holdings source problem (see PortfolioFetcher.holdings_issues). 2026-10-17: worded for the
+    holdings' owner (user_message): the fix for an admin, "Contact Andres to address this issue." for anyone else.
+    """
     return (
         f"\u26a0\ufe0f Finnbot couldn't read all of your holdings from {html.escape(issue['source'])}. "
-        f"{html.escape(issue['message'])}\n\n"
+        f"{html.escape(issue.get('user_message') or issue['message'])}\n\n"
         "Until this is fixed, holdings checks, alerts, and the digest's holdings section may be missing or incomplete."
     )
 

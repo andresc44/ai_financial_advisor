@@ -271,9 +271,10 @@ def send_key_notice(
     Claude-authored (2026-10-15): tells the user, at most once per cooldown for each provider and reason, that
     their API key stopped holdings evaluations, so a missing, expired, or out-of-credit key never fails silently.
     A failed send is only a warning (and is retried next run), so it can't undo the alerts already sent.
+    2026-10-17: worded for the user (text_for): the fix for an admin, "Contact Andres ..." for anyone else.
     """
     body = (
-        f"⚠️ Finnbot could not evaluate your holdings. {html.escape(str(key_error))}\n\n"
+        f"⚠️ Finnbot could not evaluate your holdings. {html.escape(key_error.text_for(user_name))}\n\n"
         "Holdings are not re-evaluated until this is fixed. Recommendations from the last "
         f"{WATCHDOG_PARAMS['MAX_EVALUATION_AGE_HOURS']}h can still trigger alerts."
     )

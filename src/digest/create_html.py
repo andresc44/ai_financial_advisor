@@ -35,6 +35,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.admins import contact_admin, is_admin, notice_text
 from src.fx_rates import usd_rates
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
@@ -67,10 +68,12 @@ PRIORITY_DOTS = {"HIGH": "#DC2626", "MEDIUM": "#F59E0B", "LOW": "#94A3B8"}
 CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£"}
 # Claude-authored (2026-10-17): the currency of the holdings' money amounts (market value, daily and unrealized
 # P/L, cost): pull_holdings_data converts them to USD (USD_MONEY_COLUMNS). Per-share prices stay in each holding's
-# listing currency, its `currency` field. Picks and market prices carry no currency, so USD is assumed for them
-# (DEFAULT_CURRENCY) and build_view notes it in the run log.
+# listing currency, its `currency` field. The swing and long-term ideas come from the US screener and the market
+# dashboard is US ETFs, indexes, and WTI, so both are always USD (IDEAS_CURRENCY). Holdings without a currency are
+# assumed USD (DEFAULT_CURRENCY), and build_view notes them in the run log.
 MONEY_CURRENCY = "USD"
 DEFAULT_CURRENCY = "USD"
+IDEAS_CURRENCY = "USD"
 ETF_TICKERS = ("SPY", "QQQ", "DIA", "IWM")  # Market rows priced in USD (the others are index levels or rates)
 ANALYST_RATINGS = {
     "strong_buy": "Strong buy", "buy": "Buy", "hold": "Hold",
@@ -342,13 +345,36 @@ def _prepared(started: dict) -> str:
     return f"Prepared {' · '.join(clocks)}" if clocks else ""
 
 
+def _user_text(notice: dict, reader: Optional[str]) -> str:
+    """A key or holdings notice worded for its reader (user_message); older payloads only have the admin's text."""
+    if notice.get("user_message"):
+        return str(notice["user_message"])
+    return notice_text(str(notice.get("message", "")), "", reader)
+
+
 def _issues(payload: dict) -> list[dict]:
-    """Why parts of the digest are empty or incomplete (a key, a brokerage connection, a data source)."""
+    """
+    Why parts of the digest are empty or incomplete (a key, a brokerage connection, a data source).
+    2026-10-17: an admin sees each problem with its fix. Anyone else sees their own key and holdings problems with
+    "Contact Andres to address this issue.", and one plain line for the shared data sources, whose messages name
+    keys and plans only an admin can change (the admins are alerted about those separately).
+    """
+    reader = _text(payload.get("user_name"))
     issues = []
     for notice in payload.get("api_key_issues") or []:
-        issues.append({"title": f"{notice.get('provider', 'API')} key", "message": str(notice.get("message", ""))})
-    for notice in (payload.get("data_source_issues") or []) + (payload.get("universal_issues") or []):
-        issues.append({"title": str(notice.get("source", "Data source")), "message": str(notice.get("message", ""))})
+        issues.append({"title": f"{notice.get('provider', 'API')} key", "message": _user_text(notice, reader)})
+    for notice in payload.get("data_source_issues") or []:
+        issues.append({"title": str(notice.get("source", "Holdings")), "message": _user_text(notice, reader)})
+    shared = payload.get("universal_issues") or []
+    if is_admin(reader):
+        for notice in shared:
+            issues.append({"title": str(notice.get("source", "Data source")), "message": str(notice.get("message", ""))})
+    elif shared:
+        sources = list(dict.fromkeys(str(notice.get("source") or "A data source") for notice in shared))
+        named = sources[0] if len(sources) == 1 else ", ".join(sources[:-1]) + f" and {sources[-1]}"
+        issues.append({"title": "Market data", "message": (
+            f"{named} had {'a problem' if len(shared) == 1 else 'problems'} this run, so some ideas or market data "
+            f"may be missing or incomplete. {contact_admin()}")})
     return issues
 
 
@@ -694,8 +720,8 @@ def _market(market_data: Any, day: str) -> Optional[dict]:
             last = f"${latest:.2f}"
         else:
             last = f"{latest:,.0f}" if latest >= 10_000 else f"{latest:,.2f}"
-            if ticker in ETF_TICKERS:  # An ETF's share price (assumed USD: the dashboard carries no currency)
-                last = f"{CURRENCY_SYMBOLS[DEFAULT_CURRENCY]}{latest:,.2f}"
+            if ticker in ETF_TICKERS:  # A US ETF's share price
+                last = f"{CURRENCY_SYMBOLS[IDEAS_CURRENCY]}{latest:,.2f}"
         rows.append({"name": short, "ticker": ticker, "last": last,
                      "d1": _change(metric.get("1D %")), "d5": _change(metric.get("5D %")),
                      "m1": _change(metric.get("1M %"))})
@@ -935,18 +961,12 @@ def build_view(payload: dict) -> dict:
         card["chart"] = _chart(card["symbol"], version) if card["us_listing"] else None
     for card in swing + long_term:
         card["chart"] = _chart(card["ticker"], version) if card["ticker"] else None
-    # Claude-authored (2026-10-17): currencies the payload doesn't give are assumed USD, and listed for the run log
-    picks = (recommendations.get("top_swing") or []) + (recommendations.get("top_long_term") or [])
-    pick_currencies = {str(pick["currency"]) for pick in picks if _text(pick.get("currency"))}
-    ideas_currency = pick_currencies.pop() if len(pick_currencies) == 1 else DEFAULT_CURRENCY
+    # Claude-authored (2026-10-17): currencies the payload doesn't give are assumed USD, and listed for the run log.
+    # The ideas and the market dashboard are always USD (see IDEAS_CURRENCY), so they aren't listed.
     currency_notes = []
     if [card["symbol"] for card in cards if card["currency_assumed"]]:
         currency_notes.append("holdings without a currency, shown as USD: "
                               + ", ".join(card["symbol"] for card in cards if card["currency_assumed"]))
-    if picks and not all(_text(pick.get("currency")) for pick in picks):
-        currency_notes.append("swing and long-term picks have no currency; their prices are shown as USD")
-    if market and market["rows"]:
-        currency_notes.append("the market dashboard has no currency; ETF and oil prices are shown as USD")
     if isinstance(payload.get("api_usage"), dict) and not _text(payload["api_usage"].get("currency")):
         currency_notes.append("API usage has no currency; costs are shown as USD")
 
@@ -964,8 +984,9 @@ def build_view(payload: dict) -> dict:
         "day": day,
         "issues": _issues(payload) + ([{
             "title": "Exchange rate",
-            "message": f"No current rate to convert {', '.join(unconverted)} to USD, so they are shown in their own "
-                       "currency and not added to the USD totals correctly.",
+            "message": notice_text(f"No current rate to convert {', '.join(unconverted)} to USD, so they are shown "
+                                   "in their own currency and not added to the USD totals correctly.", "",
+                                   _text(payload.get("user_name"))),
         }] if unconverted else []),
         "fx_notes": fx_notes,
         "portfolio": portfolio,
@@ -994,7 +1015,7 @@ def build_view(payload: dict) -> dict:
         # fit_for_gmail, before anything else, when the digest would pass Gmail's clipping limit
         "glossary": [{"category": category, "terms": terms} for category, terms in GLOSSARY],
         "glossary_summary": [_part("Terms, abbreviations, and indicators explained")],
-        "ideas_currency": ideas_currency,
+        "ideas_currency": IDEAS_CURRENCY,
         "currency_notes": currency_notes,
         # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
         "open_sections": set(params_dict["DIGEST"].get("OPEN_SECTIONS") or ()),

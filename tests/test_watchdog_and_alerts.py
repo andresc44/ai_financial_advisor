@@ -13,6 +13,7 @@ import pytest
 import src.run_logging as run_logging
 import src.telegram_alert.hourly_watchdog as wd
 import src.telegram_alert.notices as notices
+from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.holdings_state import get_user_state
 from src.personalized.pull_holdings_data import PortfolioFetcher
@@ -146,8 +147,9 @@ def test_alert_admins_cooldown_and_send_failures(telegram):
 
 
 # --------------------------------------------------------------------------------------------- holdings sources
-def fetcher_with(client):
+def fetcher_with(client, user_name="Andres"):
     fetcher = PortfolioFetcher.__new__(PortfolioFetcher)
+    fetcher.user_name = user_name
     fetcher.holdings_issues = []
     fetcher.client = client
     return fetcher
@@ -175,6 +177,34 @@ def test_snaptrade_problems_are_recorded():
     none = fetcher_with(SimpleNamespace(account_information=SimpleNamespace(list_user_accounts=lambda: SimpleNamespace(body=[]))))
     none.get_holdings_df()
     assert [i["reason"] for i in none.holdings_issues] == ["no_accounts"]
+
+
+def test_holdings_problems_give_the_fix_only_to_admins(monkeypatch):
+    monkeypatch.setitem(params_dict["OPS"], "ALERT_USERS", ["Andres"])
+    down = SimpleNamespace(account_information=SimpleNamespace(list_user_accounts=lambda: raise_(RuntimeError("401 Unauthorized"))))
+    for user in ("Andres", "Steven"):
+        fetcher = fetcher_with(down, user)
+        fetcher.get_holdings_df()
+        issue = fetcher.holdings_issues[0]
+        # The admins' text (run log, admin alerts) always has the fix and the API's message
+        assert "Check the SnapTrade client ID" in issue["message"] and "401 Unauthorized" in issue["message"]
+        body = notices.holdings_issue_body(issue)
+        assert body.count("SnapTrade could not be reached") == 1
+        if user == "Andres":
+            assert "Check the SnapTrade client ID" in body and "Contact Andres" not in body
+        else:
+            assert "Contact Andres to address this issue." in body
+            assert ".env" not in body and "401" not in body
+
+
+def test_key_notice_gives_the_fix_only_to_admins(monkeypatch, telegram):
+    monkeypatch.setitem(params_dict["OPS"], "ALERT_USERS", ["Andres"])
+    for user in ("Andres", "Steven"):
+        wd.send_key_notice(user, ApiKeyUnusable("Anthropic", "no_credits", user, "Your credit balance is too low."), EMPTY_LOG)
+    (_, andres), (_, steven) = telegram.messages
+    assert "Add credits or enable billing in platform.claude.com." in andres and "credit balance is too low" in andres
+    assert "Your Anthropic API key has no credits left, or billing is not set up. Contact Andres to address this issue." in steven
+    assert "platform.claude.com" not in steven
 
 
 def test_sheet_missing_columns_is_reported_not_raised(monkeypatch):

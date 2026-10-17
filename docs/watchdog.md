@@ -134,6 +134,16 @@ Missing, invalid, revoked, expired, unpermitted, out-of-credit, spend-limited, a
 | Digest | The same Claude handling (market data is still fetched, because the holding cards use it). For Gemini, the per-stock news loop stops at the first key failure (keeping news already fetched), and the portfolio review is skipped without a request. The payload's `api_key_issues` list says which key failed and why. |
 | Gemini retries | Only timeouts, connection errors, per-minute 429s (honoring the API's retry delay), and 5xx are retried, up to 4 attempts. Key, billing, daily-quota, and other 4xx errors fail immediately. A 429 that survives the retries stops the news loop for that run but still lets the review try. |
 
+#### Who is told how to fix it (`src/admins.py`, 2026-10-17)
+
+Only the admins (`OPS.ALERT_USERS`, Andres) can change `.env`, the provider accounts, or the SnapTrade and sheet setup. So key and holdings notices are worded for their reader, in Telegram and in the email:
+- **An admin** gets the problem, the fix, and the API's own message, e.g. "Gemini API key for 'Andres' has expired. Create a new key in Google AI Studio and update ANDRES_GEMINI_API_KEY in .env."
+- **Everyone else** gets the problem and "Contact Andres to address this issue.", e.g. "Your Gemini API key has expired. Contact Andres to address this issue." A rate limit, which clears by itself, says it will be retried instead.
+- **Shared data sources** (the universal content's Finnhub, Twelve Data, Yahoo, and shared keys): an admin's email lists each problem. Anyone else's shows one plain line naming the sources, plus the contact line. The admins are alerted about these separately.
+- **The run log** always has the full text.
+
+In the payload, `api_key_issues` and `data_source_issues` carry both texts: `message` (the admin's) and `user_message` (worded for the user whose digest it is).
+
 ## Schedules
 
 **Regular and extended:** blocks are counted from the session start and restart each trading day. **24_7:** blocks are counted continuously in UTC, so daylight-saving changes never shift them, and intervals like 5 or 48 hours stay evenly spaced. Changing a user's interval or session makes them due immediately.
@@ -277,11 +287,11 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 | Portfolio total, position values, P/L, account values | USD ("Your portfolio · USD", "Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
 | A CAD, AUD or GBP (incl. pence) holding | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 (1 CAD = 0.7074 USD)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so |
 | Any other holding's share price | Its listing currency, as the payload gives it (e.g. "Price · EUR") | The holding's `currency` field |
-| Ideas: prices, trade levels, targets | "Prices in USD" | Assumed: picks carry no currency |
-| Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Assumed: the dashboard carries no currency |
+| Ideas: prices, trade levels, targets | "Prices in USD" | Always USD: the ideas come from the US screener (`IDEAS_CURRENCY`) |
+| Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Always USD: US ETFs and WTI |
 | API costs | Their `currency` | `api_usage.currency` |
 
-Wherever USD is assumed, the run log gets a `[NOTE] ... (not in the payload)` line.
+Where USD is assumed for a holding without a currency, or for API costs in a payload without `api_usage.currency`, the run log gets a `[NOTE] ... (not in the payload)` line.
 
 **"Prev. day" and "Day" labels (added 2026-10-17).** Every daily change covers one full trading session, close to close: the previous session in a Pre-Market digest, today's in a Post-Market one. To make that clear, every daily change is labelled "Prev. day" in Pre-Market digests and "Day" in Post-Market ones:
 - the overview's change pill;
@@ -368,6 +378,7 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Market data for holdings (`data/market_context_cache.json`) | Quote and headlines are re-fetched when older than `FRESH_CONTEXT_MAX_AGE_MINUTES` (30). Fundamentals and daily indicators are re-fetched after each market open and close; the close only counts from 16:01 ET, hence the digest at close + 10 minutes. |
 | Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
 | Gemini news and portfolio review | Fresh every run (no cache). |
+| Company names | Yahoo's name (`profile.name` in the market context) replaces the brokerage's description, which can be wrong (SnapTrade has called Agilent's "A" "AgileThought, Inc."). The holding news starts before the market context is fetched, so it uses the name cached from an earlier run (`cached_company_names`). |
 | Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies for display. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list. That list is downloaded once per morning and once per afternoon, and again whenever the stage-1 settings in `parameters.py` change. |
 
@@ -414,6 +425,8 @@ The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and T
 | Twelve Data daily credits used up, or key rejected | No more Twelve Data calls this run. |
 | A Twelve Data request needs more credits than the plan allows per minute (one per ticker; the free plan allows 8). Only applies to indicators not computed from Yahoo prices (below). | Skipped at once instead of waiting it out, and not retried this run. The technical filter then keeps those tickers instead of dropping them all. |
 | Yahoo's daily prices for the indicators can't be downloaded | Reported as a `Yahoo prices` issue. Those tickers have no indicators, which the completeness check also flags. |
+
+**Share-class tickers** (2026-10-17): the NASDAQ screener writes `BRK/B`, which Yahoo doesn't know, so Berkshire used to drop out of the candidates. The ticker list is converted to Yahoo's `BRK-B` when it's loaded, and each Finnhub call converts it to Finnhub's `BRK.B` (`yahoo_symbol` and `finnhub_symbol` in `data_source_guard.py`).
 
 **Technical indicators** come from Yahoo daily prices by default (`TECHNICAL_INDICATOR_SOURCE = "yahoo"`, `src/universal/recommendations/local_indicators.py`, added 2026-10-16).
 - **Why:** on Twelve Data's free plan, the ~40 candidates and any holdings refresh of more than 8 stocks never got their indicators.

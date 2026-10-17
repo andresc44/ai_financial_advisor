@@ -197,13 +197,30 @@ def test_digest_without_personal_or_macro_content():
     assert html.count("<details>") == 1 + len(view["glossary"])
 
 
-def test_issues_are_shown_first():
-    _, html = render(payload(
-        api_key_issues=[{"provider": "Gemini", "reason": "no_credits", "message": "The Gemini key is out of credits."}],
-        universal_issues=[{"source": "Finnhub", "reason": "missing_key", "message": "FINNHUB_API_KEY is missing."}],
-    ))
+def test_issues_are_shown_first(monkeypatch):
+    monkeypatch.setitem(ch.params_dict["OPS"], "ALERT_USERS", ["Andres"])
+    issues = dict(
+        # user_message is worded for the key's owner, who reads the digest (here a non-admin)
+        api_key_issues=[{"provider": "Gemini", "reason": "no_credits", "message": "The Gemini key is out of credits. Add credits.",
+                         "user_message": "Your Gemini API key has no credits left. Contact Andres to address this issue."}],
+        data_source_issues=[{"source": "Google Sheets", "reason": "sheet_empty", "message": "The holdings sheet has no rows."}],
+        universal_issues=[{"source": "Finnhub", "reason": "missing_key", "message": "FINNHUB_API_KEY is missing."},
+                          {"source": "Twelve Data", "reason": "plan_limit", "message": "The plan allows 8 credits."}],
+    )
+    # An admin sees every shared data problem as it was reported, and older issues without a contact line
+    view, html = render(payload(user_name="Andres", **{**issues, "api_key_issues": []}))
     assert html.index("Some parts of this digest are incomplete") < html.index("Your portfolio")
-    assert "The Gemini key is out of credits." in html and "FINNHUB_API_KEY is missing." in html
+    assert [issue["message"] for issue in view["issues"]] == [
+        "The holdings sheet has no rows.", "FINNHUB_API_KEY is missing.", "The plan allows 8 credits."]
+    # Anyone else sees their own problems with the contact line, and one plain line for the shared data sources
+    view, html = render(payload(user_name="Steven", **issues))
+    assert [issue["message"] for issue in view["issues"]] == [
+        "Your Gemini API key has no credits left. Contact Andres to address this issue.",
+        "The holdings sheet has no rows. Contact Andres to address this issue.",  # An older payload's issue
+        "Finnhub and Twelve Data had problems this run, so some ideas or market data may be missing or incomplete. "
+        "Contact Andres to address this issue.",
+    ]
+    assert "FINNHUB_API_KEY" not in html and "Add credits" not in html
 
 
 def test_a_full_digest_fits_under_gmails_clipping_limit():
@@ -491,21 +508,17 @@ def test_currencies_come_from_the_payload_or_default_to_usd():
     assert cards["NOC"]["stats"][0]["label"] == "Price · USD" and cards["NOC"]["currency_assumed"] is True
     assert all(card["stats"][1]["label"] == "Unrealized · USD" for card in view["holdings"])
     assert view["portfolio"]["label"] == "Your portfolio · USD" and "Values in USD" in view["holdings_note"]
-    # Picks, the market dashboard, and (in this payload) API usage carry no currency: USD is assumed and noted
-    assert view["ideas_currency"] == "USD"
+    # The ideas and the market dashboard are US-listed, so always USD and never noted; API usage without a
+    # currency (older payloads) is assumed USD and noted
+    assert view["ideas_currency"] == "USD" and "Prices in USD" in ch.render_html(view, TEMPLATE_DIR)
     assert view["market"]["rows"][0]["last"] == "$700.00"  # SPY's share price
     assert view["currency_notes"] == [
         "holdings without a currency, shown as USD: NOC",
-        "swing and long-term picks have no currency; their prices are shown as USD",
-        "the market dashboard has no currency; ETF and oil prices are shown as USD",
         "API usage has no currency; costs are shown as USD",
     ]
     assert dict(view["usage"])["This digest"].startswith("$0.30 USD")
-    # A currency the payload gives is used as given
-    priced = payload(recommendations={"top_long_term": [long_pick(currency="EUR")], "top_swing": []},
-                     api_usage={"currency": "USD", "this_digest": {"total_cost_usd": 0.3}})
-    assert ch.build_view(priced)["ideas_currency"] == "EUR"
-    assert "Prices in EUR" in ch.render_html(ch.build_view(priced), TEMPLATE_DIR)
+    with_currency = payload(api_usage={"currency": "USD", "this_digest": {"total_cost_usd": 0.3}})
+    assert ch.build_view(with_currency)["currency_notes"] == []
 
 
 def test_cad_aud_and_gbp_holdings_are_converted_to_usd_at_the_current_rate(monkeypatch):

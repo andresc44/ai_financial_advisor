@@ -10,6 +10,7 @@ from google.genai import types
 
 import src.personalized.api_errors as api_errors
 import src.personalized.symbol_specific_news as news
+from src.parameters import params_dict
 
 USER = "Andres"
 
@@ -174,3 +175,20 @@ def test_gemini_non_key_errors_fail_per_stock_without_retry(gemini_server):
     result, key_error = news.fetch_symbol_news(COMPANIES, "g-key", user_name=USER, max_workers=1)
     assert key_error is None and gemini_server["calls"] == 3
     assert all(items == [] for items in result.values())
+
+
+# --------------------------------------------------------------------------------------------- wording per reader
+def test_key_errors_give_the_fix_to_admins_and_the_contact_line_to_everyone_else(monkeypatch):
+    monkeypatch.setitem(params_dict["OPS"], "ALERT_USERS", ["Andres"])
+    admin = api_errors.ApiKeyUnusable("Gemini", "expired", "Andres", "API key expired.")
+    assert admin.as_notice()["user_message"] == str(admin)
+    assert admin.fix in str(admin) and "(API said: API key expired.)" in str(admin)
+    other = api_errors.ApiKeyUnusable("Gemini", "expired", "Steven", "API key expired.")
+    assert other.fix in str(other)  # The run log and the admins' alerts keep the fix
+    assert other.as_notice()["user_message"] == "Your Gemini API key has expired. Contact Andres to address this issue."
+    # A rate limit clears by itself, so everyone is told it will be retried instead
+    limited = api_errors.ApiKeyUnusable("Gemini", "rate_limited", "Steven")
+    assert limited.text_for("Steven") == (
+        "Your Gemini API key kept hitting rate limits after retries. It will be retried on the next run."
+    )
+
