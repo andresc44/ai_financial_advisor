@@ -41,7 +41,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src import llm_models
-from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, tool_call_arguments
+from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
 from src.market_session import market_phase
 from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error, verify_llm_key
@@ -170,18 +170,20 @@ class ParallelHoldingEvaluator:
         return await self.client.messages.create(**request)
 
     async def _evaluate_with_deepseek(self, symbol: str, user_prompt: str) -> Optional[HoldingEvaluation]:
-        """Claude-authored (2026-10-16): one evaluation on DeepSeek, with the same tool schema and validation."""
+        """
+        Claude-authored (2026-10-16): one evaluation on DeepSeek, with the same tool schema and validation.
+        2026-10-17: a misshapen answer is repaired, and one still invalid is asked for once more (validated_answer).
+        """
         request = build_request(
             self.config["model"], self.config["effort"], self.config["system_prompt"], user_prompt, EVALUATION_TOOL_SPEC
         )
-        response = await self.deepseek.chat(request)
-        record_deepseek_response(self.user_name, self.source, self.config["model"], response)
-        result = tool_call_arguments(response, EVALUATION_TOOL_NAME)
-        if result.arguments is None:
-            logger.error(f"[{symbol}] No recommendation recorded: {result.problem}.")
-            return None
-        evaluation = HoldingEvaluation(**result.arguments)
-        logger.info(f"[{symbol}] Evaluated -> {evaluation.recommendation}")
+        evaluation = await validated_answer(
+            self.deepseek, request, EVALUATION_TOOL_SPEC, HoldingEvaluation, symbol, logger,
+            on_response=lambda response: record_deepseek_response(
+                self.user_name, self.source, self.config["model"], response),
+        )
+        if evaluation is not None:
+            logger.info(f"[{symbol}] Evaluated -> {evaluation.recommendation}")
         return evaluation
 
     async def _evaluate_single_holding(

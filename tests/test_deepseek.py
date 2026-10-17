@@ -99,10 +99,26 @@ def test_deepseek_key_failure_stops_the_run(deepseek_server, status, reason):
     assert "platform.deepseek.com" in str(key_error)  # Where to top up or create a new key
 
 
-def test_answers_that_dont_fit_the_schema_are_skipped(deepseek_server):
+def test_answers_that_dont_fit_the_schema_are_asked_once_more_then_skipped(deepseek_server):
     deepseek_server["plan"] = lambda n, body: (200, completion({"recommendation": "buy_more", "sentiment": "Bullish", "rationale": "x"}))
     evaluations, key_error = rec.run_holding_evaluation({"S0": {}}, api_key="ds-key", config=DEEPSEEK, user_name="Andres")
     assert evaluations == {} and key_error is None
+    assert len(deepseek_server["requests"]) == 2  # The first answer and one retry
+    rows = [json.loads(line) for line in usage.LEDGER_PATH.read_text().splitlines()]
+    assert len(rows) == 2  # Both were billed
+
+
+def test_an_invalid_answer_is_replaced_by_the_retry(deepseek_server):
+    answers = {1: completion(content="I think it's a hold.", finish="stop"), 2: completion(HOLD)}
+    deepseek_server["plan"] = lambda n, body: (200, answers[n])
+    evaluations, _ = rec.run_holding_evaluation({"S0": {}}, api_key="ds-key", config=DEEPSEEK, user_name="Andres")
+    assert evaluations["S0"]["recommendation"] == "trim" and len(deepseek_server["requests"]) == 2
+
+
+def test_a_cut_off_answer_is_not_asked_again(deepseek_server):
+    deepseek_server["plan"] = lambda n, body: (200, completion(finish="length"))
+    evaluations, _ = rec.run_holding_evaluation({"S0": {}}, api_key="ds-key", config=DEEPSEEK, user_name="Andres")
+    assert evaluations == {} and len(deepseek_server["requests"]) == 1  # It would be cut off again
 
 
 # --------------------------------------------------------------------------------------------- universal on DeepSeek
@@ -119,6 +135,41 @@ def test_universal_scoring_on_deepseek(deepseek_server, monkeypatch):
     picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5)
     assert [(p["ticker"], p["model"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", "deepseek-v4-pro", 84)]
     assert deepseek_server["requests"][0]["reasoning_effort"] == "high"
+
+
+LONG = {"valuation_score": 22, "financial_health_score": 22, "growth_momentum_score": 20, "competitive_moat_score": 20,
+        "sentiment": "Bullish", "thesis": "t", "key_risk": "r"}
+SWING = {"technical_setup_score": 10, "risk_reward_ratio_score": 10, "momentum_volume_score": 10,
+         "catalyst_sentiment_score": 10, "sentiment": "Neutral", "thesis": "s", "entry_price": 100, "stop_loss": 95,
+         "price_target": 110}
+
+
+def test_misshapen_answers_are_repaired_from_the_schema():
+    schema = universal_llm.EVALUATION_TOOL_SPEC["input_schema"]
+    # Seen live from deepseek-flash: the swing section inside long_term (ABNB, AVGO, INTU, GOOGL) ...
+    fixed, changes = ds.repair_arguments({"long_term": {**LONG, "swing": SWING}}, schema)
+    assert fixed == {"long_term": LONG, "swing": SWING} and changes == ["moved long_term.swing to swing"]
+    # ... and keys the schema doesn't have (V, WDC)
+    fixed, changes = ds.repair_arguments({"long_term": {**LONG, "valuation_score_note": ""}, "swing": SWING, "x": 1}, schema)
+    assert fixed == {"long_term": LONG, "swing": SWING}
+    assert changes == ["dropped x", "dropped long_term.valuation_score_note"]
+    # A valid answer is left alone, and the original is never changed
+    original = {"long_term": LONG, "swing": SWING}
+    assert ds.repair_arguments(original, schema) == (original, []) and original["long_term"] is LONG
+    # Values aren't touched: an out-of-range score still fails validation
+    fixed, _ = ds.repair_arguments({"long_term": {**LONG, "valuation_score": 99}, "swing": SWING}, schema)
+    assert fixed["long_term"]["valuation_score"] == 99
+
+
+def test_universal_scoring_repairs_a_nested_swing_section_without_asking_again(deepseek_server, monkeypatch):
+    monkeypatch.setitem(universal_llm.params_dict, "LLM", {"UNIVERSAL": {"model": "deepseek-flash", "effort": "none"},
+                                                           "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-shared")
+    nested = {"long_term": {**LONG, "swing": SWING}}
+    deepseek_server["plan"] = lambda n, body: (200, completion(nested, name=universal_llm.EVALUATION_TOOL_NAME))
+    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5)
+    assert [(p["ticker"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", 84)]
+    assert len(deepseek_server["requests"]) == 1
 
 
 # --------------------------------------------------------------------------------------------- key check

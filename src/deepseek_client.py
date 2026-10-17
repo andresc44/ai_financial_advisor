@@ -19,6 +19,11 @@ API facts this relies on (api-docs.deepseek.com, checked 2026-10-16):
 - usage: prompt_cache_hit_tokens, prompt_cache_miss_tokens, completion_tokens (reasoning tokens included).
 - Errors: 400 bad format, 401 wrong key, 402 insufficient balance, 422 bad parameters, 429 too fast, 500/503 server.
 - GET {base_url}/user/balance returns {"is_available": bool, "balance_infos": [...]}: used as the free key check.
+
+2026-10-17: validated_answer. Without strict mode, non-thinking deepseek-flash broke the schema's shape on 6 of 37
+candidates in one run (the swing section nested inside long_term; extra keys like "valuation_score_note"), and
+those stocks were never considered. repair_arguments fixes both shapes from the schema, and an answer that is
+still invalid is asked for once more (INVALID_ANSWER_RETRIES).
 """
 import asyncio
 import copy
@@ -27,9 +32,10 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import httpx
+from pydantic import BaseModel, ValidationError
 
 project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
@@ -39,6 +45,7 @@ from src.parameters import params_dict
 
 RETRYABLE_STATUS = {429, 500, 503}
 RETRY_DELAYS_SECONDS = (2, 5, 15)  # Waits before the 2nd, 3rd, and 4th attempt
+INVALID_ANSWER_RETRIES = 1  # Claude-authored (2026-10-17): asks again once when an answer is still invalid after repair
 
 
 def deepseek_config() -> dict[str, Any]:
@@ -160,6 +167,7 @@ def build_request(
 class ToolCallResult:
     arguments: Optional[dict[str, Any]]  # The tool's input, parsed (not yet validated against the schema)
     problem: Optional[str]               # Why there are no arguments, for the log
+    retryable: bool = True               # False when asking again would fail the same way (cut off, filtered)
 
 
 def _json_object(text: str) -> Optional[dict[str, Any]]:
@@ -176,9 +184,9 @@ def tool_call_arguments(response: dict[str, Any], tool_name: str) -> ToolCallRes
     choice = (response.get("choices") or [{}])[0]
     finish = choice.get("finish_reason")
     if finish == "length":
-        return ToolCallResult(None, "response cut off at max_tokens (DEEPSEEK_CONFIG.max_tokens)")
+        return ToolCallResult(None, "response cut off at max_tokens (DEEPSEEK_CONFIG.max_tokens)", retryable=False)
     if finish == "content_filter":
-        return ToolCallResult(None, "response withheld by DeepSeek's content filter")
+        return ToolCallResult(None, "response withheld by DeepSeek's content filter", retryable=False)
     if finish in ("insufficient_system_resource", "aborted"):
         return ToolCallResult(None, f"DeepSeek stopped the response ({finish})")
     message = choice.get("message") or {}
@@ -190,6 +198,88 @@ def tool_call_arguments(response: dict[str, Any], tool_name: str) -> ToolCallRes
     # Some replies put the JSON in the message text instead of a tool call
     arguments = _json_object(message.get("content") or "")
     return ToolCallResult(arguments, None if arguments is not None else f"model did not call {tool_name}")
+
+
+def _repair(value: Any, schema: dict[str, Any], path: str, changes: list[str]) -> Any:
+    if not isinstance(value, dict) or schema.get("type") != "object":
+        return value
+    properties = schema.get("properties") or {}
+    # A property missing here but sitting inside a sibling object that doesn't have it, e.g. swing in long_term
+    for name in properties:
+        if name in value:
+            continue
+        for sibling, inner in value.items():
+            sibling_properties = (properties.get(sibling) or {}).get("properties") or {}
+            if isinstance(inner, dict) and name in inner and name not in sibling_properties:
+                value[name] = inner.pop(name)
+                changes.append(f"moved {path}{sibling}.{name} to {path}{name}")
+                break
+    if schema.get("additionalProperties") is False:
+        for key in [key for key in value if key not in properties]:
+            value.pop(key)
+            changes.append(f"dropped {path}{key}")
+    for name, subschema in properties.items():
+        if name in value:
+            value[name] = _repair(value[name], subschema, f"{path}{name}.", changes)
+    return value
+
+
+def repair_arguments(arguments: dict[str, Any], input_schema: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """
+    Claude-authored (2026-10-17): fixes the shape mistakes DeepSeek makes against a tool's JSON schema, at every
+    level: an object nested inside a sibling instead of beside it, and keys the schema doesn't allow (only where it
+    sets additionalProperties: false). Values are never changed, so scores are still checked by the caller's
+    validation. Returns (a fixed copy, what was changed, e.g. ["moved long_term.swing to swing"]).
+    """
+    changes: list[str] = []
+    fixed = _repair(copy.deepcopy(arguments), inline_refs(input_schema), "", changes)
+    return fixed, changes
+
+
+def _short_errors(error: ValidationError) -> str:
+    """e.g. 'swing: Field required; long_term.valuation_score: Input should be less than or equal to 25'"""
+    return "; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'answer'}: {e['msg']}" for e in error.errors()[:3])
+
+
+Answer = TypeVar("Answer", bound=BaseModel)
+
+
+async def validated_answer(
+    client: "DeepSeekClient",
+    request: dict[str, Any],
+    tool_spec: dict[str, Any],
+    answer_model: type[Answer],
+    label: str,
+    logger: Any,
+    on_response: Callable[[dict[str, Any]], None],
+) -> Optional[Answer]:
+    """
+    Claude-authored (2026-10-17): the tool call's arguments as `answer_model`, after repair_arguments, or None. An
+    answer that is missing, not JSON, or still invalid is asked for again up to INVALID_ANSWER_RETRIES times;
+    one cut off at max_tokens or withheld by the content filter is not, since it would fail the same way.
+    `on_response` sees every response (each one is billed). DeepSeekError (key, balance) propagates to the caller.
+    """
+    problem = "no answer"
+    for attempt in range(1 + INVALID_ANSWER_RETRIES):
+        response = await client.chat(request)
+        on_response(response)
+        result = tool_call_arguments(response, tool_spec["name"])
+        if result.arguments is None:
+            problem = result.problem
+            if not result.retryable:
+                break
+        else:
+            arguments, changes = repair_arguments(result.arguments, tool_spec["input_schema"])
+            if changes:
+                logger.warning(f"[{label}] Fixed the answer's shape: {'; '.join(changes)}.")
+            try:
+                return answer_model(**arguments)
+            except ValidationError as e:
+                problem = f"the answer didn't match the schema ({_short_errors(e)})"
+        if attempt < INVALID_ANSWER_RETRIES:
+            logger.warning(f"[{label}] {problem}; asking once more.")
+    logger.error(f"[{label}] Not evaluated: {problem}.")
+    return None
 
 
 def check_balance(api_key: str) -> tuple[int, Optional[dict[str, Any]]]:

@@ -92,7 +92,7 @@ Every job that took a Claude model can take a DeepSeek model instead. `src/llm_m
 DeepSeek retired R1 and V3. Their difference is now the effort setting on either model: `none` turns thinking off (like V3 / `deepseek-chat`), and `low` / `high` / `max` turn it on (like R1 / `deepseek-reasoner`).
 
 **What stays the same:**
-- DeepSeek calls use the same tool schema and validation as Claude's.
+- DeepSeek calls use the same tool schema and validation as Claude's. DeepSeek has no strict mode, so its answers are repaired first (below).
 - They retry rate limits and outages the same way, and stop at the first key error (wrong key, empty balance).
 - The pre-run key check is free: it reads the account balance.
 
@@ -110,6 +110,23 @@ Estimated per run of ~37 candidates, from the 2026-10-16 run's token counts:
 | `deepseek-flash` (`none`) | ~$0.09 |
 
 Thinking adds output tokens.
+
+**Measured on 2026-10-17** (the same 37 candidates, Post-Market):
+
+| | `claude-sonnet-5-5` | `deepseek-flash` (`none`) |
+|---|---|---|
+| New-stock scoring | $1.23 | $0.06 |
+| Andres's 10 holdings | $0.27 | $0.01 |
+| Scored | 36 of 37 | 31 of 37 (before the repair below) |
+| Long-term picks | NVDA 94.5, TSM 92.5 | TSM 96, NVDA 93.5 |
+| Holdings | | Same signal on 8 of 10 |
+
+Since then `LLM["UNIVERSAL"]` is `deepseek-flash` (effort `none`), and so is Andres's `ANDRES_HOLDINGS_LLM_MODEL`.
+
+**Misshapen answers** (`validated_answer` in `src/deepseek_client.py`, added 2026-10-17). Without thinking, `deepseek-flash` sometimes breaks the schema's shape: in that run it nested the swing section inside `long_term` (4 stocks) or added keys like `valuation_score_note` (2), and those stocks were never scored.
+- **Repair:** `repair_arguments` moves a section back beside its sibling and drops keys the schema doesn't allow, using the tool's schema. It never changes values, so an out-of-range score still fails validation. Each fix is logged as a warning, e.g. "Fixed the answer's shape: moved long_term.swing to swing".
+- **One retry:** an answer that is missing, not JSON, or still invalid is asked for once more (`INVALID_ANSWER_RETRIES`). One cut off at `max_tokens` or withheld by the content filter isn't, since it would fail the same way. Both answers are billed.
+- **Scope:** new-stock scoring and holdings evaluations on DeepSeek. Claude's strict tool use already keeps its answers in shape.
 
 **Privacy:** with a DeepSeek model, the prompts go to DeepSeek's servers. For holdings, that includes the user's positions.
 

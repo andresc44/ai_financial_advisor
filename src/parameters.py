@@ -283,8 +283,11 @@ params_dict = {
     # Costs follow the model automatically (API_PRICES, shown in each digest's api_usage). Per run of ~37 candidates
     # (2026-10-16 token counts): claude-sonnet-5-5 ~$1.23, deepseek-v4-pro ~$0.38, deepseek-flash ~$0.09 (off-peak,
     # effort "none"; thinking adds output tokens).
+    # 2026-10-17: UNIVERSAL switched to deepseek-flash at Andres's request. Measured on the same 37 candidates:
+    # $0.06 vs $1.23 for claude-sonnet-5-5, with the same two long-term picks. Its misshapen answers are repaired or
+    # asked for again (deepseek_client.validated_answer).
     "LLM": {
-        "UNIVERSAL": {"model": "claude-sonnet-5-5", "effort": "medium"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
+        "UNIVERSAL": {"model": "deepseek-flash", "effort": "none"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
         "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"},   # Default for holdings; each user's own key.
         # A user overrides it with <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT in .env.
     },

@@ -8,7 +8,8 @@ Every test runs offline and touches nothing real:
   the SMTP connection (2026-10-17);
 - yfinance downloads fail loudly unless a test replaces them, so no test silently depends on live market data;
 - the universal content's macro news and market dashboard return nothing unless a test asks for them.
-Anthropic and Gemini calls go through mock HTTP transports inside the tests that need them.
+Anthropic, DeepSeek, and Gemini calls go through mock HTTP transports inside the tests that need them; every job
+uses Claude unless a test picks another model (2026-10-17).
 """
 import sys
 from pathlib import Path
@@ -67,6 +68,26 @@ def isolated(tmp_path, monkeypatch):
         raise RuntimeError("yfinance.download called in a test without a fake")
 
     monkeypatch.setattr(yfinance, "download", no_network)
+
+    # 2026-10-17: tests don't depend on which models parameters.py picks: every job uses Claude unless a test sets
+    # LLM itself. A DeepSeek client built without a mock transport fails instead of calling the real API with the .env
+    # key (with deepseek-flash the default, Claude-mocked tests had sent real requests).
+    import httpx
+
+    import src.deepseek_client as deepseek_client
+    from src.parameters import params_dict
+
+    monkeypatch.setitem(params_dict, "LLM", {"UNIVERSAL": {"model": "claude-sonnet-5-5", "effort": "medium"},
+                                             "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
+    real_init = deepseek_client.DeepSeekClient.__init__
+
+    def refuse(request):
+        raise RuntimeError(f"DeepSeek called in a test without a mock transport: {request.url}")
+
+    def offline_init(self, api_key, transport=None):
+        real_init(self, api_key, transport=transport or httpx.MockTransport(refuse))
+
+    monkeypatch.setattr(deepseek_client.DeepSeekClient, "__init__", offline_init)
 
     # 2026-10-16: the universal content's macro news (a real Gemini call with the .env key) and market dashboard
     # (Yahoo, FRED, CNN, Wikipedia) are replaced with "nothing fetched"; tests of them call the real functions
