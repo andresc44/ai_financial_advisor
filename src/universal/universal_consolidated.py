@@ -10,6 +10,7 @@ Claude-authored changes (Claude Opus 5.5 via Claude Code), at Andres's request:
 - 2026-10-16 (later): macro news and the market dashboard are on (params_dict["UNIVERSAL_EXTRAS"] switches each
   off). They run in background threads while the screener, filters, and Claude scoring run, are included even when
   no picks can be produced, and their failures become universal_issues like the rest.
+- 2026-10-17: `screening`, how many stocks got through each stage, from NASDAQ's listings to the picks.
 """
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -48,7 +49,61 @@ def _report_issues(issues: list[dict]) -> None:
 def _without_recommendations(issues: list[dict]) -> dict:
     """No picks, when they can't be produced; the digest still goes out with the issue (and the macro content)."""
     _report_issues(issues)
-    return {"recommendations": enrich_recommendations(NO_RECOMMENDATIONS, {}), "universal_issues": issues}
+    return {"recommendations": enrich_recommendations(NO_RECOMMENDATIONS, {}), "universal_issues": issues,
+            "screening": {}}
+
+
+def _rule(field: str, operator: str, threshold) -> str:
+    return f"{field} {operator} {threshold:,}" if isinstance(threshold, (int, float)) else f"{field} {operator} {threshold}"
+
+
+def stage1_rules() -> list[str]:
+    """The NASDAQ screener's settings in parameters.py as rules, e.g. 'marketCap_M >= 10,000.0'."""
+    settings = (("marketCap_M", ">=", "MKTCAP_MIN"), ("marketCap_M", "<=", "MKTCAP_MAX"),
+                ("volume_M", ">=", "VOLUME_MIN"), ("volume_M", "<=", "VOLUME_MAX"),
+                ("price", ">=", "LASTSALE_MIN"), ("price", "<=", "LASTSALE_MAX"),
+                ("region", "=", "REGION"), ("country", "=", "COUNTRY"),
+                ("sector", "=", "SECTOR"), ("industry", "=", "INDUSTRY"))
+    return [_rule(field, op, params_dict[key]) for field, op, key in settings if params_dict.get(key) is not None]
+
+
+def screening_counts(fetcher, stats: dict, recommendations: dict) -> dict:
+    """
+    Claude-authored (2026-10-17): how many stocks got through each stage this run, for the digest's "About this
+    digest" section: {"stages": [{"stage", "count", ...}], "model"}. In order:
+    - listings: every stock NASDAQ's screener listed (only when this half-day's screener file was downloaded with
+      the count; see Tickers.listings_path)
+    - screener, yahoo, finnhub, technical: kept by stage 1 (parameters.py market cap, volume, price, ...) and the
+      YAHOO_FILTERS, FINNHUB_FILTERS, and TWELVEDATA_FILTERS stages; each has its `rules`
+    - scored: valid evaluations from the LLM, with `of` = how many were sent
+    - long_term_score / swing_score: scored at or above MIN_LONG_SCORE / MIN_SWING_SCORE (`min_score`)
+    - picked: `long_term` + `swing`, capped at LONG_TERM_N_AMOUNT / SWING_TERM_N_AMOUNT
+    A filter stage without rules lets everything through, so it is left out.
+    """
+    kept = getattr(fetcher, "stage_counts", {}) or {}
+    stages = []
+    listings = Tickers.listing_count(getattr(fetcher, "ticker_file", None))
+    if listings is not None:
+        stages.append({"stage": "listings", "count": listings})
+    filters = (
+        ("screener", stage1_rules()),
+        ("yahoo", [_rule(*rule) for rule in params_dict["YAHOO_FILTERS"]]),
+        ("finnhub", [_rule(*rule[1:]) for rule in params_dict["FINNHUB_FILTERS"]]),
+        ("technical", [_rule(f"{rule[0]} ({rule[1]})", rule[2], rule[3]) for rule in params_dict["TWELVEDATA_FILTERS"]]),
+    )
+    for stage, rules in filters:
+        if stage in kept and (rules or stage == "screener"):
+            stages.append({"stage": stage, "count": kept[stage], "rules": rules})
+    if "scored" in stats:
+        stages.append({"stage": "scored", "count": stats["scored"], "of": stats["sent"]})
+        stages.append({"stage": "long_term_score", "count": stats["long_qualified"],
+                       "min_score": params_dict["MIN_LONG_SCORE"]})
+        stages.append({"stage": "swing_score", "count": stats["swing_qualified"],
+                       "min_score": params_dict["MIN_SWING_SCORE"]})
+    long_term = len(recommendations.get("top_long_term") or [])
+    swing = len(recommendations.get("top_swing") or [])
+    stages.append({"stage": "picked", "count": long_term + swing, "long_term": long_term, "swing": swing})
+    return {"stages": stages, "model": llm_models.job_settings("UNIVERSAL").get("model")}
 
 
 def get_universal_content():
@@ -56,7 +111,8 @@ def get_universal_content():
     Returns a dictionary containing universal content for the daily digest.
     This content is not user-specific and can be shared across all users.
 
-    Claude-authored (2026-10-16): {"recommendations", "market_data", "headline_news", "universal_issues"}. The
+    Claude-authored (2026-10-16): {"recommendations", "market_data", "headline_news", "universal_issues"}, plus
+    "screening" (2026-10-17, see screening_counts). The
     macro news (Gemini with Google Search) and the market dashboard (Yahoo, FRED, CNN, Wikipedia) are fetched in
     the background while the picks are built, since neither needs the other.
     """
@@ -75,11 +131,16 @@ def get_universal_content():
         "headline_news": stories.model_dump() if stories else {},
         # Why picks, news, or indicators may be missing or based on partial data
         "universal_issues": content["universal_issues"] + news_issues + dashboard_issues,
+        # How many stocks got through each stage of the screening; {} when no picks could be produced
+        "screening": content.get("screening") or {},
     }
 
 
 def _get_recommendations() -> dict:
-    """The scored, enriched picks and the problems found building them: {"recommendations", "universal_issues"}."""
+    """
+    The scored, enriched picks and the problems found building them: {"recommendations", "universal_issues",
+    "screening"}.
+    """
     issues: list[dict] = []
     # Claude-authored (2026-10-16): a missing, invalid, expired, unpermitted, or (DeepSeek) unfunded shared LLM key is
     # found here, for free, before the screener and market data are fetched for scoring that couldn't run
@@ -142,18 +203,21 @@ def _get_recommendations() -> dict:
     issues += fetcher.data_source_issues.items
     issues += missing_data_issues(llm_packets, params_dict["UNIVERSAL_DATA_QUALITY"]["MAX_MISSING_PCT"])
 
+    stats: dict = {}
     generated_recommendations = select_top_candidates(
         sanitized_inputs=sanitized_LLM_inputs,
         long_n=params_dict["LONG_TERM_N_AMOUNT"],
         swing_n=params_dict["SWING_TERM_N_AMOUNT"],
         issues=issues,  # Claude-authored (2026-10-16): a shared Anthropic key failure during scoring
+        stats=stats,  # Claude-authored (2026-10-17): how many were scored and cleared each bar
     )
     print(f"Generated_recommendations:\n{generated_recommendations}")
     log_universal(generated_recommendations, sanitized_LLM_inputs)  # Claude-authored (2026-10-15): track record
     recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)
 
     _report_issues(issues)
-    return {"recommendations": recs_w_data, "universal_issues": issues}
+    return {"recommendations": recs_w_data, "universal_issues": issues,
+            "screening": screening_counts(fetcher, stats, generated_recommendations)}
 
 if __name__ == "__main__":
     universal_content = get_universal_content()

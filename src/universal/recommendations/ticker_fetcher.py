@@ -1,8 +1,9 @@
 # File to create a Tickers class that fetches and filters stock ticker datasets based on basic criteria.
 import hashlib
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
@@ -126,6 +127,7 @@ class Tickers:
         try:
             print("Fetching raw ticker dataset from NASDAQ API...")
             df_filtered = self._fetch_from_nasdaq()
+            listings = len(df_filtered)  # Claude-authored (2026-10-17): before any filter, for the screening counts
 
             # Region / Country filter (Mutually exclusive)
             if valid_region and "country" in df_filtered.columns:
@@ -184,11 +186,32 @@ class Tickers:
                 ticker_file_path, index=False
             )
             print(f"Successfully saved filtered dataset ({len(df_filtered)} rows) to: {ticker_file_name}")
+            self.listings_path(ticker_file_path).write_text(json.dumps({"listings": listings}), encoding="utf-8")
             return ticker_file_path
 
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             return None
+
+    @staticmethod
+    def listings_path(ticker_file_path: Path) -> Path:
+        """
+        Claude-authored (2026-10-17): where the number of stocks NASDAQ listed before the stage-1 filters is kept,
+        e.g. 17-10-26-AM_f3cdbeb1_listings.json next to 17-10-26-AM_f3cdbeb1_ticker_data.csv. The CSV only has the
+        stocks that passed, and is reused for half a day, so the count is saved when it is downloaded.
+        """
+        return ticker_file_path.with_name(ticker_file_path.name.replace("_ticker_data.csv", "_listings.json"))
+
+    @classmethod
+    def listing_count(cls, ticker_file_path: Optional[Path]) -> Optional[int]:
+        """How many stocks NASDAQ listed when `ticker_file_path` was built, or None if that wasn't recorded."""
+        if ticker_file_path is None:
+            return None
+        try:
+            count = json.loads(cls.listings_path(Path(ticker_file_path)).read_text(encoding="utf-8")).get("listings")
+        except (OSError, ValueError, AttributeError):
+            return None
+        return count if isinstance(count, int) else None
 
     # --- Private Helpers ---
 
@@ -247,7 +270,7 @@ class Tickers:
         return self.SECTORS.get(clean_key)
 
     def _clear_ticker_data_folder(self, folder_path: Path) -> None:
-        csv_files = list(folder_path.glob("*.csv"))
+        csv_files = list(folder_path.glob("*.csv")) + list(folder_path.glob("*_listings.json"))  # 2026-10-17
         if not csv_files:
             return
 

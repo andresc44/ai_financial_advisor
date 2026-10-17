@@ -278,7 +278,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 7. **Swing ideas.**
 8. **Long-term ideas.**
 9. **Glossary** (added 2026-10-17): a collapsed card with five category rows: signals and ideas, your portfolio, technical indicators, valuation and fundamentals, and market indicators. Each row lists the terms, abbreviations and indicators the email uses, and how to read them. The text is static, in `src/digest/glossary.py`.
-10. **Footer:** "About this digest", showing what it cost and which model scored the ideas.
+10. **Footer:** "About this digest", showing what it cost, which model scored the ideas, and how many stocks were left after each screening stage (added 2026-10-17; see `screening` below).
 
 **Currencies (added 2026-10-17).**
 
@@ -456,6 +456,23 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
 - `market_data`: index, VIX, dollar, 10-year yield, and oil moves (1 day, 5 days, 1 month); the 10Y–2Y spread (FRED); CNN Fear & Greed; and the share of S&P 500 stocks above their 50-day average.
 
 A section that can't be fetched holds `{"Error": ...}` and adds a `universal_issues` entry. It never stops the digest.
+
+**Screening counts** (`screening`, added 2026-10-17; `screening_counts` in `src/universal/universal_consolidated.py`). How many stocks got through each stage this run, shown at the bottom of "About this digest":
+
+| `stage` | Email label | Count |
+|---|---|---|
+| `listings` | US-listed stocks | Everything NASDAQ's screener lists (NASDAQ, NYSE, and AMEX), before any filter. Saved as `<file>_listings.json` next to the half-day's screener CSV, so it's missing for a CSV made before this was added |
+| `screener` | Size, volume & price | Kept by stage 1: `MKTCAP_*`, `VOLUME_*`, `LASTSALE_*`, region, sector |
+| `yahoo` | Analyst & fundamentals screen | Kept by `YAHOO_FILTERS` |
+| `finnhub` | Growth & debt screen | Kept by `FINNHUB_FILTERS` |
+| `technical` | Technical screen | Kept by `TWELVEDATA_FILTERS` |
+| `scored` | Scored by AI | Valid evaluations from the LLM. `of` is how many were sent; the email shows "36 of 37" when some failed |
+| `long_term_score` / `swing_score` | Long-term / Swing score 80+ | Scored at least `min_score` (`MIN_LONG_SCORE` / `MIN_SWING_SCORE`). A stock can clear both |
+| `picked` | Picked | `long_term` + `swing`, capped at `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT` |
+
+- **Rules:** each filter stage also has its `rules` as text, e.g. `"forwardPE <= 30"`, so a payload records what that run checked even after `parameters.py` changes.
+- **Stages without rules:** a filter stage with no rules lets everything through, so it's left out.
+- **No picks possible:** when no picks could be made (no LLM or Finnhub key), `screening` is `{}` and the email leaves the section out.
 
 ### API cost tracking (`src/usage_tracking.py`)
 

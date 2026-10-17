@@ -123,6 +123,7 @@ class DataFetcher:
     def __load_ticker_df(self) -> pd.DataFrame:
         """Loads the most recent ticker DataFrame from the ticker directory."""
         latest_file = self.__get_latest_ticker_file()
+        self.ticker_file = latest_file  # Claude-authored (2026-10-17): for the screening counts
         print(f"Loading most recent ticker file: {latest_file.name}")
         tickers = pd.read_csv(latest_file)
         # Claude-authored (2026-10-17): the screener's BRK/B becomes Yahoo's BRK-B; Finnhub calls convert it again
@@ -362,7 +363,11 @@ class DataFetcher:
         return filter_twelvedata_tickers(self, tickers=tickers)
     
     def filter_all(self, full_tickers: Optional[List[str]] = None) -> List[str]:
-        """Apply cascading filters across available data sources."""
+        """
+        Apply cascading filters across available data sources.
+        Claude-authored (2026-10-17): self.stage_counts records how many tickers went in and how many each stage
+        kept ({"screener", "yahoo", "finnhub", "technical"}), for the digest's screening counts.
+        """
         input_tickers = full_tickers if full_tickers is not None else self.all_tickers
         
         print("Starting to filter data based on Yahoo data")
@@ -375,6 +380,9 @@ class DataFetcher:
         twelvedata_tickers = self.twelvedata_filter(tickers=finnhub_tickers)
         
         print(f"Output tickers are: {twelvedata_tickers}")
+        self.stage_counts = {"screener": len(input_tickers), "yahoo": len(yahoo_tickers),
+                             "finnhub": len(finnhub_tickers), "technical": len(twelvedata_tickers)}
+        print(f"Tickers kept by each stage: {self.stage_counts}")
         return twelvedata_tickers
         
     def fetch_all_news(self, tickers: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:

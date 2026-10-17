@@ -60,6 +60,7 @@ def select_top_candidates(
     min_swing_score: Optional[float] = None,
     config: Optional[Dict[str, Any]] = None,
     issues: Optional[List[Dict[str, Any]]] = None,
+    stats: Optional[Dict[str, int]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Evaluates candidate tickers and selects:
@@ -73,10 +74,15 @@ def select_top_candidates(
         min_long_score: Minimum longScore cutoff. Defaults to params_dict['MIN_LONG_SCORE'].
         min_swing_score: Minimum swingScore cutoff. Defaults to params_dict['MIN_SWING_SCORE'].
         config: Optional custom configuration dictionary for the LLM call.
+        stats: Claude-authored (2026-10-17), filled in when given: "sent" (candidates sent to the LLM), "scored"
+            (evaluations that came back valid), and "long_qualified" / "swing_qualified" (scored tickers at or above
+            each minimum score, before the picks are capped at long_n / swing_n; a ticker can clear both).
 
     Returns:
         Dict with keys 'top_long_term' and 'top_swing', containing lists of selected ticker objects.
     """
+    stats = stats if stats is not None else {}
+    stats.update(sent=len(sanitized_inputs or {}), scored=0, long_qualified=0, swing_qualified=0)
     if not sanitized_inputs:
         logger.warning("No sanitized inputs provided for selection.")
         return {"top_long_term": [], "top_swing": []}
@@ -98,6 +104,7 @@ def select_top_candidates(
         issues=issues,  # Claude-authored (2026-10-16): collects a shared Anthropic key failure
     )
 
+    stats["scored"] = len(scores_map)
     if not scores_map:
         logger.error("LLM evaluation returned empty results.")
         return {"top_long_term": [], "top_swing": []}
@@ -121,6 +128,8 @@ def select_top_candidates(
         reverse=True
     )
     
+    stats["long_qualified"] = len(eligible_long)
+    stats["swing_qualified"] = sum(1 for s in scores_map.values() if s.get("swingScore", 0.0) >= min_swing_score)
     top_long_tuples = sorted_by_long[:long_n]
     selected_long_tickers = {ticker for ticker, _ in top_long_tuples}
 

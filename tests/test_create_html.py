@@ -555,3 +555,26 @@ def test_a_holding_without_any_exchange_rate_stays_in_its_currency_and_says_so(m
     assert enb["stats"][0]["label"] == "Price · CAD"
     assert [issue["title"] for issue in view["issues"]] == ["Exchange rate"]
     assert "ENB.TO" in view["issues"][0]["message"]
+
+
+def test_about_section_ends_with_the_stocks_left_after_each_screening_stage():
+    stages = [{"stage": "listings", "count": 7012}, {"stage": "screener", "count": 635, "rules": ["price >= 30.0"]},
+              {"stage": "yahoo", "count": 85}, {"stage": "finnhub", "count": 37}, {"stage": "technical", "count": 37},
+              {"stage": "scored", "count": 36, "of": 37}, {"stage": "long_term_score", "count": 16, "min_score": 80.0},
+              {"stage": "swing_score", "count": 0, "min_score": 80.0},
+              {"stage": "picked", "count": 2, "long_term": 2, "swing": 0}, {"stage": "unknown", "count": 1}]
+    view, html = render(payload(screening={"stages": stages}))
+    assert view["screening"] == [
+        ("US-listed stocks", "7,012"), ("Size, volume & price", "635"), ("Analyst & fundamentals screen", "85"),
+        ("Growth & debt screen", "37"), ("Technical screen", "37"), ("Scored by AI", "36 of 37"),
+        ("Long-term score 80+", "16"), ("Swing score 80+", "0"), ("Picked", "2 long-term · 0 swing")]
+    about = html.index("About this digest")
+    assert about < html.index("Estimated.") < html.index("Stocks left after each screening stage") < html.index("7,012")
+    assert "STOCKS LEFT AFTER EACH SCREENING STAGE" in ch.render_text(view) and "  Scored by AI: 36 of 37" in ch.render_text(view)
+    # Everything scored: no "of"
+    assert ch.build_view(payload(screening={"stages": [{"stage": "scored", "count": 37, "of": 37}]}))["screening"] == [
+        ("Scored by AI", "37")]
+    # No counts (older payloads, or no picks could be made): no section
+    view, html = render(payload())
+    assert view["screening"] == [] and "screening stage" not in html
+    assert ch.build_view(payload(screening={}, api_usage=None))["screening"] == []

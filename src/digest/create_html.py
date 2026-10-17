@@ -911,6 +911,44 @@ def _usage(api_usage: Any) -> list[tuple[str, str]]:
     return rows
 
 
+# Claude-authored (2026-10-17): what each stage of the universal content's screening checks
+# (universal_consolidated.screening_counts), in plain words for the email
+SCREENING_LABELS = {
+    "listings": "US-listed stocks",
+    "screener": "Size, volume & price",
+    "yahoo": "Analyst & fundamentals screen",
+    "finnhub": "Growth & debt screen",
+    "technical": "Technical screen",
+    "scored": "Scored by AI",
+    "long_term_score": "Long-term score {min_score}+",
+    "swing_score": "Swing score {min_score}+",
+    "picked": "Picked",
+}
+
+
+def _screening(screening: Any) -> list[tuple[str, str]]:
+    """
+    Claude-authored (2026-10-17): (stage, stocks left) rows for "About this digest", e.g. ("Scored by AI", "36 of 37")
+    and ("Picked", "2 long-term · 0 swing"). Empty when the payload has no screening counts.
+    """
+    stages = screening.get("stages") if isinstance(screening, dict) else None
+    rows = []
+    for stage in stages if isinstance(stages, list) else []:
+        count = _num(stage.get("count")) if isinstance(stage, dict) else None
+        if count is None or stage.get("stage") not in SCREENING_LABELS:
+            continue
+        min_score = _num(stage.get("min_score"))
+        label = SCREENING_LABELS[stage["stage"]].format(min_score=f"{min_score:g}" if min_score is not None else "")
+        value = f"{count:,.0f}"
+        sent = _num(stage.get("of"))
+        if stage["stage"] == "scored" and sent is not None and sent > count:
+            value += f" of {sent:,.0f}"
+        elif stage["stage"] == "picked":
+            value = f"{_num(stage.get('long_term')) or 0:.0f} long-term · {_num(stage.get('swing')) or 0:.0f} swing"
+        rows.append((label, value))
+    return rows
+
+
 def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market: Optional[dict], day: str) -> str:
     """The inbox preview line under the subject."""
     parts = []
@@ -1010,6 +1048,7 @@ def build_view(payload: dict) -> dict:
         # The footer's "About this digest" dropdown: what it cost, and which model scored the ideas
         "usage": _usage(payload.get("api_usage")) + ([("Ideas scored by", ", ".join(models))] if models else []),
         "usage_note": str((payload.get("api_usage") or {}).get("note") or ""),
+        "screening": _screening(payload.get("screening")),  # Claude-authored (2026-10-17)
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
         # Claude-authored (2026-10-17): the static glossary card at the bottom (src/digest/glossary.py); emptied by
         # fit_for_gmail, before anything else, when the digest would pass Gmail's clipping limit
@@ -1174,6 +1213,9 @@ def render_text(view: dict) -> str:
         lines += [f"{card['ticker']} (score {card['score']}) {card['price']}", f"  {card['thesis']}"]
         if card["key_risk"]:
             lines.append(f"  Key risk: {card['key_risk']}")
+    if view["screening"]:  # Claude-authored (2026-10-17)
+        lines += ["", "STOCKS LEFT AFTER EACH SCREENING STAGE"]
+        lines += [f"  {label}: {value}" for label, value in view["screening"]]
     return "\n".join(line for line in lines if line is not None) + "\n"
 
 

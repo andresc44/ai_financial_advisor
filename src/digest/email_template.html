@@ -494,10 +494,12 @@ u + .body .cv{display:none;}
 {# ---------- Footer ---------- #}
 <tr><td class="c xs mu" style="padding:6px 24px 32px 24px;">
 {% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority content was left out to keep this email under Gmail's size limit.</div>{% endif %}
-{% if usage %}
+{% if usage or screening %}
 {% call fold("About this digest", top="") %}
-{{ kv(usage) }}
-{% if usage_note %}<div style="padding-top:6px;font-size:11px;line-height:16px;">{{ usage_note }}</div>{% endif %}
+{% if usage %}{{ kv(usage) }}
+{% if usage_note %}<div style="padding-top:6px;font-size:11px;line-height:16px;">{{ usage_note }}</div>{% endif %}{% endif %}
+{% if screening %}{{ label("Stocks left after each screening stage", MUTED, top="14px" if usage else "0") }}
+{{ kv(screening) }}{% endif %}
 {% endcall %}
 {% endif %}
 </td></tr>

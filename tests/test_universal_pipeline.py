@@ -265,7 +265,7 @@ def test_extras_can_be_switched_off(monkeypatch):
     monkeypatch.setattr(universal, "get_market_dashboard", lambda: pytest.fail("dashboard fetched while switched off"))
     monkeypatch.setattr(universal, "_get_recommendations", lambda: {"recommendations": {}, "universal_issues": []})
     assert universal.get_universal_content() == {"recommendations": {}, "market_data": {}, "headline_news": {},
-                                                 "universal_issues": []}
+                                                 "universal_issues": [], "screening": {}}
 
 
 def test_macro_news_keeps_only_grounded_links(monkeypatch):
@@ -306,3 +306,68 @@ def test_configured_filters_are_well_formed():
     assert all(len(rule) == 3 and rule[1] in operators for rule in params_dict["YAHOO_FILTERS"])
     assert all(len(rule) == 4 and rule[0] in ("profile", "quote", "basic_financials") and rule[2] in operators
                for rule in params_dict["FINNHUB_FILTERS"])
+
+
+# --------------------------------------------------------------------------------------------- screening counts
+def test_scorer_reports_how_many_were_scored_and_cleared_each_bar(claude_scores):
+    stats = {}
+    select_top_candidates({symbol: {"symbol": symbol} for symbol in EVALUATIONS}, long_n=2, swing_n=1,
+                          min_long_score=80, min_swing_score=80, stats=stats)
+    # AAA is long 83 / swing 70, BBB swing 85, CCC swing 81: both swing setups count, though only one is picked
+    assert stats == {"sent": 3, "scored": 3, "long_qualified": 1, "swing_qualified": 2}
+    empty = {}
+    select_top_candidates({}, stats=empty)
+    assert empty == {"sent": 0, "scored": 0, "long_qualified": 0, "swing_qualified": 0}
+
+
+def test_filter_all_records_how_many_each_stage_kept():
+    fetcher = filter_tickers.DataFetcher.__new__(filter_tickers.DataFetcher)
+    fetcher.all_tickers = ["A", "B", "C", "D", "E"]
+    fetcher.yahoo_filter = lambda tickers: tickers[:4]
+    fetcher.finnhub_filter = lambda tickers: tickers[:2]
+    fetcher.twelvedata_filter = lambda tickers: tickers[:2]
+    assert fetcher.filter_all() == ["A", "B"]
+    assert fetcher.stage_counts == {"screener": 5, "yahoo": 4, "finnhub": 2, "technical": 2}
+
+
+def test_screener_keeps_the_listing_count_next_to_its_file(tmp_path, monkeypatch):
+    from src.universal.recommendations.ticker_fetcher import Tickers
+
+    raw = pd.DataFrame({"symbol": ["A", "B", "C"], "name": ["a", "b", "c"], "marketCapNumeric": [5e4, 2e4, 10.0],
+                        "lastSaleNumeric": [50.0, 40.0, 5.0], "volumeNumeric": [2.0, 3.0, 0.1]})
+    tickers = Tickers(output_dir=tmp_path)
+    monkeypatch.setattr(tickers, "_fetch_from_nasdaq", lambda: raw.copy())
+    path = tickers.fetch_ticker_data(mktcap_min=10_000, lastsale_min=30)
+    assert len(pd.read_csv(path)) == 2 and Tickers.listing_count(path) == 3  # Counted before any filter
+    assert Tickers.listing_count(tmp_path / "01-01-26-AM_x_ticker_data.csv") is None  # Not recorded
+    tickers._clear_ticker_data_folder(tmp_path)
+    assert list(tmp_path.iterdir()) == []  # The count goes with its file
+
+
+def test_screening_counts_cover_every_stage(tmp_path, monkeypatch):
+    from src.universal.recommendations.ticker_fetcher import Tickers
+
+    csv = tmp_path / "17-10-26-AM_abc_ticker_data.csv"
+    Tickers.listings_path(csv).write_text('{"listings": 7012}', encoding="utf-8")
+    fetcher = SimpleNamespace(ticker_file=csv,
+                              stage_counts={"screener": 635, "yahoo": 85, "finnhub": 37, "technical": 37})
+    stats = {"sent": 37, "scored": 36, "long_qualified": 16, "swing_qualified": 0}
+    picks = {"top_long_term": [{"ticker": "NVDA"}, {"ticker": "TSM"}], "top_swing": []}
+    monkeypatch.setitem(universal.params_dict, "MIN_LONG_SCORE", 80.0)
+    monkeypatch.setitem(universal.params_dict, "TWELVEDATA_FILTERS", [("adx", "1day", "<=", 45, {"time_period": 14})])
+    monkeypatch.setitem(universal.params_dict, "YAHOO_FILTERS", [("averageVolume", ">=", 1_000_000),
+                                                                ("recommendationMean", "<=", 2.2)])
+    stages = universal.screening_counts(fetcher, stats, picks)["stages"]
+    assert [(s["stage"], s["count"]) for s in stages] == [
+        ("listings", 7012), ("screener", 635), ("yahoo", 85), ("finnhub", 37), ("technical", 37), ("scored", 36),
+        ("long_term_score", 16), ("swing_score", 0), ("picked", 2)]
+    by_stage = {s["stage"]: s for s in stages}
+    assert by_stage["technical"]["rules"] == ["adx (1day) <= 45"]
+    assert by_stage["yahoo"]["rules"] == ["averageVolume >= 1,000,000", "recommendationMean <= 2.2"]
+    assert by_stage["scored"]["of"] == 37 and by_stage["long_term_score"]["min_score"] == 80.0
+    assert (by_stage["picked"]["long_term"], by_stage["picked"]["swing"]) == (2, 0)
+    # A filter stage without rules lets everything through, so it isn't listed; nor is an unrecorded listing count
+    monkeypatch.setitem(universal.params_dict, "TWELVEDATA_FILTERS", [])
+    fetcher.ticker_file = tmp_path / "missing_ticker_data.csv"
+    stages = [s["stage"] for s in universal.screening_counts(fetcher, stats, picks)["stages"]]
+    assert stages[:4] == ["screener", "yahoo", "finnhub", "scored"]
