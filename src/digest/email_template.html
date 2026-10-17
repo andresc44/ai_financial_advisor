@@ -275,8 +275,8 @@ a{text-decoration:none;}
 .kl,.kv{padding:6px 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;}
 .kl{color:#64748B;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;}
-.mh{padding:0 0 6px 6px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
-.mc{padding:7px 0 7px 6px;border-top:1px solid #EEF2F6;font-size:13px;line-height:17px;white-space:nowrap;}
+.mh{padding:0 0 6px 4px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
+.mc{padding:7px 0 7px 4px;border-top:1px solid #EEF2F6;font-size:12px;line-height:17px;white-space:nowrap;}
 @media screen and (max-width:420px){.gutter{padding-left:8px{{ IMP }};padding-right:8px{{ IMP }};}.cp{padding-left:12px{{ IMP }};padding-right:12px{{ IMP }};}}
 </style>
 {% if not amp %}
@@ -386,7 +386,7 @@ u + .body .cv{display:none;}
 <table {{ T }}>
 <tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", day_label, "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
 {% for r in market.rows %}
-<tr><td class="mc" style="padding-left:0;white-space:normal;font-weight:700;color:#0F2A44;">{{ r.name }}{% if r.ticker %} <span class="mu" style="font-size:11px;font-weight:400;">{{ r.ticker }}</span>{% endif %}</td><td align="right" class="mc">{{ r.last }}</td><td align="right" class="mc" style="font-weight:700;color:{{ TONES[r.d1.tone] }};">{{ r.d1.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.d5.tone] }};">{{ r.d5.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.m1.tone] }};">{{ r.m1.text }}</td></tr>
+<tr><td class="mc" style="padding-left:0;white-space:normal;font-size:13px;font-weight:700;color:#0F2A44;">{{ r.name }}{% if r.ticker %} <span class="mu" style="font-size:11px;font-weight:400;">{{ r.ticker }}</span>{% endif %}</td><td align="right" class="mc">{{ r.last }}</td><td align="right" class="mc" style="font-weight:700;color:{{ TONES[r.d1.tone] }};">{{ r.d1.text }}</td><td align="right" class="mc" style="color:{{ TONES[r.d5.tone] }};">{{ r.d5.text }}</td><td align="right" class="mc" style="color:{{ TONES[r.m1.tone] }};">{{ r.m1.text }}</td></tr>
 {% endfor %}
 </table>
 {% endcall %}
