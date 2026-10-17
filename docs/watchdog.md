@@ -275,7 +275,8 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 | Amounts | Shown in | Source |
 |---|---|---|
 | Portfolio total, position values, P/L, account values | USD ("Your portfolio · USD", "Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
-| A holding's share price | Its listing currency ("Price · CAD", "C$46.94") | The holding's `currency` field |
+| A CAD, AUD or GBP (incl. pence) holding | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 (1 CAD = 0.7074 USD)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so |
+| Any other holding's share price | Its listing currency, as the payload gives it (e.g. "Price · EUR") | The holding's `currency` field |
 | Ideas: prices, trade levels, targets | "Prices in USD" | Assumed: picks carry no currency |
 | Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Assumed: the dashboard carries no currency |
 | API costs | Their `currency` | `api_usage.currency` |

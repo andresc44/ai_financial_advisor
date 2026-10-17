@@ -35,6 +35,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.fx_rates import usd_rates
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 from src.digest.glossary import GLOSSARY
@@ -234,6 +235,75 @@ def _quote_links(symbol: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Holdings in USD
+# ---------------------------------------------------------------------------
+
+# Claude-authored (2026-10-17): holdings in these currencies are shown in US dollars at the current rate. GBX is a
+# London price in pence (fx_rates turns it into GBP / 100). Any other currency is left as it is, i.e. treated as USD.
+CONVERT_TO_USD = ("CAD", "AUD", "GBP", "GBX")
+PER_SHARE_FIELDS = ("current_price", "avg_cost_basis", "last_close")
+MONEY_FIELDS = ("market_value", "total_cost_basis", "unrealized_pnl", "daily_pnl")  # pull_holdings_data's USD_MONEY_COLUMNS
+
+
+def holdings_in_usd(holdings: list[dict]) -> tuple[list[dict], list[str], list[str]]:
+    """
+    Claude-authored (2026-10-17): the holdings with every CAD, AUD, and GBP (or pence) amount in US dollars at the
+    current rate (fx_rates.usd_rates: live from Yahoo, else the last cached rate, else the payload's own rate).
+    - Per-share prices (in the listing's currency in the payload) are converted, and the original price and rate are
+      kept as listed_price, listed_currency, and fx_rate_to_usd for the card.
+    - Money amounts are already in USD at the payload's rate when it had one (PortfolioFetcher.convert_to_usd), so
+      they are restated at the current rate; without a payload rate they were left unconverted, so they are
+      converted now. Percentages don't change.
+    - Portfolio weights are recomputed from the converted values.
+    Returns (holdings, log lines, symbols that couldn't be converted). Those keep their own currency, and the email
+    says so.
+    """
+    def code_of(holding: dict) -> str:
+        return (_text(holding.get("currency")) or "").upper()
+
+    codes = sorted({code_of(h) for h in holdings if code_of(h) in CONVERT_TO_USD})
+    if not codes:
+        return holdings, [], []
+    current = usd_rates(codes)
+    converted, unconverted, used = [], [], {}
+    for holding in holdings:
+        code = code_of(holding)
+        if code not in CONVERT_TO_USD:
+            converted.append(holding)
+            continue
+        payload_rate = _num(holding.get("fx_rate_to_usd"))
+        rate = current.get(code) or payload_rate
+        if not rate:
+            unconverted.append(str(holding.get("symbol")))
+            converted.append(holding)
+            continue
+        holding = dict(holding)
+        holding["listed_currency"], holding["listed_price"] = code, _num(holding.get("current_price"))
+        for field in PER_SHARE_FIELDS:
+            if _num(holding.get(field)) is not None:
+                holding[field] = holding[f"{field}_usd"] = _num(holding[field]) * rate
+        factor = rate / payload_rate if payload_rate else rate
+        for field in MONEY_FIELDS:
+            if _num(holding.get(field)) is not None:
+                holding[field] = _num(holding[field]) * factor
+        holding["currency"], holding["fx_rate_to_usd"] = "USD", rate
+        used[code] = rate
+        converted.append(holding)
+
+    values: dict[str, float] = {}
+    for holding in converted:
+        values[holding.get("symbol")] = values.get(holding.get("symbol"), 0.0) + (_num(holding.get("market_value")) or 0.0)
+    total = sum(value for value in values.values() if value > 0)
+    if total > 0:
+        for holding in converted:
+            holding["portfolio_weight_pct"] = round(values[holding.get("symbol")] / total * 100, 2)
+    notes = [f"converted {code} holdings to USD at 1 {code} = {rate:.4f} USD" for code, rate in used.items()]
+    if unconverted:
+        notes.append(f"no exchange rate, left in their own currency: {', '.join(unconverted)}")
+    return converted, notes, unconverted
+
+
+# ---------------------------------------------------------------------------
 # Sections
 # ---------------------------------------------------------------------------
 
@@ -312,6 +382,18 @@ def _lots_by_symbol(holdings: list[dict]) -> dict[str, list[dict]]:
     return lots
 
 
+def _listing_note(holding: dict) -> list[str]:
+    """e.g. ['Listed in CAD at C$46.94 (1 CAD = 0.7123 USD)'] for a holding holdings_in_usd converted."""
+    code, price, rate = holding.get("listed_currency"), _num(holding.get("listed_price")), _num(holding.get("fx_rate_to_usd"))
+    if not code or rate is None:
+        return []
+    shown = "GBP pence" if code == "GBX" else code
+    at = f" at {_money(price, symbol=CURRENCY_SYMBOLS.get(code, f'{code} '))}" if price is not None and code != "GBX" else (
+        f" at {price:,.1f}p" if price is not None else "")
+    return [f"Listed in {shown}{at} (1 {'GBP' if code == 'GBX' else code} = "
+            f"{rate * (100 if code == 'GBX' else 1):.4f} USD)"]
+
+
 def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     first = lots[0]  # Price, signal, news, and indicators are the same for every lot of a stock
     label, fg, bg, bar, order = SIGNALS.get(first.get("recommendation"), NOT_EVALUATED)
@@ -378,7 +460,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         "weight_short": f"{weight:.1f}%" if weight is not None else "",
         "day": {"text": _signed_pct(daily_pct, 2) if daily_pct is not None else "", "tone": _tone(daily_pct)},
         "weight_pct": weight or 0.0,
-        "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts),
+        "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts + _listing_note(first)),
         "signal": _badge(label, fg, bg),
         "signal_key": first.get("recommendation") if first.get("recommendation") in SIGNALS else None,
         "signal_bar": bar,
@@ -397,6 +479,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         "links": _quote_links(symbol),
         "currency": currency,
         "currency_assumed": listed_currency is None,
+        "us_listing": (first.get("listed_currency") or currency) == "USD",  # Finviz charts cover US listings
         "chart": None,  # Set by build_view
         # Claude-authored (2026-10-17): the row's id in the AMP version, so the overview's chips can open it
         "anchor": "h-" + re.sub(r"[^a-z0-9]", "-", symbol.lower()),
@@ -819,6 +902,7 @@ def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market:
 def build_view(payload: dict) -> dict:
     """Everything the template shows, formatted, from one user's digest payload."""
     holdings = [h for h in payload.get("holdings") or [] if isinstance(h, dict)]
+    holdings, fx_notes, unconverted = holdings_in_usd(holdings)  # CAD, AUD, and GBP holdings, in USD from here on
     recommendations = payload.get("recommendations") or {}
     today = _day(payload.get("date"))
     user_name = str(payload.get("user_name") or "there")
@@ -848,7 +932,7 @@ def build_view(payload: dict) -> dict:
     version = f"{today:%Y%m%d}" if today else "0"
     version += "pre" if _period(payload) == "Pre-Market" else "post"
     for card in cards:
-        card["chart"] = _chart(card["symbol"], version) if card["currency"] == "USD" else None
+        card["chart"] = _chart(card["symbol"], version) if card["us_listing"] else None
     for card in swing + long_term:
         card["chart"] = _chart(card["ticker"], version) if card["ticker"] else None
     # Claude-authored (2026-10-17): currencies the payload doesn't give are assumed USD, and listed for the run log
@@ -878,7 +962,12 @@ def build_view(payload: dict) -> dict:
         "preheader": _preheader(portfolio, cards, len(swing) + len(long_term), market, day),
         "day_label": day.capitalize(),  # "Prev. day" or "Day"
         "day": day,
-        "issues": _issues(payload),
+        "issues": _issues(payload) + ([{
+            "title": "Exchange rate",
+            "message": f"No current rate to convert {', '.join(unconverted)} to USD, so they are shown in their own "
+                       "currency and not added to the USD totals correctly.",
+        }] if unconverted else []),
+        "fx_notes": fx_notes,
         "portfolio": portfolio,
         "risk": _risk(cards, payload.get("portfolio_beta"), payload.get("portfolio_review") or []),
         "account": _account(payload.get("account_company"), holdings),
@@ -1103,6 +1192,8 @@ def html_main(payload: dict, here: Path = Path(__file__).resolve().parent) -> Re
     verify_output(html, view)
     for note in view["currency_notes"]:
         print(f"[NOTE] {payload.get('user_name')}'s digest: {note} (not in the payload).")
+    for note in view["fx_notes"]:
+        print(f"[NOTE] {payload.get('user_name')}'s digest: {note}.")
     path = report_path(payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(html, encoding="utf-8")

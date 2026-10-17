@@ -306,9 +306,9 @@ def test_send_html_email_puts_the_amp_part_before_the_html(monkeypatch):
 
 
 def test_charts_for_every_stock_except_non_us_holdings():
-    view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.TO", currency="CAD")]))
+    view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.DE", currency="EUR")]))
     charts = {card["symbol"]: card["chart"] for card in view["holdings"]}
-    assert charts["XYZ.TO"] is None  # Finviz covers US listings only
+    assert charts["XYZ.DE"] is None  # Finviz covers US listings only
     assert charts["AAA"]["src"] == "https://finviz.com/chart.ashx?t=AAA&ty=c&ta=1&p=d&s=l&v=20261016pre"
     assert view["swing"][0]["chart"]["src"].startswith("https://finviz.com/chart.ashx?t=SWA&")
     assert view["long_term"][0]["chart"]["link"] == "https://finviz.com/quote.ashx?t=LTA"
@@ -482,11 +482,12 @@ def test_the_glossary_is_static_and_left_out_first():
 
 
 def test_currencies_come_from_the_payload_or_default_to_usd():
-    view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.TO", currency="CAD"), holding("NOC", currency=None)]))
+    view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.DE", currency="EUR"), holding("NOC", currency=None)]))
     cards = {card["symbol"]: card for card in view["holdings"]}
     # A holding's Price box is in its listing currency; position values and P/L are converted to USD
     assert (cards["AAA"]["stats"][0]["label"], cards["AAA"]["stats"][0]["value"]) == ("Price · USD", "$100.00")
-    assert (cards["XYZ.TO"]["stats"][0]["label"], cards["XYZ.TO"]["stats"][0]["value"]) == ("Price · CAD", "C$100.00")
+    # Currencies other than CAD, AUD, and GBP are shown as the payload gives them
+    assert (cards["XYZ.DE"]["stats"][0]["label"], cards["XYZ.DE"]["stats"][0]["value"]) == ("Price · EUR", "€100.00")
     assert cards["NOC"]["stats"][0]["label"] == "Price · USD" and cards["NOC"]["currency_assumed"] is True
     assert all(card["stats"][1]["label"] == "Unrealized · USD" for card in view["holdings"])
     assert view["portfolio"]["label"] == "Your portfolio · USD" and "Values in USD" in view["holdings_note"]
@@ -505,3 +506,39 @@ def test_currencies_come_from_the_payload_or_default_to_usd():
                      api_usage={"currency": "USD", "this_digest": {"total_cost_usd": 0.3}})
     assert ch.build_view(priced)["ideas_currency"] == "EUR"
     assert "Prices in EUR" in ch.render_html(ch.build_view(priced), TEMPLATE_DIR)
+
+
+def test_cad_aud_and_gbp_holdings_are_converted_to_usd_at_the_current_rate(monkeypatch):
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "CAD": 0.70, "AUD": 0.65, "GBX": 0.0125})
+    view = ch.build_view(payload(holdings=[
+        holding("AAA", value=1000.0),
+        # CAD the payload already converted at 0.72: money amounts in USD at that rate, prices still in CAD
+        holding("ENB.TO", value=720.0, currency="CAD", fx_rate_to_usd=0.72, current_price=50.0, last_close=49.0,
+                total_cost_basis=648.0),
+        # AUD the payload couldn't convert (no rate): money amounts and prices still in AUD
+        holding("BHP.AX", value=100.0, currency="AUD", current_price=40.0, total_cost_basis=90.0),
+        holding("VOD.L", value=100.0, currency="GBX", fx_rate_to_usd=0.0125, current_price=80.0, total_cost_basis=90.0),
+        holding("SAP.DE", value=100.0, currency="EUR"),  # Not converted: other currencies are taken as they come
+    ]))
+    cards = {card["symbol"]: card for card in view["holdings"]}
+    enb, bhp, vod, sap = cards["ENB.TO"], cards["BHP.AX"], cards["VOD.L"], cards["SAP.DE"]
+    assert (enb["value"], enb["stats"][0]["label"], enb["stats"][0]["value"]) == ("$700.00", "Price · USD", "$35.00")
+    assert enb["meta"].endswith("Listed in CAD at C$50.00 (1 CAD = 0.7000 USD)") and enb["chart"] is None
+    assert (bhp["value"], bhp["stats"][0]["value"]) == ("$65.00", "$26.00")  # 100 and 40 AUD at 0.65
+    assert vod["stats"][0]["value"] == "$1.00" and vod["meta"].endswith("Listed in GBP pence at 80.0p (1 GBP = 1.2500 USD)")
+    assert (sap["value"], sap["stats"][0]["label"]) == ("$100.00", "Price · EUR")
+    # Unrealized P/L follows the converted values, and the weights are recomputed from them
+    assert enb["stats"][1]["value"] == "+$70.00"  # (720 - 648) CAD-in-USD at 0.72, restated at 0.70
+    assert round(sum(card["weight_pct"] for card in view["holdings"]), 1) == 100.0
+    assert enb["weight_pct"] == round(700 / (1000 + 700 + 65 + 100 + 100) * 100, 2)
+    assert "converted CAD holdings to USD at 1 CAD = 0.7000 USD" in view["fx_notes"]
+    assert view["issues"] == []
+
+
+def test_a_holding_without_any_exchange_rate_stays_in_its_currency_and_says_so(monkeypatch):
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "CAD": None})
+    view = ch.build_view(payload(holdings=[holding("AAA"), holding("ENB.TO", currency="CAD")]))
+    enb = {card["symbol"]: card for card in view["holdings"]}["ENB.TO"]
+    assert enb["stats"][0]["label"] == "Price · CAD"
+    assert [issue["title"] for issue in view["issues"]] == ["Exchange rate"]
+    assert "ENB.TO" in view["issues"][0]["message"]
