@@ -36,8 +36,10 @@
   iOS app turns white text dark.
 -#}
 {%- set IMP = "" if amp else "!important" -%}
-{#- Table attributes: AMP drops the ones only Outlook needs (its CSS sets the same), saving ~7 KB. -#}
-{%- set T %}{% if amp %}width="100%"{% else %}role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"{% endif %}{% endset -%}
+{#- Table attributes: the CSS zeroes cell padding and spacing, so the cellpadding/cellspacing/border attributes
+    (which only desktop Outlook needs, and it can't collapse the dropdowns anyway) are left out, saving ~5 KB per
+    version. The HTML version keeps role="presentation" for screen readers. -#}
+{%- set T %}{% if amp %}width="100%"{% else %}role="presentation" width="100%"{% endif %}{% endset -%}
 
 {%- macro badge(b) -%}
 <span class="bd" style="background-color:{{ b.bg }};color:{{ b.fg }};">{{ b.text }}</span>
@@ -56,9 +58,11 @@
 <div class="lb" style="color:{{ color }};padding-top:{{ top }};">{{ text }}</div>
 {%- endmacro -%}
 
-{#- A collapsed section's summary line: parts joined by dots, each optionally coloured or led by a coloured dot. -#}
+{#- A collapsed section's summary line: parts joined by dots, each optionally coloured or led by a coloured dot.
+    Parts may wrap: one kept on a single line ("Terms, abbreviations, and indicators explained") pushed the
+    whole email wider than a phone. -#}
 {%- macro parts(items) -%}
-{% for p in items %}{% if not loop.first %}<span style="color:#CBD5E1;"> &middot; </span>{% endif %}<span style="white-space:nowrap;">{% if p.dot %}<span class="dot" style="background-color:{{ p.dot }};"></span>&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b style="color:{{ TONES[p.tone] }};">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}</span>{% endfor %}
+{% for p in items %}{% if not loop.first %}<span style="color:#CBD5E1;"> &middot; </span>{% endif %}{% if p.dot %}<span class="dot" style="background-color:{{ p.dot }};"></span>&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b style="color:{{ TONES[p.tone] }};">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}{{ p.suffix }}{% endfor %}
 {%- endmacro -%}
 
 {#- Figure boxes: up to three side by side; four as a 2x2 grid, so figures like "-$1,107.47" never push the card
@@ -87,11 +91,11 @@
     turns when it opens; the call block's body is what opens. `pad` and `top` are spacing classes. -#}
 {%- macro fold(title="", cells=none, open=false, pad="p6", top="t6", right=false, anchor="", focus_on_open=false) -%}
 {% if right %}
-{% set head %}<table {{ T }}><tr>{{ cells }}<td width="22" align="right" valign="middle"><b class="cv cvr"><i class="a1">&#9662;</i><i class="a2">&#9652;</i></b></td></tr></table>{% endset %}
+{% set head %}<table {{ T }}><tr>{{ cells }}<td width="22" align="right" valign="middle"><b class="cv cvr"><i class="a1">▾</i><i class="a2">▴</i></b></td></tr></table>{% endset %}
 {% elif cells %}
-{% set head %}<table {{ T }}><tr><td width="15" valign="top"><b class="cv"><i class="a1">&#9656;</i><i class="a2">&#9662;</i></b></td>{{ cells }}</tr></table>{% endset %}
+{% set head %}<table {{ T }}><tr><td width="15" valign="top"><b class="cv"><i class="a1">▸</i><i class="a2">▾</i></b></td>{{ cells }}</tr></table>{% endset %}
 {% else %}
-{% set head %}<b class="cv"><i class="a1">&#9656;</i><i class="a2">&#9662;</i></b><span class="ft">{{ title }}</span>{% endset %}
+{% set head %}<b class="cv"><i class="a1">▸</i><i class="a2">▾</i></b><span class="ft">{{ title }}</span>{% endset %}
 {% endif %}
 <div{% if top %} class="{{ top }}"{% endif %}>
 {% if amp %}
@@ -114,7 +118,7 @@
 {% if empty %}
 <div class="p14"><table {{ T }}><tr>{{ cells }}</tr></table></div>
 {% else %}
-{% call fold(cells=cells, open=(key in open_sections), pad="p14", top="", right=true, anchor="s-" ~ key) %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
+{% call fold(cells=cells, open=(key in open_sections), pad="p14", top="", right=true, anchor="s-" ~ key) %}<div class="pb">{{ body }}</div>{% endcall %}
 {% endif %}
 </td></tr>
 </table>
@@ -124,8 +128,8 @@
 {#- 2. One item inside a section: a collapsed row, with a line above every row but the first of its list. -#}
 {%- macro row(cells, first, anchor="") -%}
 {% set body = caller() %}
-<div style="{{ '' if first else 'border-top:1px solid #EEF2F6;' }}">
-{% call fold(cells=cells, pad="p12", top="", anchor=anchor, focus_on_open=anchor != "") %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
+<div{{ '' if first else ' class="rb"' }}>
+{% call fold(cells=cells, pad="p12", top="", anchor=anchor, focus_on_open=anchor != "") %}<div class="pb">{{ body }}</div>{% endcall %}
 </div>
 {%- endmacro -%}
 
@@ -141,7 +145,7 @@
 {%- endmacro -%}
 
 {%- macro chart(ch) -%}
-<a href="{{ ch.link }}" style="display:block;padding-top:12px;">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" style="display:block;width:100%;max-width:{{ ch.width }}px;height:auto;border:0;border-radius:8px;">{% endif %}</a>
+<a href="{{ ch.link }}" class="chl">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" class="chi" style="width:100%;max-width:{{ ch.width }}px;height:auto;">{% endif %}</a>
 {%- endmacro -%}
 
 {%- macro kv(rows) -%}
@@ -223,8 +227,7 @@ table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
 u{text-decoration:none!important;}
 {% endif %}
 table{border-collapse:collapse;border-spacing:0;}
-{% if amp %}td{padding:0;}
-{% endif %}
+td{padding:0;}
 a{text-decoration:none;}
 .c{font-family:{{ FONT }};font-size:14px;line-height:21px;color:#334155;}
 .cp{padding-left:14px;padding-right:14px;}
@@ -262,6 +265,13 @@ a{text-decoration:none;}
 .dot{display:inline-block;width:7px;height:7px;border-radius:4px;}
 .nd{width:14px;padding-top:7px;}
 .nt{padding-bottom:10px;}
+.gt{margin:0;font-size:13px;line-height:19px;padding-top:10px;}
+.gt b{color:#0F2A44;}
+.rb{border-top:1px solid #EEF2F6;}
+.pb{padding-bottom:16px;}
+.ml{line-height:22px;}
+.chl{display:block;padding-top:12px;}
+.chi{display:block;border:0;border-radius:8px;}
 .kl,.kv{padding:6px 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;}
 .kl{color:#64748B;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;}
@@ -280,7 +290,7 @@ u + .body .cv{display:none;}
 {% endif %}
 </head>
 <body{{ '' if amp else ' class="body"' }} style="margin:0;padding:0;background-color:#EEF2F6;">
-<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;{{ '' if amp else 'mso-hide:all;' }}">{{ preheader }}{% for _ in range(30) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;{{ '' if amp else 'mso-hide:all;' }}">{{ preheader }}{% for _ in range(12) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
 <table {{ T }} style="background-color:#EEF2F6;">
 <tr><td align="center" style="padding:0;font-family:{{ FONT }};">
 {% if not amp %}<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->{% endif %}
@@ -374,7 +384,7 @@ u + .body .cv{display:none;}
 {% if market.rows %}
 {% call fold("All indicators", top="t10") %}
 <table {{ T }}>
-<tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", "1D", "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
+<tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", day_label, "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
 {% for r in market.rows %}
 <tr><td class="mc" style="padding-left:0;white-space:normal;font-weight:700;color:#0F2A44;">{{ r.name }}{% if r.ticker %} <span class="mu" style="font-size:11px;font-weight:400;">{{ r.ticker }}</span>{% endif %}</td><td align="right" class="mc">{{ r.last }}</td><td align="right" class="mc" style="font-weight:700;color:{{ TONES[r.d1.tone] }};">{{ r.d1.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.d5.tone] }};">{{ r.d5.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.m1.tone] }};">{{ r.m1.text }}</td></tr>
 {% endfor %}
@@ -399,9 +409,9 @@ u + .body .cv{display:none;}
 {% call section("holdings", "Your holdings", holdings_summary, holdings|length) %}
 <div class="xs mu" style="padding-bottom:4px;">{{ holdings_note }}</div>
 {% for h in holdings %}
-{% set detail %}<span class="mu">{{ h.weight_short }}</span>{% if h.day.text %} &middot; <span style="color:{{ TONES[h.day.tone] }};">{{ h.day.text }}</span>{% endif %}{% endset %}
+{% set detail %}{% if h.day.text %}<div><span style="color:{{ TONES[h.day.tone] }};">{{ h.day.text }}</span> <span class="mu">{{ day }}</span></div>{% endif %}<div class="mu">{{ h.weight_short }} weight</div>{% endset %}
 {% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first, h.anchor) %}
-<div class="xs mu" style="line-height:22px;">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta }}</div>
+<div class="xs mu ml">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta }}</div>
 <div style="padding-top:8px;">{{ stats(h.stats) }}</div>
 {% for c in h.catalysts %}
 <div class="sm" style="padding-top:10px;">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text }}</div>
@@ -433,7 +443,7 @@ u + .body .cv{display:none;}
 <div class="xs mu" style="padding-bottom:4px;">Short-term setups: days to a few weeks</div>
 {% for c in swing %}
 {% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
-<div class="xs mu" style="line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+<div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
 {% if c.plan %}
 <div style="padding-top:8px;">{{ stats(c.plan) }}</div>
 {% else %}
@@ -452,7 +462,7 @@ u + .body .cv{display:none;}
 <div class="xs mu" style="padding-bottom:4px;">Businesses worth owning for years</div>
 {% for c in long_term %}
 {% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
-<div class="xs mu" style="line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+<div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
 {% if c.thesis %}<div style="padding-top:8px;">{{ c.thesis }}</div>{% endif %}
 {% if c.key_risk %}
 <table {{ T }} style="margin-top:12px;"><tr>{{ stripe("#F59E0B") }}<td style="padding:1px 0 1px 10px;">{{ label("Key risk", "#92400E") }}<div class="sm" style="padding-top:2px;">{{ c.key_risk }}</div></td></tr></table>
@@ -469,9 +479,21 @@ u + .body .cv{display:none;}
 {% endfor %}
 {% endcall %}
 
+{# ---------- Glossary: static explanations of the terms above, one row per category ---------- #}
+{% if glossary %}
+{% call section("glossary", "Glossary", glossary_summary) %}
+{% for g in glossary %}
+{% call row(item_header(g.category, g.terms|length ~ " terms"), loop.first) %}
+{% for term, text in g.terms %}<p class="gt"><b>{{ term }}</b><br>{{ text }}</p>
+{% endfor %}
+{% endcall %}
+{% endfor %}
+{% endcall %}
+{% endif %}
+
 {# ---------- Footer ---------- #}
 <tr><td class="c xs mu" style="padding:6px 24px 32px 24px;">
-{% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority news and details were left out to keep this email under Gmail's size limit.</div>{% endif %}
+{% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority content was left out to keep this email under Gmail's size limit.</div>{% endif %}
 {% if usage %}
 {% call fold("About this digest", top="") %}
 {{ kv(usage) }}

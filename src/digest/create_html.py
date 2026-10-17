@@ -37,6 +37,7 @@ if str(project_root) not in sys.path:
 
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
+from src.digest.glossary import GLOSSARY
 from src.personalized.portfolio_review import build_portfolio_summary
 
 TEMPLATE_NAME = "email_template.html"
@@ -78,7 +79,7 @@ MARKET_NAMES = {
 KEY_MARKETS = ("S&P 500", "Nasdaq-100", "VIX", "10Y Yield")  # Tiles shown first in Markets & macro
 SECTION_ICONS = {  # (emoji, tile colour) beside each section's title
     "risk": ("🛡️", "#FFEDD5"), "markets": ("🌐", "#E0F2FE"), "holdings": ("💼", "#E0E7FF"),
-    "swing": ("⚡", "#FEF3C7"), "long_term": ("🌱", "#DCFCE7"),
+    "swing": ("⚡", "#FEF3C7"), "long_term": ("🌱", "#DCFCE7"), "glossary": ("📖", "#F1F5F9"),
 }
 LONG_TERM_SCORES = (  # (sub-score, label, maximum), as in LLM_rec_instr.py
     ("valuation_score", "Valuation", 25), ("financial_health_score", "Financial health", 25),
@@ -304,7 +305,7 @@ def _lots_by_symbol(holdings: list[dict]) -> dict[str, list[dict]]:
     return lots
 
 
-def _holding_card(symbol: str, lots: list[dict]) -> dict:
+def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     first = lots[0]  # Price, signal, news, and indicators are the same for every lot of a stock
     label, fg, bg, bar, order = SIGNALS.get(first.get("recommendation"), NOT_EVALUATED)
     value = sum(_num(lot.get("market_value")) or 0.0 for lot in lots)
@@ -318,7 +319,7 @@ def _holding_card(symbol: str, lots: list[dict]) -> dict:
 
     stats = [
         _stat("Price", _money(first.get("current_price"), symbol=CURRENCY_SYMBOLS.get(currency, f"{currency} ")),
-              sub=_signed_pct(daily_pct, 2) if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
+              sub=f"{_signed_pct(daily_pct, 2)} {day}" if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
         _stat("Unrealized", _signed_money(gain), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
         _stat("RSI 14", _fixed(rsi, 0),
               sub="Overbought" if rsi is not None and rsi >= 70 else "Oversold" if rsi is not None and rsi <= 30
@@ -393,9 +394,9 @@ def _holding_card(symbol: str, lots: list[dict]) -> dict:
     }
 
 
-def _holding_cards(holdings: list[dict]) -> list[dict]:
+def _holding_cards(holdings: list[dict], day: str) -> list[dict]:
     """Most urgent signal first (urgent sell, risk alert, trim, hold), then largest position."""
-    cards = [_holding_card(symbol, lots) for symbol, lots in _lots_by_symbol(holdings).items()]
+    cards = [_holding_card(symbol, lots, day) for symbol, lots in _lots_by_symbol(holdings).items()]
     return sorted(cards, key=lambda card: (card["order"], -card["weight_pct"]))
 
 
@@ -403,19 +404,19 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
-def _holdings_note(cards: list[dict], holdings: list[dict]) -> str:
+def _holdings_note(cards: list[dict], holdings: list[dict], day: str) -> str:
     """The line atop the open holdings section, which also dates the price changes on the cards."""
     note = "Most urgent signal first"
     session = _session_date(holdings)
-    return f"{note} · price changes are for the {session} session" if session else note
+    return f"{note} · {day.capitalize()} = the {session} session" if session else note
 
 
-def _part(text: str, tone: Optional[str] = None, dot: Optional[str] = None, prefix: str = "") -> dict:
+def _part(text: str, tone: Optional[str] = None, dot: Optional[str] = None, prefix: str = "", suffix: str = "") -> dict:
     """
-    One piece of a collapsed section's summary line: `text` coloured by `tone` (after an uncoloured `prefix`), or
-    led by a dot of colour `dot`.
+    One piece of a collapsed section's summary line: `text` coloured by `tone` (between an uncoloured `prefix` and
+    `suffix`), or led by a dot of colour `dot`.
     """
-    return {"text": text, "tone": tone, "dot": dot, "prefix": prefix}
+    return {"text": text, "tone": tone, "dot": dot, "prefix": prefix, "suffix": suffix}
 
 
 def _signal_counts(cards: list[dict]) -> list[dict]:
@@ -430,7 +431,8 @@ def _signal_counts(cards: list[dict]) -> list[dict]:
 FLAGGED_SIGNALS = ("urgent_sell", "risk_alert", "trim")
 
 
-def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: tuple[int, int]) -> Optional[dict]:
+def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: tuple[int, int],
+               day: str) -> Optional[dict]:
     """
     The overview card. 2026-10-17 (UI pass): built to answer "do I need to do anything?" at a glance: the day's
     change as a pill, flagged positions and their share of the portfolio, chips for each flagged stock (most urgent
@@ -460,7 +462,7 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
                    + (f" · {abs(daily_pct):.2f}%" if daily_pct is not None else "")),
         "change_pct": _signed_pct(totals["daily_pnl_pct"], 2),
         "change_tone": _tone(daily_pnl),
-        "session": f"{session} session" if session else "Last session",
+        "session": f"{day.capitalize()} · {session}" if session else day.capitalize(),
         "stats": [
             _stat("Unrealized", _signed_money(gain, 0), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
             _stat("Flagged", f"{len(flagged)} of {len(cards)}", flagged_tone,
@@ -584,7 +586,7 @@ def _market_name(name: str) -> tuple[str, str]:
     return (match.group(1), match.group(2).lstrip("$")) if match else (name, "")
 
 
-def _market(market_data: Any) -> Optional[dict]:
+def _market(market_data: Any, day: str) -> Optional[dict]:
     if not isinstance(market_data, dict) or not market_data:
         return None
     rows = []
@@ -613,7 +615,7 @@ def _market(market_data: Any) -> Optional[dict]:
     if curve.get("Spread") and not curve.get("Error"):
         spread = _num(str(curve["Spread"]).rstrip("%"))
         chips.append(_stat("10Y–2Y spread", str(curve["Spread"]), "neg" if spread is not None and spread < 0 else "ink",
-                           f"{curve.get('1D Change', '')} today".strip() if curve.get("1D Change") else ""))
+                           f"{curve.get('1D Change', '')} {day}".strip() if curve.get("1D Change") else ""))
     breadth = (market_data.get("sp500_breadth") or {}).get("% > 50MA")
     if breadth:
         share = _num(str(breadth).rstrip("%"))
@@ -623,7 +625,7 @@ def _market(market_data: Any) -> Optional[dict]:
     if not rows and not chips:
         return None
     # Claude-authored (2026-10-17): the four tiles shown first when the section opens; the rest are one tap away
-    key = [_stat(row["name"], row["last"], sub=row["d1"]["text"], sub_tone=row["d1"]["tone"])
+    key = [_stat(row["name"], row["last"], sub=f"{row['d1']['text']} {day}", sub_tone=row["d1"]["tone"])
            for row in rows if row["name"] in KEY_MARKETS]
     return {"rows": rows, "chips": chips, "key": key}
 
@@ -786,11 +788,11 @@ def _usage(api_usage: Any) -> list[tuple[str, str]]:
     return rows
 
 
-def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market: Optional[dict]) -> str:
+def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market: Optional[dict], day: str) -> str:
     """The inbox preview line under the subject."""
     parts = []
     if portfolio:
-        parts.append(f"Portfolio {portfolio['value']} ({portfolio['change_pct']})")
+        parts.append(f"Portfolio {portfolio['value']} ({portfolio['change_pct']} {day})")
     flagged = Counter(card["signal"]["text"] for card in cards if card["signal_key"] in ("urgent_sell", "risk_alert", "trim"))
     parts += [f"{count} {label.lower()}{'s' if count > 1 and label != 'Trim' else ''}" for label, count in flagged.items()]
     parts.append(f"{ideas} new idea{'s' if ideas != 1 else ''}")
@@ -808,15 +810,18 @@ def build_view(payload: dict) -> dict:
     user_name = str(payload.get("user_name") or "there")
     started = payload.get("personal_started_at") or {}
 
-    cards = _holding_cards(holdings)
+    # Claude-authored (2026-10-17): every daily change covers one full session, close to close. Before the open
+    # that is the previous trading day, so the pre-market digest labels it "Prev. day"; the post-market one, "Day".
+    day = "prev. day" if _period(payload) == "Pre-Market" else "day"
+    cards = _holding_cards(holdings, day)
     swing = [_swing_card(pick, today) for pick in recommendations.get("top_swing") or []]
     long_term = [_long_term_card(pick, today) for pick in recommendations.get("top_long_term") or []]
-    portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)))
-    market = _market(payload.get("market_data"))
+    portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)), day)
+    market = _market(payload.get("market_data"), day)
     stories = _stories(payload.get("headline_news"))
     # Claude-authored (2026-10-17): the collapsed Markets & macro section, e.g. "S&P 500 +0.3% · VIX 16.13 · 5 stories"
     markets_summary = [
-        _part(row["d1"]["text"], row["d1"]["tone"], prefix=f"{row['name']} ") if row["name"] != "VIX"
+        _part(row["d1"]["text"], row["d1"]["tone"], prefix=f"{row['name']} ", suffix=f" {day}") if row["name"] != "VIX"
         else _part(f"VIX {row['last']}")
         for row in (market["rows"] if market else []) if row["name"] in ("S&P 500", "VIX")
     ]
@@ -842,7 +847,9 @@ def build_view(payload: dict) -> dict:
         "icons": SECTION_ICONS,
         "greeting": _greeting(started, user_name),
         "prepared": _prepared(started),
-        "preheader": _preheader(portfolio, cards, len(swing) + len(long_term), market),
+        "preheader": _preheader(portfolio, cards, len(swing) + len(long_term), market, day),
+        "day_label": day.capitalize(),  # "Prev. day" or "Day"
+        "day": day,
         "issues": _issues(payload),
         "portfolio": portfolio,
         "risk": _risk(cards, payload.get("portfolio_beta"), payload.get("portfolio_review") or []),
@@ -851,7 +858,7 @@ def build_view(payload: dict) -> dict:
         "stories": stories,
         "markets_summary": markets_summary,
         "holdings": cards,
-        "holdings_note": _holdings_note(cards, holdings),
+        "holdings_note": _holdings_note(cards, holdings, day),
         "holdings_summary": _signal_counts(cards),
         "swing": swing,
         "long_term": long_term,
@@ -866,6 +873,10 @@ def build_view(payload: dict) -> dict:
         "usage": _usage(payload.get("api_usage")) + ([("Ideas scored by", ", ".join(models))] if models else []),
         "usage_note": str((payload.get("api_usage") or {}).get("note") or ""),
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
+        # Claude-authored (2026-10-17): the static glossary card at the bottom (src/digest/glossary.py); emptied by
+        # fit_for_gmail, before anything else, when the digest would pass Gmail's clipping limit
+        "glossary": [{"category": category, "terms": terms} for category, terms in GLOSSARY],
+        "glossary_summary": [_part("Terms, abbreviations, and indicators explained")],
         # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
         "open_sections": set(params_dict["DIGEST"].get("OPEN_SECTIONS") or ()),
     }
@@ -909,6 +920,10 @@ def render_amp(view: dict, template_dir: Path) -> Optional[str]:
     return amp_html
 
 
+def _drop_glossary(view: dict) -> None:
+    view["glossary"] = []
+
+
 def _drop_low_news(view: dict) -> None:
     for card in view["holdings"]:
         card["news"] = [item for item in card["news"] if item["priority"] != "LOW"]
@@ -943,7 +958,8 @@ def _no_news(view: dict) -> None:
 
 # Applied in order until the HTML fits, least useful content first. Holding news arrives highest priority first.
 # Each holding's signal, figures, and reasoning are never dropped.
-TRIM_STEPS = (_drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news, _no_news)
+TRIM_STEPS = (_drop_glossary, _drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news,
+              _no_news)
 
 
 def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
@@ -985,7 +1001,7 @@ def render_text(view: dict) -> str:
         lines += ["", f"CONNECTED ACCOUNT {account['company']}"]
         lines += [f"  {row['name']}: {row['value']} ({row['positions']})" for row in account["accounts"]]
     if view["market"]:
-        lines += ["", "MARKETS (1D / 5D / 1M)"]
+        lines += ["", f"MARKETS ({view['day_label']} / 5D / 1M)"]
         lines += [f"  {r['name']} {r['last']}  {r['d1']['text']} / {r['d5']['text']} / {r['m1']['text']}"
                   for r in view["market"]["rows"]]
         lines += [f"  {c['label']}: {c['value']} {c['sub']}".rstrip() for c in view["market"]["chips"]]

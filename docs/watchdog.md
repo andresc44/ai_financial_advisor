@@ -267,7 +267,16 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 6. **Your holdings:** most urgent signal first, then largest position. A stock held in several accounts gets one row.
 7. **Swing ideas.**
 8. **Long-term ideas.**
-9. **Footer:** "About this digest", showing what it cost and which model scored the ideas.
+9. **Glossary** (added 2026-10-17): a collapsed card with five category rows: signals and ideas, your portfolio, technical indicators, valuation and fundamentals, and market indicators. Each row lists the terms, abbreviations and indicators the email uses, and how to read them. The text is static, in `src/digest/glossary.py`.
+10. **Footer:** "About this digest", showing what it cost and which model scored the ideas.
+
+**"Prev. day" and "Day" labels (added 2026-10-17).** Every daily change covers one full trading session, close to close: the previous session in a Pre-Market digest, today's in a Post-Market one. To make that clear, every daily change is labelled "Prev. day" in Pre-Market digests and "Day" in Post-Market ones:
+- the overview's change pill;
+- each holding's collapsed row and its Price box;
+- the line at the top of Your holdings;
+- the market tiles, the table's one-day column, and the markets summary;
+- the yield-curve change;
+- the inbox preview line.
 
 It is built for a phone first: one column up to 600 px wide.
 
@@ -331,7 +340,7 @@ Other limits:
 
 **Gmail's size limit.** Gmail hides everything past about 102 KB of the HTML version behind "[Message clipped]".
 - **Normal size:** a typical digest is about 90 KB.
-- **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions.
+- **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: the glossary (about 10 KB), low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions. A typical digest of about 10 holdings keeps the glossary, at about 96 KB in each version.
 - **Never removed:** each holding's signal, figures and reasoning.
 - **Capacity:** about 20 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
 - **Untrimmed:** the plain-text version is always complete.

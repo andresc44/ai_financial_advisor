@@ -136,7 +136,7 @@ def test_overview_and_risk_figures():
     view = ch.build_view(payload())
     portfolio, risk = view["portfolio"], view["risk"]
     assert portfolio["value"] == "$4,000.00"
-    assert portfolio["session"] == "Oct 15 session"
+    assert portfolio["session"] == "Prev. day · Oct 15"
     assert portfolio["change"] == "▲ $20.00 · 0.50%"
     # Unrealized: a 10% gain on cost; flagged: urgent sell, risk alert, and trim (an urgent sell makes it red)
     assert [stat["value"] for stat in portfolio["stats"]] == ["+$400", "3 of 4", "2"]
@@ -193,7 +193,8 @@ def test_digest_without_personal_or_macro_content():
     assert view["portfolio"] is None and view["risk"] is None and view["account"] is None and view["market"] is None
     assert "Hello, Test" in html
     assert "No setups scored 80+ today" in html and "No ideas scored 80+ today" in html
-    assert "<details>" not in html  # Empty sections are plain cards, with nothing to open
+    # Empty sections are plain cards, with nothing to open; the only dropdowns left are the glossary's
+    assert html.count("<details>") == 1 + len(view["glossary"])
 
 
 def test_issues_are_shown_first():
@@ -214,7 +215,10 @@ def test_a_full_digest_fits_under_gmails_clipping_limit():
     view = ch.build_view(full)
     html = ch.fit_for_gmail(view, TEMPLATE_DIR)
     assert len(html.encode("utf-8")) <= ch.GMAIL_CLIP_BYTES
-    assert view["trimmed"] is False  # 10 holdings with 3 news items each, 5 swing and 2 long-term ideas fit as is
+    # 10 holdings with 3 news items each, 5 swing and 2 long-term ideas fit once the glossary, the first thing
+    # left out, is dropped: every news item stays
+    assert view["trimmed"] is True and view["glossary"] == []
+    assert all(len(card["news"]) == 3 for card in view["holdings"])
 
 
 def test_a_large_portfolio_drops_low_priority_news_to_fit():
@@ -332,7 +336,7 @@ def html_folds(view):
 
 def flat(parts):
     """A collapsed section's summary parts as the text they show."""
-    return " · ".join(part["prefix"] + part["text"] for part in parts)
+    return " · ".join(part["prefix"] + part["text"] + part["suffix"] for part in parts)
 
 
 def test_main_sections_collapse_to_a_summary(monkeypatch):
@@ -340,7 +344,7 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     assert flat(view["risk"]["summary"]) == "Beta 1.40 · Above-market risk · 1 to watch"
     assert view["risk"]["summary"][1]["tone"] == "warn"
     assert view["account"]["summary"] == "Questrade · 1 account · 4 positions"
-    assert flat(view["markets_summary"]) == "S&P 500 +0.3% · 1 story"
+    assert flat(view["markets_summary"]) == "S&P 500 +0.3% prev. day · 1 story"
     assert view["markets_summary"][0]["tone"] == "pos"  # Only the change is coloured, not "S&P 500"
     assert flat(view["holdings_summary"]) == "1 urgent sell · 1 risk alert · 1 trim · 1 hold"
     assert [part["dot"] for part in view["holdings_summary"]] == ["#DC2626", "#F97316", "#F59E0B", "#38BDF8"]
@@ -380,8 +384,7 @@ def test_four_figure_boxes_form_a_2x2_grid():
     # up to three stay in one row
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
     row_start = html.rfind("<details>", 0, html.index(">AAA<"))
-    grid = html[html.index('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
-                           'style="background-color:#F5F7FA;', row_start):]
+    grid = html[html.index('<table role="presentation" width="100%" style="background-color:#F5F7FA;', row_start):]
     grid = grid[:grid.index("</table>")]
     assert grid.count("<tr>") == 2 and grid.count('width="50%"') == 4
     overview = html[html.index("Your portfolio"):html.index(">Portfolio risk<")]
@@ -406,7 +409,7 @@ def test_review_notes_and_stories_are_rows_with_titles():
     titles = [note["title"] for note in view["risk"]["watch"]]
     # Gemini's title when there is one; otherwise the first sentence, cut at a bracket and shortened at a word
     assert titles == ["Leveraged ETFs drive a high beta", "Industrials sector exposure is heavily concentrated at 31.53%…"]
-    assert flat(view["markets_summary"]) == "S&P 500 +0.3% · 1 story"
+    assert flat(view["markets_summary"]) == "S&P 500 +0.3% prev. day · 1 story"
 
     html = ch.render_html(view, TEMPLATE_DIR)
     for title in titles + ["The central bank held rates."]:
@@ -447,3 +450,32 @@ def test_from_payload_renders_and_emails_a_saved_payload(tmp_path, monkeypatch):
 
     assert "not emailed" in dp.send_saved_payload(saved, email=False)
     assert len(emails) == 1
+
+
+def test_daily_changes_say_prev_day_before_the_open_and_day_after_the_close():
+    pre = ch.build_view(payload())
+    post = ch.build_view(payload(period="Post-Market", subject="Finnbot Post-Market Digest 2026-10-16"))
+    assert (pre["day_label"], post["day_label"]) == ("Prev. day", "Day")
+    assert pre["portfolio"]["session"] == "Prev. day · Oct 15" and post["portfolio"]["session"] == "Day · Oct 15"
+    assert pre["holdings"][0]["stats"][0]["sub"] == "+0.50% prev. day"
+    assert post["holdings"][0]["stats"][0]["sub"] == "+0.50% day"
+    assert pre["holdings_note"].endswith("Prev. day = the Oct 15 session")
+    assert flat(pre["markets_summary"]).startswith("S&P 500 +0.3% prev. day")
+    assert pre["market"]["key"][0]["sub"] == "+0.3% prev. day"
+    assert [chip["sub"] for chip in pre["market"]["chips"] if chip["label"] == "10Y–2Y spread"] == ["-4.0 bps prev. day"]
+    assert "(+0.50% prev. day)" in pre["preheader"]
+    pre_html, post_html = ch.render_html(pre, TEMPLATE_DIR), ch.render_html(post, TEMPLATE_DIR)
+    assert ">Prev. day</td>" in pre_html and ">Day</td>" in post_html  # The market table's one-day column
+    post["glossary"] = []  # The glossary defines both terms
+    assert "prev. day" not in ch.render_html(post, TEMPLATE_DIR).lower()
+    assert "MARKETS (Day / 5D / 1M)" in ch.render_text(post)
+
+
+def test_the_glossary_is_static_and_left_out_first():
+    view = ch.build_view(payload())
+    from src.digest.glossary import GLOSSARY
+    assert [g["category"] for g in view["glossary"]] == [category for category, _ in GLOSSARY]
+    html = ch.render_html(view, TEMPLATE_DIR)
+    assert html.index(">Glossary<") > html.index(">Long-term ideas ")  # At the very bottom
+    assert "<b>RSI 14</b><br>Relative Strength Index" in html and "<b>Beta</b><br>" in html
+    assert ch.TRIM_STEPS[0].__name__ == "_drop_glossary"  # The least important content goes first
