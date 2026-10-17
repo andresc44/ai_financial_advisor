@@ -142,7 +142,7 @@ def test_overview_and_risk_figures():
     assert [stat["value"] for stat in portfolio["stats"]] == ["+$400", "3 of 4", "2"]
     assert (portfolio["stats"][1]["sub"], portfolio["stats"][1]["tone"]) == ("50% of value", "neg")
     assert [chip["text"] for chip in portfolio["attention"]] == ["CCC", "AAA", "DDD"]  # Most urgent first
-    assert portfolio["earnings"] == ["AAA Oct 21", "BBB Oct 21", "CCC Oct 21", "DDD Oct 21"]
+    assert [item["text"] for item in portfolio["earnings"]] == ["AAA Oct 21", "BBB Oct 21", "CCC Oct 21", "DDD Oct 21"]
     assert risk["beta"]["value"] == "1.40" and risk["beta"]["label"] == "Above-market risk"
     assert [(m["label"], m["pct"]) for m in risk["mix"]] == [
         ("Urgent sell", "5%"), ("Risk alert", "30%"), ("Trim", "15%"), ("Hold", "50%")]
@@ -322,7 +322,7 @@ def test_amp_version_uses_amp_markup_only():
     assert amp.count("<amp-accordion") == html_folds(view) and "<amp-img" in amp  # Same dropdowns as the HTML
     for disallowed in ("<details", "<summary", "<img", "!important", "<!--[if", "mso-", "<meta name="):
         assert disallowed not in amp, disallowed
-    assert amp.count("<section>") == amp.count("<amp-accordion")  # All collapsed
+    assert "<section expanded" not in amp and amp.count("<section") == amp.count("<amp-accordion")  # All collapsed
 
 
 def html_folds(view):
@@ -359,6 +359,20 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     view = ch.build_view(payload())
     assert ch.render_html(view, TEMPLATE_DIR).count("<details open>") == 2
     assert ch.render_amp(view, TEMPLATE_DIR).count("<section expanded>") == 2
+
+
+def test_overview_chips_open_their_holding_in_the_amp_version():
+    view = ch.build_view(payload())
+    amp = ch.render_amp(view, TEMPLATE_DIR)
+    # Tapping CCC's chip opens Your holdings and CCC's row (closed first, so its expand event always fires)...
+    assert ('on="tap:acc-s-holdings.expand,acc-h-ccc.collapse,acc-h-ccc.expand">CCC</button>') in amp
+    # ...and the row, once open, focuses its own header, which scrolls it into view and highlights it
+    assert '<amp-accordion animate id="acc-h-ccc"><section on="expand:hdr-h-ccc.focus"><header class="fh p12" id="hdr-h-ccc">' in amp
+    assert '<amp-accordion animate id="acc-s-holdings">' in amp
+    assert amp.count("<button") == len(view["portfolio"]["attention"]) + len(view["portfolio"]["earnings"])
+    # The HTML version keeps plain chips: jump links don't work in the Gmail app, nor into closed dropdowns
+    html = ch.render_html(view, TEMPLATE_DIR)
+    assert "<button" not in html and " on=" not in html
 
 
 def test_four_figure_boxes_form_a_2x2_grid():

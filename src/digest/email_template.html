@@ -43,6 +43,15 @@
 <span class="bd" style="background-color:{{ b.bg }};color:{{ b.fg }};">{{ b.text }}</span>
 {%- endmacro -%}
 
+{#- A holding's chip in the overview. In the AMP version it is a button: tapping it opens Your holdings and the
+    stock's row; the row then focuses its own header (fold's focus_on_open), which scrolls it into view and
+    highlights it. AMP email has no scroll action, and focusing straight from the button fails while the row is
+    still hidden; closing and reopening the row makes its expand event fire even if it was open. Elsewhere it
+    is a plain chip. -#}
+{%- macro jump(b) -%}
+{% if amp %}<button type="button" class="bd jp" style="background-color:{{ b.bg }};color:{{ b.fg }};" on="tap:acc-s-holdings.expand,acc-{{ b.anchor }}.collapse,acc-{{ b.anchor }}.expand">{{ b.text }}</button>{% else %}{{ badge(b) }}{% endif %}
+{%- endmacro -%}
+
 {%- macro label(text, color=MUTED, top="0") -%}
 <div class="lb" style="color:{{ color }};padding-top:{{ top }};">{{ text }}</div>
 {%- endmacro -%}
@@ -76,7 +85,7 @@
 
     fold: `title` (plain text) or `cells` (ready-made <td> cells) is the always-visible line, next to an arrow that
     turns when it opens; the call block's body is what opens. `pad` and `top` are spacing classes. -#}
-{%- macro fold(title="", cells=none, open=false, pad="p6", top="t6", right=false) -%}
+{%- macro fold(title="", cells=none, open=false, pad="p6", top="t6", right=false, anchor="", focus_on_open=false) -%}
 {% if right %}
 {% set head %}<table {{ T }}><tr>{{ cells }}<td width="22" align="right" valign="middle"><b class="cv cvr"><i class="a1">&#9662;</i><i class="a2">&#9652;</i></b></td></tr></table>{% endset %}
 {% elif cells %}
@@ -86,7 +95,7 @@
 {% endif %}
 <div{% if top %} class="{{ top }}"{% endif %}>
 {% if amp %}
-<amp-accordion animate><section{{ " expanded" if open else "" }}><header class="fh {{ pad }}">{{ head }}</header><div>{{ caller() }}</div></section></amp-accordion>
+<amp-accordion animate{% if anchor %} id="acc-{{ anchor }}"{% endif %}><section{{ " expanded" if open else "" }}{% if focus_on_open %} on="expand:hdr-{{ anchor }}.focus"{% endif %}><header class="fh {{ pad }}"{% if anchor %} id="hdr-{{ anchor }}"{% endif %}>{{ head }}</header><div>{{ caller() }}</div></section></amp-accordion>
 {% else %}
 <details{{ " open" if open else "" }}><summary class="{{ pad }}">{{ head }}</summary><div>{{ caller() }}</div></details>
 {% endif %}
@@ -105,7 +114,7 @@
 {% if empty %}
 <div class="p14"><table {{ T }}><tr>{{ cells }}</tr></table></div>
 {% else %}
-{% call fold(cells=cells, open=(key in open_sections), pad="p14", top="", right=true) %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
+{% call fold(cells=cells, open=(key in open_sections), pad="p14", top="", right=true, anchor="s-" ~ key) %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
 {% endif %}
 </td></tr>
 </table>
@@ -113,10 +122,10 @@
 {%- endmacro -%}
 
 {#- 2. One item inside a section: a collapsed row, with a line above every row but the first of its list. -#}
-{%- macro row(cells, first) -%}
+{%- macro row(cells, first, anchor="") -%}
 {% set body = caller() %}
 <div style="{{ '' if first else 'border-top:1px solid #EEF2F6;' }}">
-{% call fold(cells=cells, pad="p12", top="") %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
+{% call fold(cells=cells, pad="p12", top="", anchor=anchor, focus_on_open=anchor != "") %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
 </div>
 {%- endmacro -%}
 
@@ -207,6 +216,7 @@ body{margin:0;padding:0;}
 amp-accordion .fh{margin:0;background-color:transparent;border:0;padding-right:0;}
 section[expanded]>header .a1{display:none;}
 section[expanded]>header .a2{display:inline;}
+amp-accordion .fh:focus{outline:0;background-color:#EAF2FB;}
 {% else %}
 body{margin:0!important;padding:0!important;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
 table,td{mso-table-lspace:0pt;mso-table-rspace:0pt;}
@@ -247,6 +257,7 @@ a{text-decoration:none;}
 .tk{font-size:16px;line-height:22px;font-weight:800;color:#0F2A44;}
 .pv{font-size:15px;line-height:22px;font-weight:800;color:#0F2A44;}
 .bd{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;line-height:15px;font-weight:700;white-space:nowrap;}
+.jp{border:0;margin:0;font-family:inherit;cursor:pointer;}
 .btn{display:inline-block;padding:6px 12px;margin:0 2px 4px 0;border-radius:999px;background-color:#EAF2FB;color:#0B6BCB;font-size:12px;line-height:16px;font-weight:700;}
 .dot{display:inline-block;width:7px;height:7px;border-radius:4px;}
 .nd{width:14px;padding-top:7px;}
@@ -301,13 +312,14 @@ u + .body .cv{display:none;}
 <div style="padding-top:16px;">{{ stats(portfolio.stats) }}</div>
 {% if portfolio.attention %}
 {{ label("Needs attention", MUTED, top="16px") }}
-<div style="padding-top:6px;line-height:26px;">{% for chip in portfolio.attention %}{{ badge(chip) }} {% endfor %}</div>
+<div style="padding-top:6px;line-height:26px;">{% for chip in portfolio.attention %}{{ jump(chip) }} {% endfor %}</div>
 {% else %}
 <div class="sm" style="padding-top:14px;color:#15803D;font-weight:700;">&#10003;&nbsp; Nothing flagged today</div>
 {% endif %}
 {% if portfolio.earnings %}
 {{ label("Earnings soon", MUTED, top="12px") }}
-<div class="sm ink" style="padding-top:4px;">{{ portfolio.earnings|join("  ·  ") }}</div>
+<div style="padding-top:6px;line-height:26px;">{% for item in portfolio.earnings %}{{ jump(item) }} {% endfor %}</div>
+{% if amp %}<div class="xs mu" style="padding-top:2px;">Tap a stock to open it below.</div>{% endif %}
 {% endif %}
 {% if account %}
 <div style="margin-top:14px;border-top:1px solid #EEF2F6;">
@@ -388,7 +400,7 @@ u + .body .cv{display:none;}
 <div class="xs mu" style="padding-bottom:4px;">{{ holdings_note }}</div>
 {% for h in holdings %}
 {% set detail %}<span class="mu">{{ h.weight_short }}</span>{% if h.day.text %} &middot; <span style="color:{{ TONES[h.day.tone] }};">{{ h.day.text }}</span>{% endif %}{% endset %}
-{% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first) %}
+{% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first, h.anchor) %}
 <div class="xs mu" style="line-height:22px;">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta }}</div>
 <div style="padding-top:8px;">{{ stats(h.stats) }}</div>
 {% for c in h.catalysts %}

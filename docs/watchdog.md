@@ -257,6 +257,10 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
    - three figure boxes: unrealized gain, flagged positions and their share of the value, and new ideas;
    - "Needs attention" chips for each flagged stock, most urgent first;
    - "Earnings soon" for holdings reporting within the catalyst window;
+   - **Jumping to a stock:** in the AMP version, tapping a stock in either list opens Your holdings and that stock's row, then scrolls to it and highlights it.
+     - **How:** AMP email has no scroll action, so the row focuses its own header once it has opened (its `expand` event), and focusing scrolls it into view.
+     - **Tested:** in a browser with real taps. Whether the Gmail app lets the email scroll its own view is unconfirmed; if not, the row still opens and is highlighted.
+     - **HTML version:** the chips stay plain there, because jump links don't work in the Gmail app or into closed dropdowns.
    - the connected brokerage, with each account's value in a small dropdown.
 4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes.
 5. **Markets & macro:** four key tiles (S&P 500, Nasdaq-100, VIX, 10Y yield) and the gauges. The full table is under "All indicators", followed by the top stories.

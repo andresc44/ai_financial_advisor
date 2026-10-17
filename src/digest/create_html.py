@@ -388,6 +388,8 @@ def _holding_card(symbol: str, lots: list[dict]) -> dict:
         "links": _quote_links(symbol),
         "currency": currency,
         "chart": None,  # Set by build_view
+        # Claude-authored (2026-10-17): the row's id in the AMP version, so the overview's chips can open it
+        "anchor": "h-" + re.sub(r"[^a-z0-9]", "-", symbol.lower()),
     }
 
 
@@ -446,7 +448,7 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
     flagged_tone = ("neg" if any(card["signal_key"] == "urgent_sell" for card in flagged)
                     else "warn" if flagged else "pos")
     earnings = sorted(
-        ((card["catalyst_days"], f"{card['symbol']} {card['catalyst_date']}") for card in cards
+        ((card["catalyst_days"], card["symbol"], card["catalyst_date"], card["anchor"]) for card in cards
          if card["catalyst_days"] is not None),
     )
     daily_pct = _num(totals["daily_pnl_pct"])
@@ -465,8 +467,10 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
                   f"{flagged_share:.0f}% of value" if flagged else "all on hold"),
             _stat("New ideas", str(long_n + swing_n), sub=f"{long_n} long · {swing_n} swing"),
         ],
-        "attention": [card["signal"] | {"text": card["symbol"]} for card in flagged],
-        "earnings": [text for _, text in earnings],
+        # Each chip and earnings entry carries its holding's anchor: tapping it in the AMP version opens that row
+        "attention": [card["signal"] | {"text": card["symbol"], "anchor": card["anchor"]} for card in flagged],
+        "earnings": [_badge(f"{symbol} {when}", INK, "#F1F5F9") | {"anchor": anchor}
+                     for _, symbol, when, anchor in earnings],
     }
 
 
