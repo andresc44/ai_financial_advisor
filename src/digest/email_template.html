@@ -4,13 +4,17 @@
   placeholder template.
 
   Built for phones first: one fluid column up to 600px wide in table layout, which Gmail, Apple Mail and Outlook
-  all render. Every value arrives as a ready-made string, so this file is layout only.
+  all render, and narrow enough (2x2 figure grids, wrapping badges) to fit a small phone without any @media rule,
+  since the Gmail app may not apply them. Every value arrives as a ready-made string, so this file is layout only.
 
-  Layout (2026-10-17, nested dropdowns): the greeting, any notices, and the portfolio overview are always shown.
-  Every other main section is one card that collapses to its title and a one-line summary (DIGEST.OPEN_SECTIONS
-  picks any to start open): portfolio risk, connected account, markets and macro, holdings, swing ideas,
-  long-term ideas. Inside, each holding and idea is its own collapsed row (ticker, signal or score, value), and
-  each row holds smaller dropdowns: chart, reasoning, news, extra figures.
+  Layout (UI pass, 2026-10-17): the email answers, in order, "how is my portfolio doing?", "do I need to act?",
+  "what is the market doing?", and "any new ideas?".
+  - Always shown: the greeting, any notices, and the overview card (value and day change, unrealized gain,
+    flagged positions as coloured chips, holdings reporting soon, and the connected account as a small dropdown).
+  - Section cards, collapsed to an icon, title, count, and a coloured one-line summary (DIGEST.OPEN_SECTIONS opens
+    any): portfolio risk, markets and macro, holdings, swing ideas, long-term ideas.
+  - Inside them, rows: each holding and idea (its chart shows as soon as it opens), each risk note, each story.
+  - Inside an opened row, small text dropdowns: the reasoning, news, and extra figures.
 
   Two outputs from this one file:
   - HTML (`amp` false), which every mail app shows. Dropdowns are <details>/<summary> (the `fold` macro): Apple Mail
@@ -43,11 +47,16 @@
 <div class="lb" style="color:{{ color }};padding-top:{{ top }};">{{ text }}</div>
 {%- endmacro -%}
 
+{#- A collapsed section's summary line: parts joined by dots, each optionally coloured or led by a coloured dot. -#}
+{%- macro parts(items) -%}
+{% for p in items %}{% if not loop.first %}<span style="color:#CBD5E1;"> &middot; </span>{% endif %}<span style="white-space:nowrap;">{% if p.dot %}<span class="dot" style="background-color:{{ p.dot }};"></span>&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b style="color:{{ TONES[p.tone] }};">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}</span>{% endfor %}
+{%- endmacro -%}
+
 {#- Figure boxes: up to three side by side; four as a 2x2 grid, so figures like "-$1,107.47" never push the card
     wider than a phone screen. -#}
 {%- macro stats(items) -%}
 {% set per_row = 2 if items|length == 4 else items|length %}
-<table {{ T }} style="background-color:#F5F7FA;border-radius:10px;">
+<table {{ T }} style="background-color:#F5F7FA;border-radius:12px;">
 {% for line in items|batch(per_row) %}
 {% set later_row = not loop.first %}
 <tr>
@@ -60,19 +69,20 @@
 {%- endmacro -%}
 
 {#- Dropdowns come in three sizes, used the same way everywhere:
-    1. section(): a main section's card, which collapses to its title, a one-line summary, and a count;
-    2. row(): one item inside a section (a holding, an idea, a risk note, a story, the market indicators);
+    1. section(): a main section's card, which collapses to its icon, title, count, and summary, with the arrow on
+       the right like a mobile app's list;
+    2. row(): one item inside a section (a holding, an idea, a risk note, a story);
     3. fold() with a title: a small text dropdown inside an open row (reasoning, news, extra figures).
-    A stock's chart is part of its row, so it shows as soon as the row is opened. -#}
 
-{#- A dropdown: `title` (plain text) or `cells` (ready-made <td> cells) is the always-visible line, next to an arrow
-    that turns when it opens; the call block's body is what opens. `pad` and `top` are spacing classes. -#}
-{%- macro fold(title="", cells=none, open=false, pad="p6", top="t6", big=false) -%}
-{% set arrow %}<b class="cv{{ ' cvl' if big else '' }}"><i class="a1">&#9656;</i><i class="a2">&#9662;</i></b>{% endset %}
-{% if cells %}
-{% set head %}<table {{ T }}><tr><td width="{{ 18 if big else 15 }}" valign="top">{{ arrow }}</td>{{ cells }}</tr></table>{% endset %}
+    fold: `title` (plain text) or `cells` (ready-made <td> cells) is the always-visible line, next to an arrow that
+    turns when it opens; the call block's body is what opens. `pad` and `top` are spacing classes. -#}
+{%- macro fold(title="", cells=none, open=false, pad="p6", top="t6", right=false) -%}
+{% if right %}
+{% set head %}<table {{ T }}><tr>{{ cells }}<td width="22" align="right" valign="middle"><b class="cv cvr"><i class="a1">&#9662;</i><i class="a2">&#9652;</i></b></td></tr></table>{% endset %}
+{% elif cells %}
+{% set head %}<table {{ T }}><tr><td width="15" valign="top"><b class="cv"><i class="a1">&#9656;</i><i class="a2">&#9662;</i></b></td>{{ cells }}</tr></table>{% endset %}
 {% else %}
-{% set head %}{{ arrow }}<span class="ft">{{ title }}</span>{% endset %}
+{% set head %}<b class="cv"><i class="a1">&#9656;</i><i class="a2">&#9662;</i></b><span class="ft">{{ title }}</span>{% endset %}
 {% endif %}
 <div{% if top %} class="{{ top }}"{% endif %}>
 {% if amp %}
@@ -83,14 +93,20 @@
 </div>
 {%- endmacro -%}
 
-{#- 1. A main section: a card that collapses to its title, summary, and count, so it can be skipped entirely. -#}
-{%- macro section(key, title, summary="", count="") -%}
+{#- 1. A main section: a card that collapses to its icon, title, count, and summary, so it can be skipped. With
+    `empty`, a plain card whose summary says why, since there is nothing to open. -#}
+{%- macro section(key, title, summary, count="", empty=false) -%}
 {% set body = caller() %}
-{% set cells %}<td valign="top"><div class="h1">{{ title }}</div>{% if summary %}<div class="sm mu" style="padding-top:2px;">{{ summary }}</div>{% endif %}</td>{% if count %}<td align="right" valign="top" style="padding-left:10px;"><span class="bd" style="background-color:#E2E8F0;color:#0F2A44;font-size:12px;">{{ count }}</span></td>{% endif %}{% endset %}
-<tr><td class="gutter"{% if not amp %} style="padding:0 10px 12px 10px;"{% endif %}>
-<table {{ T }} style="background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:14px;">
+{% set icon, tint = icons[key] %}
+{% set cells %}<td width="46" valign="top"><div class="ic" style="background-color:{{ tint }};">{{ icon }}</div></td><td valign="middle"><div class="h1">{{ title }}{% if count %} <span class="bd" style="background-color:#E2E8F0;color:#0F2A44;vertical-align:2px;">{{ count }}</span>{% endif %}</div><div class="sm mu" style="padding-top:2px;">{{ parts(summary) }}</div></td>{% endset %}
+<tr><td class="gutter"{% if not amp %} style="padding:0 10px 10px 10px;"{% endif %}>
+<table {{ T }} style="background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;">
 <tr><td class="c cp"{% if not amp %} style="padding:0 14px;"{% endif %}>
-{% call fold(cells=cells, open=(key in open_sections), pad="p16", top="", big=true) %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
+{% if empty %}
+<div class="p14"><table {{ T }}><tr>{{ cells }}</tr></table></div>
+{% else %}
+{% call fold(cells=cells, open=(key in open_sections), pad="p14", top="", right=true) %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
+{% endif %}
 </td></tr>
 </table>
 </td></tr>
@@ -100,7 +116,7 @@
 {%- macro row(cells, first) -%}
 {% set body = caller() %}
 <div style="{{ '' if first else 'border-top:1px solid #EEF2F6;' }}">
-{% call fold(cells=cells, pad="p12", top="") %}<div style="padding-bottom:14px;">{{ body }}</div>{% endcall %}
+{% call fold(cells=cells, pad="p12", top="") %}<div style="padding-bottom:16px;">{{ body }}</div>{% endcall %}
 </div>
 {%- endmacro -%}
 
@@ -128,8 +144,8 @@
 {%- endmacro -%}
 
 {%- macro card(vpad="16px", bg="#FFFFFF", border="#E2E8F0") -%}
-<tr><td class="gutter"{% if not amp %} style="padding:0 10px 12px 10px;"{% endif %}>
-<table {{ T }} style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:14px;">
+<tr><td class="gutter"{% if not amp %} style="padding:0 10px 10px 10px;"{% endif %}>
+<table {{ T }} style="background-color:{{ bg }};border:1px solid {{ border }};border-radius:16px;">
 <tr><td class="c cp" style="padding-top:{{ vpad }};padding-bottom:{{ vpad }};{% if not amp %}padding-left:14px;padding-right:14px;{% endif %}">
 {{ caller() }}
 </td></tr>
@@ -148,18 +164,15 @@
 {% endfor %}
 {%- endmacro -%}
 
+{#- Quote pages as pill buttons, big enough to tap. -#}
 {%- macro links(l) -%}
-<div class="sm lk" style="padding-top:12px;"><a href="{{ l.yahoo }}" class="lk">Yahoo</a><span style="color:#CBD5E1;">&nbsp; | &nbsp;</span><a href="{{ l.finviz }}" class="lk">Finviz</a><span style="color:#CBD5E1;">&nbsp; | &nbsp;</span><a href="{{ l.tradingview }}" class="lk">TradingView</a></div>
-{%- endmacro -%}
-
-{%- macro score(c) -%}
-<span class="bd" style="background-color:#E2E8F0;color:#0F2A44;">Score {{ c.score }}</span>
+<div style="padding-top:14px;"><a href="{{ l.yahoo }}" class="btn">Yahoo</a> <a href="{{ l.finviz }}" class="btn">Finviz</a> <a href="{{ l.tradingview }}" class="btn">TradingView</a></div>
 {%- endmacro -%}
 
 {%- macro pick_details(c, title) -%}
 {% if c.chart %}{{ chart(c.chart) }}{% endif %}
 {% if c.details or c.score_rows %}
-{% call fold(title) %}
+{% call fold(title, top="t10") %}
 {{ kv(c.details) }}
 {% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
 {% endcall %}
@@ -190,7 +203,7 @@
 <style{{ " amp-custom" if amp else "" }}>
 {% if amp %}
 body{margin:0;padding:0;}
-.gutter{padding:0 10px 12px 10px;}
+.gutter{padding:0 10px 10px 10px;}
 amp-accordion .fh{margin:0;background-color:transparent;border:0;padding-right:0;}
 section[expanded]>header .a1{display:none;}
 section[expanded]>header .a2{display:inline;}
@@ -204,13 +217,14 @@ table{border-collapse:collapse;border-spacing:0;}
 {% endif %}
 a{text-decoration:none;}
 .c{font-family:{{ FONT }};font-size:14px;line-height:21px;color:#334155;}
-.h2{font-size:16px;line-height:22px;font-weight:800;color:#0F2A44;}
-.lb{font-size:11px;line-height:15px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
-.sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
-.st{padding:10px 7px;}
 .cp{padding-left:14px;padding-right:14px;}
-.sh{border-top:1px solid #E5EAF0;}
+.h1{font-size:17px;line-height:23px;font-weight:800;color:#0F2A44;}
+.lb{font-size:11px;line-height:15px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;}
+.ic{width:36px;height:36px;border-radius:10px;text-align:center;font-size:18px;line-height:36px;}
+.sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
+.st{padding:10px 8px;}
 .sb{border-left:1px solid #E5EAF0;}
+.sh{border-top:1px solid #E5EAF0;}
 .sv{font-size:15px;line-height:20px;font-weight:700;padding-top:3px;color:#0F2A44;}
 .ss{font-size:11px;line-height:15px;color:#64748B;}
 .sm{font-size:13px;line-height:19px;}
@@ -221,20 +235,19 @@ a{text-decoration:none;}
 .ft{color:#0B6BCB;font-size:13px;line-height:18px;font-weight:700;}
 .cv{display:inline-block;width:15px;color:#0B6BCB;font-size:15px;line-height:20px;font-weight:400;}
 .cv i{font-style:normal;}
-.cvl{font-size:20px;line-height:24px;}
-.h1{font-size:18px;line-height:24px;font-weight:800;color:#0F2A44;}
+.cvr{width:22px;text-align:right;font-size:18px;color:#94A3B8;}
+.a2{display:none;}
 .rt{font-size:14px;line-height:20px;font-weight:700;color:#0F2A44;}
 .rs{font-size:14px;line-height:20px;font-weight:600;color:#0F2A44;}
-.p16{padding:16px 0;}
-.a2{display:none;}
 .p6{padding:6px 0;}
 .p12{padding:12px 0;}
 .p14{padding:14px 0;}
 .t6{padding-top:6px;}
 .t10{padding-top:10px;}
-.tk{font-size:17px;line-height:22px;font-weight:800;color:#0F2A44;}
+.tk{font-size:16px;line-height:22px;font-weight:800;color:#0F2A44;}
 .pv{font-size:15px;line-height:22px;font-weight:800;color:#0F2A44;}
 .bd{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;line-height:15px;font-weight:700;white-space:nowrap;}
+.btn{display:inline-block;padding:6px 12px;margin:0 2px 4px 0;border-radius:999px;background-color:#EAF2FB;color:#0B6BCB;font-size:12px;line-height:16px;font-weight:700;}
 .dot{display:inline-block;width:7px;height:7px;border-radius:4px;}
 .nd{width:14px;padding-top:7px;}
 .nt{padding-bottom:10px;}
@@ -243,8 +256,7 @@ a{text-decoration:none;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;}
 .mh{padding:0 0 6px 6px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
 .mc{padding:7px 0 7px 6px;border-top:1px solid #EEF2F6;font-size:13px;line-height:17px;white-space:nowrap;}
-@media screen and (max-width:420px){.gutter{padding-left:8px{{ IMP }};padding-right:8px{{ IMP }};}.cp{padding-left:12px{{ IMP }};padding-right:12px{{ IMP }};}.st{padding:8px 5px;}}
-@media screen and (max-width:380px){.sv{font-size:13px;}.sl{font-size:9px;letter-spacing:0;}.tk{font-size:16px;}}
+@media screen and (max-width:420px){.gutter{padding-left:8px{{ IMP }};padding-right:8px{{ IMP }};}.cp{padding-left:12px{{ IMP }};padding-right:12px{{ IMP }};}}
 </style>
 {% if not amp %}
 <style>
@@ -263,13 +275,11 @@ u + .body .cv{display:none;}
 {% if not amp %}<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->{% endif %}
 <table {{ T }} style="max-width:600px;margin:0 auto;">
 
-{# ---------- Header: greeting (light, so Gmail's dark mode converts it cleanly) ---------- #}
-<tr><td style="background-color:#0B6BCB;height:4px;font-size:1px;line-height:4px;">&nbsp;</td></tr>
-<tr><td class="c" style="padding:22px 20px 14px 20px;">
-<div class="lb" style="letter-spacing:1.6px;color:#0B6BCB;">Finnbot &middot; {{ period }} digest</div>
-<div style="font-size:26px;line-height:32px;font-weight:800;color:#0F2A44;padding-top:6px;">{{ greeting }}</div>
-<div style="color:#475569;padding-top:2px;">{{ date_long }}</div>
-{% if prepared %}<div class="xs mu" style="padding-top:1px;">{{ prepared }}</div>{% endif %}
+{# ---------- Header: period, greeting, when it was prepared ---------- #}
+<tr><td class="c" style="padding:22px 20px 16px 20px;">
+<div class="lb" style="letter-spacing:1.2px;color:#0B6BCB;">{{ period_icon }}&nbsp; {{ period }} &middot; {{ date_short }}</div>
+<div style="font-size:25px;line-height:31px;font-weight:800;color:#0F2A44;padding-top:6px;">{{ greeting }}</div>
+{% if prepared %}<div class="xs mu" style="padding-top:3px;">{{ prepared }}</div>{% endif %}
 </td></tr>
 
 {# ---------- Notices: why parts of the digest are missing (always shown) ---------- #}
@@ -282,13 +292,34 @@ u + .body .cv{display:none;}
 {% endcall %}
 {% endif %}
 
-{# ---------- Overview (always shown) ---------- #}
+{# ---------- Overview: how the portfolio did, and what needs attention (always shown) ---------- #}
 {% if portfolio %}
-{% call card() %}
+{% call card("18px") %}
 {{ label(portfolio.label, MUTED) }}
-<div style="font-size:32px;line-height:38px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
-<div style="padding-top:2px;"><b style="color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</b> <span class="mu">&nbsp;{{ portfolio.session }}</span></div>
-<div style="padding-top:14px;">{{ stats(portfolio.stats) }}</div>
+<div style="font-size:34px;line-height:40px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
+<div style="padding-top:6px;"><span class="bd" style="font-size:13px;line-height:18px;padding:3px 10px;background-color:{{ '#DCFCE7' if portfolio.change_tone == 'pos' else '#FEE2E2' if portfolio.change_tone == 'neg' else '#F1F5F9' }};color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</span><span class="xs mu">&nbsp; {{ portfolio.session }}</span></div>
+<div style="padding-top:16px;">{{ stats(portfolio.stats) }}</div>
+{% if portfolio.attention %}
+{{ label("Needs attention", MUTED, top="16px") }}
+<div style="padding-top:6px;line-height:26px;">{% for chip in portfolio.attention %}{{ badge(chip) }} {% endfor %}</div>
+{% else %}
+<div class="sm" style="padding-top:14px;color:#15803D;font-weight:700;">&#10003;&nbsp; Nothing flagged today</div>
+{% endif %}
+{% if portfolio.earnings %}
+{{ label("Earnings soon", MUTED, top="12px") }}
+<div class="sm ink" style="padding-top:4px;">{{ portfolio.earnings|join("  ·  ") }}</div>
+{% endif %}
+{% if account %}
+<div style="margin-top:14px;border-top:1px solid #EEF2F6;">
+{% call fold(account.summary, top="t6") %}
+<table {{ T }}>
+{% for a in account.accounts %}
+<tr><td class="kl">{{ a.name }} <span style="font-size:11px;">&middot; {{ a.positions }}</span></td><td align="right" class="kv">{{ a.value }}</td></tr>
+{% endfor %}
+</table>
+{% endcall %}
+</div>
+{% endif %}
 {% endcall %}
 {% endif %}
 
@@ -297,17 +328,17 @@ u + .body .cv{display:none;}
 {% call section("risk", "Portfolio risk", risk.summary) %}
 {% if risk.beta %}
 <table {{ T }}><tr>
-<td width="72" valign="top" align="center" style="width:72px;background-color:#F5F7FA;border-radius:10px;padding:8px 0;"><div class="sl">Beta</div><div style="font-size:20px;line-height:26px;font-weight:800;color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.value }}</div></td>
+<td width="72" valign="top" align="center" style="width:72px;background-color:#F5F7FA;border-radius:12px;padding:8px 0;"><div class="sl">Beta</div><div style="font-size:20px;line-height:26px;font-weight:800;color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.value }}</div></td>
 <td valign="top" style="padding-left:12px;"><b style="color:{{ TONES[risk.beta.tone] }};">{{ risk.beta.label }}</b><div class="sm" style="padding-top:2px;">{{ risk.beta.text }}</div></td>
 </tr></table>
 {% endif %}
 {% if risk.mix %}
-{{ label("Signals, by share of portfolio value", MUTED, top="14px") }}
+{{ label("Signals, by share of portfolio value", MUTED, top="16px") }}
 <table {{ T }} style="margin-top:8px;"><tr>
-{% for m in risk.mix %}<td width="{{ m.width }}%" style="background-color:{{ m.color }};height:10px;font-size:1px;line-height:10px;">&nbsp;</td>{% endfor %}
+{% for m in risk.mix %}<td width="{{ m.width }}%" style="background-color:{{ m.color }};height:8px;font-size:1px;line-height:8px;">&nbsp;</td>{% endfor %}
 </tr></table>
 <div class="xs" style="padding-top:8px;line-height:22px;">
-{% for m in risk.mix %}<span style="white-space:nowrap;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background-color:{{ m.color }};"></span>&nbsp;<b class="ink">{{ m.label }}</b> {{ m.count }} &middot; {{ m.pct }}</span>&nbsp;&nbsp;&nbsp; {% endfor %}
+{% for m in risk.mix %}<span style="white-space:nowrap;"><span class="dot" style="background-color:{{ m.color }};"></span>&nbsp;<b class="ink">{{ m.label }}</b> {{ m.count }} &middot; {{ m.pct }}</span>&nbsp;&nbsp;&nbsp; {% endfor %}
 </div>
 {% if risk.largest %}<div class="sm" style="padding-top:4px;">Largest position: <b class="ink">{{ risk.largest }}</b></div>{% endif %}
 {% endif %}
@@ -322,39 +353,29 @@ u + .body .cv{display:none;}
 {% endcall %}
 {% endif %}
 
-{# ---------- Connected account ---------- #}
-{% if account %}
-{% call section("account", "Connected account", account.summary) %}
-<table {{ T }}>
-{% for a in account.accounts %}
-<tr><td style="padding:7px 0;border-top:1px solid #EEF2F6;font-weight:600;color:#0F2A44;">{{ a.name }}<div class="xs mu" style="font-weight:400;">{{ a.positions }}</div></td><td align="right" valign="top" style="padding:7px 0 7px 10px;border-top:1px solid #EEF2F6;font-weight:700;color:#0F2A44;">{{ a.value }}</td></tr>
-{% endfor %}
-</table>
-{% endcall %}
-{% endif %}
-
-{# ---------- Markets & macro ---------- #}
+{# ---------- Markets & macro: key tiles first, the full table and the stories one tap away ---------- #}
 {% if market or stories %}
 {% call section("markets", "Markets & macro", markets_summary) %}
 {% if market %}
-{% call row(item_header("Market indicators", market.summary), true) %}
+{% if market.key %}{{ stats(market.key) }}{% endif %}
+{% if market.chips %}<div style="padding-top:{{ '8px' if market.key else '0' }};">{{ stats(market.chips) }}</div>{% endif %}
 {% if market.rows %}
+{% call fold("All indicators", top="t10") %}
 <table {{ T }}>
 <tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", "1D", "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
 {% for r in market.rows %}
 <tr><td class="mc" style="padding-left:0;white-space:normal;font-weight:700;color:#0F2A44;">{{ r.name }}{% if r.ticker %} <span class="mu" style="font-size:11px;font-weight:400;">{{ r.ticker }}</span>{% endif %}</td><td align="right" class="mc">{{ r.last }}</td><td align="right" class="mc" style="font-weight:700;color:{{ TONES[r.d1.tone] }};">{{ r.d1.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.d5.tone] }};">{{ r.d5.text }}</td><td align="right" class="mc" style="font-size:12px;color:{{ TONES[r.m1.tone] }};">{{ r.m1.text }}</td></tr>
 {% endfor %}
 </table>
-{% endif %}
-{% if market.chips %}<div style="padding-top:{{ '14px' if market.rows else '0' }};">{{ stats(market.chips) }}</div>{% endif %}
 {% endcall %}
 {% endif %}
+{% endif %}
 {% if stories %}
-{{ label("Top stories", MUTED, top="12px" if market else "0") }}
+{{ label("Top stories", MUTED, top="14px" if market else "0") }}
 {% for s in stories %}
 {% call row(item_header(s.summary, s.priority ~ " priority", s.dot, "rs"), loop.first) %}
 {% if s.impact %}{{ label("Why it matters", MUTED) }}<div style="padding-top:2px;">{{ s.impact }}</div>{% endif %}
-{% if s.url %}<div class="sm" style="padding-top:8px;"><a href="{{ s.url }}" class="lk">Read the source</a></div>{% endif %}
+{% if s.url %}<div style="padding-top:12px;"><a href="{{ s.url }}" class="btn">Read the source</a></div>{% endif %}
 {% endcall %}
 {% endfor %}
 {% endif %}
@@ -375,7 +396,7 @@ u + .body .cv{display:none;}
 {% endfor %}
 {% if h.chart %}{{ chart(h.chart) }}{% endif %}
 {% if h.rationale %}
-{% call fold("Reasoning") %}
+{% call fold("Why " ~ h.signal.text|lower, top="t10") %}
 {{ h.rationale }}
 {% if h.volatility %}<div class="xs mu" style="padding-top:6px;">{{ h.volatility }}</div>{% endif %}
 {% endcall %}
@@ -396,10 +417,10 @@ u + .body .cv{display:none;}
 {% endif %}
 
 {# ---------- Swing ideas ---------- #}
-{% call section("swing", "Swing ideas", swing_summary, swing|length) %}
+{% call section("swing", "Swing ideas", swing_summary, swing|length, empty=(not swing)) %}
 <div class="xs mu" style="padding-bottom:4px;">Short-term setups: days to a few weeks</div>
 {% for c in swing %}
-{% call row(row_header(c.ticker, score(c), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
+{% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
 <div class="xs mu" style="line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
 {% if c.plan %}
 <div style="padding-top:8px;">{{ stats(c.plan) }}</div>
@@ -407,20 +428,18 @@ u + .body .cv{display:none;}
 <div class="sm mu" style="padding-top:8px;">No trade levels: the entry, stop, and target the model gave didn't line up.</div>
 {% endif %}
 {% if c.thesis %}<div style="padding-top:10px;">{{ c.thesis }}</div>{% endif %}
-{% if c.earnings_warning %}<div class="sm" style="color:#92400E;background-color:#FEF3C7;border-radius:8px;padding:8px 10px;margin-top:10px;">{{ c.earnings_warning }}</div>{% endif %}
+{% if c.earnings_warning %}<div class="sm" style="color:#92400E;background-color:#FEF3C7;border-radius:10px;padding:8px 10px;margin-top:10px;">{{ c.earnings_warning }}</div>{% endif %}
 {% if c.analyst %}<div class="sm mu" style="padding-top:10px;">{{ c.analyst }}</div>{% endif %}
 {{ pick_details(c, "Technicals & score breakdown") }}
 {% endcall %}
-{% else %}
-<div class="mu" style="padding-top:6px;">No swing setups scored {{ min_swing_score }} or more out of 100 today.</div>
 {% endfor %}
 {% endcall %}
 
 {# ---------- Long-term ideas ---------- #}
-{% call section("long_term", "Long-term ideas", long_summary, long_term|length) %}
+{% call section("long_term", "Long-term ideas", long_summary, long_term|length, empty=(not long_term)) %}
 <div class="xs mu" style="padding-bottom:4px;">Businesses worth owning for years</div>
 {% for c in long_term %}
-{% call row(row_header(c.ticker, score(c), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
+{% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
 <div class="xs mu" style="line-height:22px;">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
 {% if c.thesis %}<div style="padding-top:8px;">{{ c.thesis }}</div>{% endif %}
 {% if c.key_risk %}
@@ -435,22 +454,18 @@ u + .body .cv{display:none;}
 {% endif %}
 {{ pick_details(c, "More fundamentals & score breakdown") }}
 {% endcall %}
-{% else %}
-<div class="mu" style="padding-top:6px;">No long-term ideas scored {{ min_long_score }} or more out of 100 today.</div>
 {% endfor %}
 {% endcall %}
 
 {# ---------- Footer ---------- #}
-<tr><td class="c xs mu" style="padding:8px 24px 32px 24px;">
+<tr><td class="c xs mu" style="padding:6px 24px 32px 24px;">
 {% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority news and details were left out to keep this email under Gmail's size limit.</div>{% endif %}
-<div>Ideas appear only when they score {% if min_long_score == min_swing_score %}{{ min_long_score }} or more{% else %}{{ min_long_score }}+ (long-term) or {{ min_swing_score }}+ (swing){% endif %} out of 100{% if models %}; scored by {{ models }}{% endif %}.</div>
 {% if usage %}
-{% call fold("What this digest cost", top="t10") %}
+{% call fold("About this digest", top="") %}
 {{ kv(usage) }}
 {% if usage_note %}<div style="padding-top:6px;font-size:11px;line-height:16px;">{{ usage_note }}</div>{% endif %}
 {% endcall %}
 {% endif %}
-<div style="padding-top:12px;">Generated automatically for information only; this is not investment advice. Prices may be delayed, so check figures against your brokerage before acting.</div>
 </td></tr>
 
 </table>

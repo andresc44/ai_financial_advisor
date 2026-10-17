@@ -75,6 +75,11 @@ MARKET_NAMES = {
     "Crude Oil (WTI)": ("Crude Oil", "WTI"),
     "NYSE Composite ($NYA)": ("NYSE Comp.", "NYA"),
 }
+KEY_MARKETS = ("S&P 500", "Nasdaq-100", "VIX", "10Y Yield")  # Tiles shown first in Markets & macro
+SECTION_ICONS = {  # (emoji, tile colour) beside each section's title
+    "risk": ("🛡️", "#FFEDD5"), "markets": ("🌐", "#E0F2FE"), "holdings": ("💼", "#E0E7FF"),
+    "swing": ("⚡", "#FEF3C7"), "long_term": ("🌱", "#DCFCE7"),
+}
 LONG_TERM_SCORES = (  # (sub-score, label, maximum), as in LLM_rec_instr.py
     ("valuation_score", "Valuation", 25), ("financial_health_score", "Financial health", 25),
     ("growth_momentum_score", "Growth momentum", 25), ("competitive_moat_score", "Competitive moat", 25),
@@ -372,6 +377,11 @@ def _holding_card(symbol: str, lots: list[dict]) -> dict:
         "sentiment": _sentiment_badge(first.get("sentiment")),
         "stats": stats,
         "catalysts": catalysts,
+        # The soonest event, for the overview's "Earnings soon" line
+        "catalyst_days": next((event.get("days_until") for event in first.get("catalysts") or []
+                               if isinstance(event.get("days_until"), int)), None),
+        "catalyst_date": next((_short_date(event.get("event_date")) for event in first.get("catalysts") or []
+                               if isinstance(event.get("days_until"), int)), ""),
         "rationale": _text(first.get("recommendation_rationale")) or "",
         "volatility": volatility_line,
         "news": news,
@@ -398,35 +408,65 @@ def _holdings_note(cards: list[dict], holdings: list[dict]) -> str:
     return f"{note} · price changes are for the {session} session" if session else note
 
 
-def _signal_counts(cards: list[dict]) -> str:
-    """The holdings section's summary, e.g. '6 risk alerts · 4 holds', most urgent first."""
-    counts = Counter(card["signal"]["text"].lower() for card in cards)
-    return " · ".join(_plural(count, label) if label != "not evaluated" else f"{count} not evaluated"
-                      for label, count in counts.items())
+def _part(text: str, tone: Optional[str] = None, dot: Optional[str] = None, prefix: str = "") -> dict:
+    """
+    One piece of a collapsed section's summary line: `text` coloured by `tone` (after an uncoloured `prefix`), or
+    led by a dot of colour `dot`.
+    """
+    return {"text": text, "tone": tone, "dot": dot, "prefix": prefix}
 
 
-def _portfolio(holdings: list[dict], beta: Any, idea_counts: tuple[int, int]) -> Optional[dict]:
+def _signal_counts(cards: list[dict]) -> list[dict]:
+    """The holdings section's summary, e.g. '● 6 risk alerts · ● 4 holds', most urgent first."""
+    counts: dict[str, list] = {}
+    for card in cards:
+        counts.setdefault(card["signal"]["text"].lower(), [0, card["signal_bar"]])[0] += 1
+    return [_part(_plural(count, label) if label != "not evaluated" else f"{count} not evaluated", dot=color)
+            for label, (count, color) in counts.items()]
+
+
+FLAGGED_SIGNALS = ("urgent_sell", "risk_alert", "trim")
+
+
+def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: tuple[int, int]) -> Optional[dict]:
+    """
+    The overview card. 2026-10-17 (UI pass): built to answer "do I need to do anything?" at a glance: the day's
+    change as a pill, flagged positions and their share of the portfolio, chips for each flagged stock (most urgent
+    first), and holdings reporting earnings soon.
+    """
     if not holdings:
         return None
     totals = build_portfolio_summary(holdings, _num(beta))["portfolio"]
     daily_pnl = sum(_num(h.get("daily_pnl")) or 0.0 for h in holdings)
     gain, gain_pct = _unrealized(holdings)
-    accounts = {h.get("account_name") for h in holdings if _text(h.get("account_name"))}
     long_n, swing_n = idea_counts
     session = _session_date(holdings)
+    flagged = [card for card in cards if card["signal_key"] in FLAGGED_SIGNALS]
+    flagged_share = sum(card["weight_pct"] for card in flagged)
+    flagged_tone = ("neg" if any(card["signal_key"] == "urgent_sell" for card in flagged)
+                    else "warn" if flagged else "pos")
+    earnings = sorted(
+        ((card["catalyst_days"], f"{card['symbol']} {card['catalyst_date']}") for card in cards
+         if card["catalyst_days"] is not None),
+    )
+    daily_pct = _num(totals["daily_pnl_pct"])
     return {
         "label": "Your portfolio" + (" · in USD" if len(totals["currencies"]) > 1 else ""),
         "value": _money(totals["total_market_value"]),
-        "change": f"{_signed_money(daily_pnl)} ({_signed_pct(totals['daily_pnl_pct'], 2)})",
+        # e.g. "▼ $17.29 · 0.20%" in a red pill
+        "change": (f"{'▲' if daily_pnl >= 0 else '▼'} {_money(abs(daily_pnl))}"
+                   + (f" · {abs(daily_pct):.2f}%" if daily_pct is not None else "")),
         "change_pct": _signed_pct(totals["daily_pnl_pct"], 2),
         "change_tone": _tone(daily_pnl),
         "session": f"{session} session" if session else "Last session",
         "stats": [
-            _stat("Positions", str(totals["number_of_stocks"]),
-                  sub=f"{len(accounts)} account{'s' if len(accounts) != 1 else ''}" if accounts else ""),
             _stat("Unrealized", _signed_money(gain, 0), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
+            _stat("Flagged", f"{len(flagged)} of {len(cards)}", flagged_tone,
+                  f"{flagged_share:.0f}% of value" if flagged else "all on hold"),
             _stat("New ideas", str(long_n + swing_n), sub=f"{long_n} long · {swing_n} swing"),
         ],
+        "attention": [card["signal"] | {"text": card["symbol"]} for card in flagged],
+        "earnings": [text for _, text in earnings],
     }
 
 
@@ -489,16 +529,16 @@ def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
     ]
     beta_view = _beta_view(beta)
     watch = [note for note in notes if note["category"] == "WATCH"]
-    summary = [f"Beta {beta_view['value']} · {beta_view['label'].lower()}"] if beta_view else []
+    summary = [_part(f"Beta {beta_view['value']}"), _part(beta_view["label"], beta_view["tone"])] if beta_view else []
     if watch:
-        summary.append(f"{len(watch)} to watch")
+        summary.append(_part(f"{len(watch)} to watch"))
     return {
         "beta": beta_view,
         "mix": mix,
         "largest": f"{largest['symbol']}, {largest['weight_pct']:.1f}% of the portfolio" if largest else "",
         "watch": watch,
         "notes": [note for note in notes if note["category"] != "WATCH"],
-        "summary": " · ".join(summary),  # Claude-authored (2026-10-17): shown while the section is collapsed
+        "summary": summary,  # Claude-authored (2026-10-17): shown while the section is collapsed
     }
 
 
@@ -517,7 +557,8 @@ def _account(company: Any, holdings: list[dict]) -> Optional[dict]:
         for name, entry in sorted(accounts.items(), key=lambda item: -item[1]["value"])
     ]
     company = _text(company) or "Brokerage"
-    summary = f"{company} · {_plural(len(rows), 'account')}" if rows else company
+    positions = len({holding.get("symbol") for holding in holdings})
+    summary = f"{company} · {_plural(len(rows), 'account')} · {_plural(positions, 'position')}" if rows else company
     return {"company": company, "accounts": rows, "summary": summary}
 
 
@@ -577,11 +618,10 @@ def _market(market_data: Any) -> Optional[dict]:
                            "above 50-day avg"))
     if not rows and not chips:
         return None
-    # Claude-authored (2026-10-17): the collapsed section's summary, e.g. "S&P 500 +0.3% · Nasdaq-100 -0.1% · Fear 32"
-    summary = [f"{row['name']} {row['d1']['text']}" for row in rows[:2]]
-    if chips and chips[0]["label"] == "Fear & Greed":
-        summary.append(f"{chips[0]['sub'] or 'Fear & Greed'} {chips[0]['value']}")
-    return {"rows": rows, "chips": chips, "summary": " · ".join(summary)}
+    # Claude-authored (2026-10-17): the four tiles shown first when the section opens; the rest are one tap away
+    key = [_stat(row["name"], row["last"], sub=row["d1"]["text"], sub_tone=row["d1"]["tone"])
+           for row in rows if row["name"] in KEY_MARKETS]
+    return {"rows": rows, "chips": chips, "key": key}
 
 
 def _stories(headline_news: Any) -> list[dict]:
@@ -648,6 +688,9 @@ def _pick_common(pick: dict, score_key: str) -> dict:
         "name": _text(pick.get("name")) or "",
         "price": _money(pick.get("current_price")),
         "score": f"{score:.0f}" if score is not None else DASH,
+        # The score pill: green for 90 and up, blue below
+        "score_badge": _badge(f"Score {score:.0f}" if score is not None else "Score —",
+                              *(("#166534", "#DCFCE7") if score is not None and score >= 90 else ("#075985", "#E0F2FE"))),
         "sentiment": _sentiment_badge(pick.get("sentiment")),
         "sector": sector,
         "thesis": _text(pick.get("thesis")) or "",
@@ -764,14 +807,17 @@ def build_view(payload: dict) -> dict:
     cards = _holding_cards(holdings)
     swing = [_swing_card(pick, today) for pick in recommendations.get("top_swing") or []]
     long_term = [_long_term_card(pick, today) for pick in recommendations.get("top_long_term") or []]
-    portfolio = _portfolio(holdings, payload.get("portfolio_beta"), (len(long_term), len(swing)))
+    portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)))
     market = _market(payload.get("market_data"))
     stories = _stories(payload.get("headline_news"))
-    # Claude-authored (2026-10-17): the collapsed Markets & macro section, e.g. "S&P 500 +0.3% · 5 stories"
-    markets_summary = " · ".join(
-        ([f"{market['rows'][0]['name']} {market['rows'][0]['d1']['text']}"] if market and market["rows"] else [])
-        + ([f"{len(stories)} {'story' if len(stories) == 1 else 'stories'}"] if stories else [])
-    )
+    # Claude-authored (2026-10-17): the collapsed Markets & macro section, e.g. "S&P 500 +0.3% · VIX 16.13 · 5 stories"
+    markets_summary = [
+        _part(row["d1"]["text"], row["d1"]["tone"], prefix=f"{row['name']} ") if row["name"] != "VIX"
+        else _part(f"VIX {row['last']}")
+        for row in (market["rows"] if market else []) if row["name"] in ("S&P 500", "VIX")
+    ]
+    if stories:
+        markets_summary.append(_part(f"{len(stories)} {'story' if len(stories) == 1 else 'stories'}"))
     models = sorted({str(pick["model"]) for pick in (recommendations.get("top_swing") or [])
                      + (recommendations.get("top_long_term") or []) if pick.get("model")})
     # Claude-authored (2026-10-17): one chart per stock. Holdings in other currencies are skipped (Finviz covers US
@@ -786,7 +832,10 @@ def build_view(payload: dict) -> dict:
     return {
         "subject": str(payload.get("subject") or "Finnbot Digest"),
         "period": _period(payload),
+        "period_icon": "☀️" if _period(payload) == "Pre-Market" else "🌙",
         "date_long": f"{today:%A, %B} {today.day}, {today.year}" if today else "",
+        "date_short": f"{today:%a, %b} {today.day}" if today else "",
+        "icons": SECTION_ICONS,
         "greeting": _greeting(started, user_name),
         "prepared": _prepared(started),
         "preheader": _preheader(portfolio, cards, len(swing) + len(long_term), market),
@@ -803,12 +852,14 @@ def build_view(payload: dict) -> dict:
         "swing": swing,
         "long_term": long_term,
         # Claude-authored (2026-10-17): the collapsed sections' summaries, e.g. "TSM 93 · SKHY 92"
-        "swing_summary": " · ".join(f"{card['ticker']} {card['score']}" for card in swing) or "None today",
-        "long_summary": " · ".join(f"{card['ticker']} {card['score']}" for card in long_term) or "None today",
+        "swing_summary": [_part(f"{card['ticker']} {card['score']}") for card in swing]
+        or [_part(f"No setups scored {params_dict.get('MIN_SWING_SCORE', 60):.0f}+ today")],
+        "long_summary": [_part(f"{card['ticker']} {card['score']}") for card in long_term]
+        or [_part(f"No ideas scored {params_dict.get('MIN_LONG_SCORE', 60):.0f}+ today")],
         "min_swing_score": f"{params_dict.get('MIN_SWING_SCORE', 60):.0f}",
         "min_long_score": f"{params_dict.get('MIN_LONG_SCORE', 60):.0f}",
-        "models": ", ".join(models),
-        "usage": _usage(payload.get("api_usage")),
+        # The footer's "About this digest" dropdown: what it cost, and which model scored the ideas
+        "usage": _usage(payload.get("api_usage")) + ([("Ideas scored by", ", ".join(models))] if models else []),
         "usage_note": str((payload.get("api_usage") or {}).get("note") or ""),
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
         # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
@@ -963,7 +1014,6 @@ def render_text(view: dict) -> str:
         lines += [f"{card['ticker']} (score {card['score']}) {card['price']}", f"  {card['thesis']}"]
         if card["key_risk"]:
             lines.append(f"  Key risk: {card['key_risk']}")
-    lines += ["", "For information only, not investment advice. Check figures against your brokerage before acting."]
     return "\n".join(line for line in lines if line is not None) + "\n"
 
 

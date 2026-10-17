@@ -110,8 +110,9 @@ def render(digest_payload):
 def test_sections_follow_the_requested_order():
     _, html = render(payload())
     assert html.startswith("<!DOCTYPE html>")
-    markers = ["Good morning, Test", "Your portfolio", "Portfolio risk", "Connected account", "Markets &amp; macro",
-               "Top stories", "Your holdings", "Swing ideas", "Long-term ideas"]
+    # The connected account is a small dropdown at the foot of the overview card (UI pass, 2026-10-17)
+    markers = ["Good morning, Test", "Your portfolio", "Needs attention", "Questrade · 1 account", "Portfolio risk",
+               "Markets &amp; macro", "Top stories", "Your holdings", "Swing ideas", "Long-term ideas"]
     positions = [html.index(marker) for marker in markers]
     assert positions == sorted(positions)
 
@@ -136,8 +137,12 @@ def test_overview_and_risk_figures():
     portfolio, risk = view["portfolio"], view["risk"]
     assert portfolio["value"] == "$4,000.00"
     assert portfolio["session"] == "Oct 15 session"
-    assert portfolio["change"] == "+$20.00 (+0.50%)"
-    assert [stat["value"] for stat in portfolio["stats"]] == ["4", "+$400", "2"]  # Unrealized: 10% gain on cost
+    assert portfolio["change"] == "▲ $20.00 · 0.50%"
+    # Unrealized: a 10% gain on cost; flagged: urgent sell, risk alert, and trim (an urgent sell makes it red)
+    assert [stat["value"] for stat in portfolio["stats"]] == ["+$400", "3 of 4", "2"]
+    assert (portfolio["stats"][1]["sub"], portfolio["stats"][1]["tone"]) == ("50% of value", "neg")
+    assert [chip["text"] for chip in portfolio["attention"]] == ["CCC", "AAA", "DDD"]  # Most urgent first
+    assert portfolio["earnings"] == ["AAA Oct 21", "BBB Oct 21", "CCC Oct 21", "DDD Oct 21"]
     assert risk["beta"]["value"] == "1.40" and risk["beta"]["label"] == "Above-market risk"
     assert [(m["label"], m["pct"]) for m in risk["mix"]] == [
         ("Urgent sell", "5%"), ("Risk alert", "30%"), ("Trim", "15%"), ("Hold", "50%")]
@@ -187,7 +192,8 @@ def test_digest_without_personal_or_macro_content():
     ))
     assert view["portfolio"] is None and view["risk"] is None and view["account"] is None and view["market"] is None
     assert "Hello, Test" in html
-    assert "No swing setups scored 80 or more" in html and "No long-term ideas scored 80 or more" in html
+    assert "No setups scored 80+ today" in html and "No ideas scored 80+ today" in html
+    assert "<details>" not in html  # Empty sections are plain cards, with nothing to open
 
 
 def test_issues_are_shown_first():
@@ -240,8 +246,9 @@ def test_plain_text_version_covers_every_section():
     text = ch.render_text(ch.build_view(payload()))
     for expected in ("Good morning, Test.", "PORTFOLIO $4,000.00", "PORTFOLIO RISK", "CONNECTED ACCOUNT Questrade",
                      "MARKETS", "The central bank held rates.", "CCC - Urgent sell", "SWING IDEAS", "SWA (score 85)",
-                     "LONG-TERM IDEAS", "LTA (score 91)", "not investment advice"):
+                     "LONG-TERM IDEAS", "LTA (score 91)"):
         assert expected in text, expected
+    assert "investment advice" not in text  # Removed at Andres's request (2026-10-17)
 
 
 class FakeSMTP:
@@ -323,21 +330,29 @@ def html_folds(view):
     return ch.render_html(view, TEMPLATE_DIR).count("<details")
 
 
+def flat(parts):
+    """A collapsed section's summary parts as the text they show."""
+    return " · ".join(part["prefix"] + part["text"] for part in parts)
+
+
 def test_main_sections_collapse_to_a_summary(monkeypatch):
     view = ch.build_view(payload())
-    assert view["risk"]["summary"] == "Beta 1.40 · above-market risk · 1 to watch"
-    assert view["account"]["summary"] == "Questrade · 1 account"
-    assert view["market"]["summary"] == "S&P 500 +0.3% · 10Y Yield -1.0% · Fear 32"
-    assert view["holdings_summary"] == "1 urgent sell · 1 risk alert · 1 trim · 1 hold"
-    assert (view["swing_summary"], view["long_summary"]) == ("SWA 85", "LTA 91")
+    assert flat(view["risk"]["summary"]) == "Beta 1.40 · Above-market risk · 1 to watch"
+    assert view["risk"]["summary"][1]["tone"] == "warn"
+    assert view["account"]["summary"] == "Questrade · 1 account · 4 positions"
+    assert flat(view["markets_summary"]) == "S&P 500 +0.3% · 1 story"
+    assert view["markets_summary"][0]["tone"] == "pos"  # Only the change is coloured, not "S&P 500"
+    assert flat(view["holdings_summary"]) == "1 urgent sell · 1 risk alert · 1 trim · 1 hold"
+    assert [part["dot"] for part in view["holdings_summary"]] == ["#DC2626", "#F97316", "#F59E0B", "#38BDF8"]
+    assert (flat(view["swing_summary"]), flat(view["long_summary"])) == ("SWA 85", "LTA 91")
 
     amp = ch.render_amp(view, TEMPLATE_DIR)
     html = ch.render_html(view, TEMPLATE_DIR)
     # Six main sections, a row per holding and idea, and the dropdowns inside them, all collapsed
     assert "<section expanded>" not in amp and "<details open>" not in html
     assert amp.count("<amp-accordion") == html.count("<details>")
-    swing_section_start = html.rfind("<details>", 0, html.index(">Swing ideas<"))
-    holdings_section = html[html.index(">Your holdings<"):swing_section_start]
+    swing_section_start = html.rfind("<details>", 0, html.index(">Swing ideas "))
+    holdings_section = html[html.index(">Your holdings "):swing_section_start]
     assert holdings_section.count("<details>") == 4 * 3  # Each holding's row, reasoning, and news (the chart is in the row)
 
     monkeypatch.setitem(ch.params_dict["DIGEST"], "OPEN_SECTIONS", ["holdings", "long_term"])
@@ -363,7 +378,7 @@ def test_a_stocks_chart_shows_as_soon_as_its_row_opens():
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
     assert ">Chart<" not in html  # No dropdown of its own
     row_start = html.rfind("<details>", 0, html.index(">AAA<"))
-    reasoning = html.index(">Reasoning<", row_start)
+    reasoning = html.index(">Why hold<", row_start)
     assert row_start < html.index('<img src="https://finviz.com/chart.ashx?t=AAA', row_start) < reasoning
 
 
@@ -377,13 +392,15 @@ def test_review_notes_and_stories_are_rows_with_titles():
     titles = [note["title"] for note in view["risk"]["watch"]]
     # Gemini's title when there is one; otherwise the first sentence, cut at a bracket and shortened at a word
     assert titles == ["Leveraged ETFs drive a high beta", "Industrials sector exposure is heavily concentrated at 31.53%…"]
-    assert view["markets_summary"] == "S&P 500 +0.3% · 1 story"
+    assert flat(view["markets_summary"]) == "S&P 500 +0.3% · 1 story"
 
     html = ch.render_html(view, TEMPLATE_DIR)
     for title in titles + ["The central bank held rates."]:
         summary_start = html.rfind("<summary", 0, html.index(title))
         assert html.index("</summary>", summary_start) > html.index(title)  # The title is the row's header
-    assert ">Market indicators<" in html and ">Why it matters<" in html
+    # Markets opens on its key tiles; the full table is one tap away
+    assert ">All indicators<" in html and ">Why it matters<" in html
+    assert [tile["label"] for tile in view["market"]["key"]] == ["S&P 500", "10Y Yield"]  # The key ones it has
 
 
 def test_send_html_email_needs_gmail_credentials(monkeypatch):

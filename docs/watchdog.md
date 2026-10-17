@@ -249,29 +249,34 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 
 `src/digest/create_html.py` turns each user's payload into the email, and `src/digest/email_template.html` lays it out.
 
-**Order:**
-1. Greeting, by the time of day in the user's home timezone.
-2. Notices about anything missing.
-3. Portfolio overview.
-4. Portfolio risk: beta, the share of the portfolio's value under each signal, and the portfolio review's "watch" notes.
-5. The connected brokerage and its accounts.
-6. Markets and macro news.
-7. Holdings: most urgent signal first, then largest position. A stock held in several accounts gets one card.
-8. Swing ideas.
-9. Long-term ideas.
+**What the email answers, in order** (UI pass, 2026-10-17): how is my portfolio doing, do I need to act, what is the market doing, and are there new ideas.
+1. **Header:** the period (☀️ pre-market or 🌙 post-market), the date, a greeting by the time of day in the user's home timezone, and when it was prepared.
+2. **Notices** about anything missing.
+3. **Overview card** (always open):
+   - the portfolio's value, with the day's change in a coloured pill;
+   - three figure boxes: unrealized gain, flagged positions and their share of the value, and new ideas;
+   - "Needs attention" chips for each flagged stock, most urgent first;
+   - "Earnings soon" for holdings reporting within the catalyst window;
+   - the connected brokerage, with each account's value in a small dropdown.
+4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes.
+5. **Markets & macro:** four key tiles (S&P 500, Nasdaq-100, VIX, 10Y yield) and the gauges. The full table is under "All indicators", followed by the top stories.
+6. **Your holdings:** most urgent signal first, then largest position. A stock held in several accounts gets one row.
+7. **Swing ideas.**
+8. **Long-term ideas.**
+9. **Footer:** "About this digest", showing what it cost and which model scored the ideas.
 
-It is built for a phone first: one column up to 600 px wide, checked at 360 and 390 px.
+It is built for a phone first: one column up to 600 px wide.
 
 **Dropdowns (nested since 2026-10-17).** The email opens as a short overview, and everything else is a dropdown inside a dropdown:
 
 | Level | What's shown while collapsed | Inside |
 |---|---|---|
-| Always open | Greeting, notices, portfolio overview | – |
-| 1. Section card | Title, a one-line summary and a count, e.g. "Your holdings · 6 risk alerts · 4 holds" | The section's key figures and its rows |
-| 2. Row | **Holdings and ideas:** ticker, signal or score, value, weight and day change<br>**Portfolio risk:** each review note's short title<br>**Markets & macro:** "Market indicators", and each story's headline | **Stock:** figures, catalysts, its chart, then the smaller dropdowns<br>**Note:** its full text<br>**Indicators:** the index table and gauges<br>**Story:** why it matters, and the source |
-| 3. Small dropdown | Reasoning, News, extra figures, the digest's cost | The content |
+| Always open | Header, notices, overview card | – |
+| 1. Section card | A coloured icon, the title and a count, and a coloured one-line summary, e.g. "Your holdings 10 · ● 6 risk alerts · ● 4 holds". The arrow is on the right, as in mobile apps. A section with nothing in it is a plain card saying why, e.g. "No setups scored 80+ today". | The section's key figures and its rows |
+| 2. Row | **Holdings and ideas:** ticker, signal or score (green from 90), value, weight and day change<br>**Portfolio risk:** each review note's short title<br>**Markets & macro:** each story's headline | **Stock:** figures (a 2×2 grid), catalysts, its chart, the smaller dropdowns, and Yahoo/Finviz/TradingView buttons<br>**Note:** its full text<br>**Story:** why it matters, and a source button |
+| 3. Small dropdown | "Why risk alert" (the reasoning, named after the signal), News, All indicators, extra figures, About this digest | The content |
 
-- **Starting state:** everything starts collapsed. List any of `"risk"`, `"account"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
+- **Starting state:** everything starts collapsed. List any of `"risk"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
 - **Note titles:** Gemini's portfolio review now writes a 3–8 word title for each note. Payloads saved before 2026-10-17 use the note's first clause instead.
 - **Narrow phones:** the layout fits a small phone without any width-specific CSS, because the Gmail app may not apply it.
   - **Figure boxes:** sets of four (a stock's figures, a trade plan, valuation) form a 2×2 grid.
