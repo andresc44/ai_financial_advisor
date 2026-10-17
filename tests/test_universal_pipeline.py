@@ -371,3 +371,73 @@ def test_screening_counts_cover_every_stage(tmp_path, monkeypatch):
     fetcher.ticker_file = tmp_path / "missing_ticker_data.csv"
     stages = [s["stage"] for s in universal.screening_counts(fetcher, stats, picks)["stages"]]
     assert stages[:4] == ["screener", "yahoo", "finnhub", "scored"]
+
+
+# --------------------------------------------------------------------------------------------- sector rules
+def ranked(*tickers):
+    return [(ticker, {"score": 100 - i}) for i, ticker in enumerate(tickers)]
+
+
+SECTORS = {"T1": "Tech", "T2": "Tech", "T3": "Tech", "T4": "Tech", "H": "Health", "E": "Energy", "F": "Finance"}
+
+
+def test_long_term_picks_are_all_from_different_sectors():
+    from src.universal.recommendations.scorer import pick_with_sector_rule
+
+    picks = pick_with_sector_rule(ranked("T1", "T2", "H", "E"), 2, SECTORS.get, "all_different", "long-term")
+    assert [t for t, _ in picks] == ["T1", "H"]  # T2 scored higher than H but shares T1's sector
+    assert [t for t, _ in pick_with_sector_rule(ranked("T1", "T2"), 2, SECTORS.get, "all_different", "x")] == ["T1"]
+
+
+def test_more_than_half_of_the_swing_picks_are_from_different_sectors():
+    from src.universal.recommendations.scorer import pick_with_sector_rule
+
+    def picks(*tickers, n=5):
+        return [t for t, _ in pick_with_sector_rule(ranked(*tickers), n, SECTORS.get, "majority_different", "swing")]
+
+    # A better stock from a sector already in the list waits until another sector makes room for it
+    assert picks("T1", "T2", "T3", "H", "E", n=3) == ["T1", "T2", "H"]
+    assert picks("T1", "T2", "T3", "T4", "H", "E", "F") == ["T1", "T2", "T3", "H", "E"]  # 3 sectors among 5
+    assert picks("T1", "T2", "T3", "H") == ["T1", "T2", "H"]  # 2 sectors allow 3 picks, not 4
+    assert picks("T1", "T2", "T3") == ["T1"]  # One sector: one pick (1 of 1 is more than half)
+    for chosen in (picks("T1", "T2", "H", "T3", "E", "T4", "F"), picks("H", "T1", "T2", "T3", "T4")):
+        assert len({SECTORS[t] for t in chosen}) > len(chosen) / 2
+
+
+def test_sector_rule_edge_cases(caplog):
+    from src.universal.recommendations.scorer import candidate_sector, pick_with_sector_rule
+
+    # A stock without a sector counts as its own, so missing data never blocks it
+    inputs = {"A": {"profile": {"sector": "Tech"}}, "B": {"profile": {}}, "C": {}}
+    assert [candidate_sector(t, inputs) for t in "ABC"] == ["Tech", "(no sector: B)", "(no sector: C)"]
+    # An unknown rule name is reported and applies no rule
+    picks = pick_with_sector_rule(ranked("T1", "T2"), 2, SECTORS.get, "all-different", "swing")
+    assert [t for t, _ in picks] == ["T1", "T2"] and "Unknown PICK_SECTOR_RULES" in caplog.text
+
+
+def test_selection_applies_the_configured_sector_rules(monkeypatch):
+    import src.universal.recommendations.scorer as scorer
+
+    scores = {"NVDA": (95, 40), "TSM": (93, 45), "NBIX": (86, 50), "ROST": (60, 85), "TJX": (60, 84), "BSY": (60, 83),
+              "ADBE": (60, 82), "NEM": (60, 81)}
+    sectors = {"NVDA": "Technology", "TSM": "Technology", "NBIX": "Healthcare", "ROST": "Consumer Cyclical",
+               "TJX": "Consumer Cyclical", "BSY": "Technology", "ADBE": "Technology", "NEM": "Basic Materials"}
+    monkeypatch.setattr(scorer, "run_llm_evaluation", lambda sanitized_inputs, config=None, issues=None: {
+        t: {"longScore": long, "swingScore": swing, "sub_scores": {}} for t, (long, swing) in scores.items()})
+    monkeypatch.setitem(scorer.params_dict, "PICK_SECTOR_RULES", {"LONG_TERM": "all_different", "SWING": "majority_different"})
+    inputs = {t: {"profile": {"sector": sector}} for t, sector in sectors.items()}
+    picks = scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80, min_swing_score=80)
+    assert [p["ticker"] for p in picks["top_long_term"]] == ["NVDA", "NBIX"]
+    # TSM, left out of long-term, isn't a swing setup; 5 swing picks need 3 sectors: ROST, TJX, BSY, ADBE, NEM has 3
+    assert [p["ticker"] for p in picks["top_swing"]] == ["ROST", "TJX", "BSY", "ADBE", "NEM"]
+    monkeypatch.setitem(scorer.params_dict, "PICK_SECTOR_RULES", {"LONG_TERM": "any", "SWING": "any"})
+    assert [p["ticker"] for p in scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80,
+                                                                min_swing_score=80)["top_long_term"]] == ["NVDA", "TSM"]
+
+
+def test_configured_sector_rules_are_known():
+    from src.parameters import params_dict
+    from src.universal.recommendations.scorer import SECTOR_RULES
+
+    assert set(params_dict["PICK_SECTOR_RULES"]) == {"LONG_TERM", "SWING"}
+    assert all(rule in SECTOR_RULES for rule in params_dict["PICK_SECTOR_RULES"].values())

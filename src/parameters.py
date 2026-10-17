@@ -317,6 +317,12 @@ params_dict = {
     # Both totals are out of 100: the sum of the sub-scores in src/universal/recommendations/LLM_rec_instr.py
     "MIN_LONG_SCORE": 80.0,
     "MIN_SWING_SCORE": 80.0,
+    # Claude-authored (2026-10-17): the sector mix of each list of picks (scorer.select_top_candidates), by Yahoo's
+    # sector. "all_different": no two picks share a sector. "majority_different": more than half the picks are from
+    # different sectors, i.e. distinct sectors > picks / 2 (3 sectors among 5 picks, 2 among 2). "any": no rule.
+    # A stock the rule leaves out makes room for the next best that fits, if it clears the minimum score, so a
+    # list can come up short; the log says which stocks were left out.
+    "PICK_SECTOR_RULES": {"LONG_TERM": "all_different", "SWING": "majority_different"},
 
     # Claude-authored (2026-10-16): data attached to each universal pick for the digest
     # (src/universal/recommendations/enriched_rec.py), as "name in the digest": "section.field" in the sanitized data

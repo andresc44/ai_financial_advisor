@@ -466,6 +466,7 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
 
 - **Swing levels:** the levels are only kept when they're consistent (0 < stop < entry < target). Otherwise all four are `null` and the log says why. `risk_reward` is the upside to the target per unit of risk to the stop, e.g. `2.5` for 2.5:1.
 - **Thresholds:** a stock needs a total of at least `MIN_LONG_SCORE` / `MIN_SWING_SCORE` (80 out of 100) to be picked, so some days have fewer picks than `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT`, or none.
+- **Sector mix** (`PICK_SECTOR_RULES`, added 2026-10-17): the two long-term picks are from different sectors (`all_different`), and more than half the swing picks are from different sectors (`majority_different`: distinct sectors > picks / 2, e.g. 3 sectors among 5 picks), by Yahoo's sector. A stock the rule leaves out makes room for the next best that fits and clears the bar, so a list can come up short; the log names each stock left out. A stock without a sector counts as its own. `"any"` turns a rule off.
 - **Track record:** it also keeps each pick's sentiment and swing levels, for checking later whether they held up.
 
 **Macro content.** It is switched with `UNIVERSAL_EXTRAS`, and both parts are on by default. Both run in the background while the picks are built, and both are included even when no picks could be made.

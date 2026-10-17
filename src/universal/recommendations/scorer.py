@@ -1,7 +1,8 @@
 import logging
 import sys
+from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
@@ -16,6 +17,64 @@ logger = logging.getLogger("Finnbot.CandidateSelector")
 # two totals were kept, so a pick never said why it was made.
 LONG_TERM_SCORES = ("valuation_score", "financial_health_score", "growth_momentum_score", "competitive_moat_score")
 SWING_SCORES = ("technical_setup_score", "risk_reward_ratio_score", "momentum_volume_score", "catalyst_sentiment_score")
+
+# Claude-authored (2026-10-17): params_dict["PICK_SECTOR_RULES"] values -> whether one more pick from a sector already
+# in the list is allowed, given (distinct sectors, picks that repeat a sector) so far
+SECTOR_RULES: Dict[str, Callable[[int, int], bool]] = {
+    "all_different": lambda distinct, repeats: False,
+    # After one more repeat there are distinct + repeats + 1 picks, and distinct must stay more than half of them
+    "majority_different": lambda distinct, repeats: repeats + 1 < distinct,
+    "any": lambda distinct, repeats: True,
+}
+
+
+def candidate_sector(ticker: str, sanitized_inputs: Dict[str, Dict[str, Any]]) -> str:
+    """Yahoo's sector for a candidate. A stock without one counts as its own sector, so missing data never blocks it."""
+    sector = ((sanitized_inputs.get(ticker) or {}).get("profile") or {}).get("sector")
+    return sector.strip() if isinstance(sector, str) and sector.strip() else f"(no sector: {ticker})"
+
+
+def pick_with_sector_rule(
+    ranked: List[Tuple[str, Dict[str, Any]]], n: int, sector_of: Callable[[str], str], rule: str, label: str
+) -> List[Tuple[str, Dict[str, Any]]]:
+    """
+    Claude-authored (2026-10-17): up to n of `ranked` ((ticker, scores), best first) whose sectors follow `rule`
+    (SECTOR_RULES). Highest scores win wherever the rule allows: a stock from a sector already in the list waits,
+    and joins as soon as enough other sectors have joined to allow it ("majority_different"). Returns the picks
+    best first; stocks left out are logged.
+    """
+    if rule not in SECTOR_RULES:
+        logger.warning(f"Unknown PICK_SECTOR_RULES value {rule!r} for {label} picks; using 'any'.")
+        rule = "any"
+    allow_repeat = SECTOR_RULES[rule]
+    picked: List[Tuple[str, Dict[str, Any]]] = []
+    waiting: List[Tuple[str, Dict[str, Any]]] = []
+    sectors: Counter = Counter()
+
+    def room_for_repeat() -> bool:
+        return len(picked) < n and allow_repeat(len(sectors), len(picked) - len(sectors))
+
+    for item in ranked:
+        if len(picked) >= n:
+            break
+        sector = sector_of(item[0])
+        if sectors[sector] == 0:
+            picked.append(item)
+            sectors[sector] += 1
+            while waiting and room_for_repeat():  # A new sector can make room for better stocks that waited
+                earlier = waiting.pop(0)
+                picked.append(earlier)
+                sectors[sector_of(earlier[0])] += 1
+        elif room_for_repeat():
+            picked.append(item)
+            sectors[sector] += 1
+        else:
+            waiting.append(item)
+    for ticker, _ in waiting:
+        logger.info(f"[{ticker}] Left out of the {label} picks: another pick is already from {sector_of(ticker)} "
+                    f"(PICK_SECTOR_RULES {rule!r}).")
+    rank = {ticker: position for position, (ticker, _) in enumerate(ranked)}
+    return sorted(picked, key=lambda item: rank[item[0]])
 
 
 def long_term_reasoning(scores: Dict[str, Any]) -> Dict[str, Any]:
@@ -66,6 +125,7 @@ def select_top_candidates(
     Evaluates candidate tickers and selects:
     1. Top long_n tickers with longScore >= min_long_score.
     2. Top swing_n remaining tickers with swingScore >= min_swing_score (excluding longScore picks).
+    2026-10-17: within each list, the sectors follow params_dict["PICK_SECTOR_RULES"] (pick_with_sector_rule).
 
     Args:
         sanitized_inputs: Dict mapping ticker symbols to their sanitized market payloads.
@@ -130,7 +190,11 @@ def select_top_candidates(
     
     stats["long_qualified"] = len(eligible_long)
     stats["swing_qualified"] = sum(1 for s in scores_map.values() if s.get("swingScore", 0.0) >= min_swing_score)
-    top_long_tuples = sorted_by_long[:long_n]
+    # Claude-authored (2026-10-17): the sector rule decides among the stocks that cleared the bar
+    sector_rules = params_dict.get("PICK_SECTOR_RULES") or {}
+    sector_of = lambda ticker: candidate_sector(ticker, sanitized_inputs)  # noqa: E731
+    top_long_tuples = pick_with_sector_rule(
+        sorted_by_long, long_n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term")
     selected_long_tickers = {ticker for ticker, _ in top_long_tuples}
 
     top_long_term = [
@@ -169,7 +233,7 @@ def select_top_candidates(
         reverse=True
     )
     
-    top_swing_tuples = sorted_by_swing[:swing_n]
+    top_swing_tuples = pick_with_sector_rule(sorted_by_swing, swing_n, sector_of, sector_rules.get("SWING", "any"), "swing")
 
     top_swing = [
         {
