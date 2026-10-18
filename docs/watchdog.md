@@ -82,7 +82,7 @@ Every job that took a Claude model can take a DeepSeek model instead. `src/llm_m
 
 | Job | Set in | Key |
 |---|---|---|
-| New-stock scoring (~37 calls a run) | `LLM["UNIVERSAL"]` in `parameters.py` | shared `ANTHROPIC_API_KEY` or `DEEPSEEK_API_KEY` |
+| New-stock scoring (~37 calls a run) | `UNIVERSAL_LLM_MODEL` / `UNIVERSAL_LLM_EFFORT` in `.env` (added 2026-10-17), else `LLM["UNIVERSAL"]` in `parameters.py` | shared `ANTHROPIC_API_KEY` or `DEEPSEEK_API_KEY` |
 | Holdings evaluation (watchdog and digest) | `LLM["HOLDINGS"]`, overridden per user by `<NAME>_HOLDINGS_LLM_MODEL` / `_EFFORT` | the user's own `<NAME>_ANTHROPIC_API_KEY` or `<NAME>_DEEPSEEK_API_KEY` |
 
 **DeepSeek models** (checked 2026-10-16):
@@ -137,6 +137,11 @@ A broken holdings source used to look exactly like an empty portfolio. Now each 
 | Source | Reasons |
 |---|---|
 | SnapTrade | `api_error` (unreachable or keys rejected), `no_accounts`, `connection_disabled` (the brokerage needs the user to log in again through SnapTrade), `positions_error` (one account's positions failed), `stale_sync` (holdings not synced for `HOLDINGS.STALE_SYNC_HOURS`, default 96) |
+**Setting the scoring model in `.env`.** `UNIVERSAL_LLM_MODEL` and `UNIVERSAL_LLM_EFFORT` override `LLM["UNIVERSAL"]`, so each machine can choose without editing `parameters.py`:
+- **Model:** any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS`. A model that isn't allowed is ignored with a warning, and `parameters.py` is used.
+- **Effort:** if it's unset or the model doesn't accept it, the effort is `parameters.py`'s when that's the same model, and otherwise the provider's default (`none` for DeepSeek).
+- **Checking:** `python -m src.check_config` shows the model in use, and reports a set but unusable value as INVALID.
+
 | Google Sheets | `sheet_unavailable` (wrong ID or not shared with the service account), `sheet_empty`, `sheet_invalid` (missing `symbol`, `shares_qty`, or `avg_purchase_price`) |
 
 Holdings that could still be read are evaluated as usual.

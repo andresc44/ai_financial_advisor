@@ -79,6 +79,9 @@ def isolated(tmp_path, monkeypatch):
 
     monkeypatch.setitem(params_dict, "LLM", {"UNIVERSAL": {"model": "claude-sonnet-5-5", "effort": "medium"},
                                              "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
+    import src.llm_models as llm_models
+
+    monkeypatch.setattr(llm_models, "ENV_OVERRIDES", {})  # .env's UNIVERSAL_LLM_MODEL / _EFFORT too
     real_init = deepseek_client.DeepSeekClient.__init__
 
     def refuse(request):

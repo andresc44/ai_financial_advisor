@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 import src.deepseek_client as ds
+import src.llm_models as llm_models
 import src.personalized.api_errors as api_errors
 import src.personalized.recommendation as rec
 import src.universal.recommendations.LLM_recommendation as universal_llm
@@ -219,6 +220,47 @@ def test_check_config_requires_the_key_the_model_needs(clean_env):
     clean_env.setenv("ANDRES_HOLDINGS_LLM_MODEL", "deepseek-flash")
     rows = {key: status for status, key, _ in check_user("Andres")}
     assert rows["ANDRES_DEEPSEEK_API_KEY"] == "MISSING" and rows["ANDRES_ANTHROPIC_API_KEY"] == "unset"
+
+
+
+# --------------------------------------------------------------------------------------------- universal model in .env
+UNIVERSAL_KEYS = {"UNIVERSAL": ("UNIVERSAL_LLM_MODEL", "UNIVERSAL_LLM_EFFORT")}
+
+
+@pytest.fixture
+def universal_env(monkeypatch):
+    monkeypatch.setattr(llm_models, "ENV_OVERRIDES", UNIVERSAL_KEYS)  # conftest turns them off for other tests
+    for key in UNIVERSAL_KEYS["UNIVERSAL"]:
+        monkeypatch.delenv(key, raising=False)
+    return monkeypatch
+
+
+@pytest.mark.parametrize("env, expected", [
+    ({}, ("Anthropic", "claude-sonnet-5-5", "medium")),                                    # LLM["UNIVERSAL"]
+    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash"}, ("DeepSeek", "deepseek-flash", "none")),     # Not parameters.py's "medium"
+    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash", "UNIVERSAL_LLM_EFFORT": "HIGH"}, ("DeepSeek", "deepseek-flash", "high")),
+    ({"UNIVERSAL_LLM_EFFORT": "low"}, ("Anthropic", "claude-sonnet-5-5", "low")),          # Effort alone
+    ({"UNIVERSAL_LLM_MODEL": "gpt-9"}, ("Anthropic", "claude-sonnet-5-5", "medium")),       # Not allowed: parameters.py
+    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash", "UNIVERSAL_LLM_EFFORT": "medium"}, ("DeepSeek", "deepseek-flash", "none")),
+])
+def test_universal_model_and_effort_come_from_env_first(universal_env, env, expected):
+    for key, value in env.items():
+        universal_env.setenv(key, value)
+    settings = llm_models.job_settings("UNIVERSAL")
+    assert (settings["provider"], settings["model"], settings["effort"]) == expected
+    assert llm_models.job_settings("HOLDINGS")["model"] == "claude-sonnet-5-5"  # Holdings are set per user instead
+
+
+def test_check_config_flags_an_unusable_universal_override(universal_env, capsys):
+    import src.check_config as check_config
+
+    universal_env.setattr(check_config, "load_dotenv", lambda *args, **kwargs: None)
+    universal_env.setenv("UNIVERSAL_LLM_MODEL", "deepseek-flash")
+    universal_env.setenv("UNIVERSAL_LLM_EFFORT", "medium")  # A Claude effort
+    check_config.run_check()
+    lines = {line.split()[1]: line.split()[0] for line in capsys.readouterr().out.splitlines()
+             if line.strip().split()[1:2] in (["UNIVERSAL_LLM_MODEL"], ["UNIVERSAL_LLM_EFFORT"])}
+    assert lines == {"UNIVERSAL_LLM_MODEL": "OK", "UNIVERSAL_LLM_EFFORT": "INVALID"}
 
 
 # --------------------------------------------------------------------------------------------- costs

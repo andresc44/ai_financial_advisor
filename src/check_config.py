@@ -35,6 +35,11 @@ SHARED_KEYS = {
     # Claude-authored (2026-10-16): only the one LLM["UNIVERSAL"] needs is required (see run_check)
     "ANTHROPIC_API_KEY": (True, "Claude for the universal recommendations (shared), when LLM['UNIVERSAL'] is Claude"),
     "DEEPSEEK_API_KEY": (False, "DeepSeek for the universal recommendations (shared), when LLM['UNIVERSAL'] is DeepSeek"),
+    # Claude-authored (2026-10-17): override LLM["UNIVERSAL"] in parameters.py (src/llm_models.ENV_OVERRIDES)
+    "UNIVERSAL_LLM_MODEL": (False, "LLM for the universal recommendations: a model in ALLOWED_CLAUDE_MODELS or "
+                                    "ALLOWED_DEEPSEEK_MODELS (default LLM['UNIVERSAL'])"),
+    "UNIVERSAL_LLM_EFFORT": (False, "Its effort. Claude: low, medium, high, xhigh, max; DeepSeek: none (no thinking), "
+                                     "low, high, max"),
     "GMAIL_USER": (True, "Gmail account the digest is sent from"),
     "GMAIL_APP_PASSWORD": (True, "App password for that Gmail account"),
     "TELEGRAM_BOT_TOKEN": (True, "Telegram bot for alerts and notices"),
@@ -163,11 +168,15 @@ def run_check() -> bool:
     needs = {"ANTHROPIC_API_KEY": universal["provider"] == llm_models.ANTHROPIC,
              "DEEPSEEK_API_KEY": universal["provider"] == llm_models.DEEPSEEK}
 
+    # Claude-authored (2026-10-17): a set but unusable model or effort override is INVALID (job_settings ignores it)
+    valid = {"UNIVERSAL_LLM_MODEL": lambda value: value.strip() in llm_models.allowed_models(),
+             "UNIVERSAL_LLM_EFFORT": lambda value: value.strip().lower() in llm_models.allowed_models().get(universal["model"], [])}
     print("Shared keys")
     for env_key, (required, description) in SHARED_KEYS.items():
         required = needs.get(env_key, required)
-        status = "OK" if _env(env_key) else ("MISSING" if required else "unset")
-        ok &= status != "MISSING"
+        value = _env(env_key)
+        status = ("OK" if valid.get(env_key, bool)(value) else "INVALID") if value else ("MISSING" if required else "unset")
+        ok &= status not in ("MISSING", "INVALID")
         print(f"  {status:8} {env_key:34} {description}")
 
     users = get_active_users()
