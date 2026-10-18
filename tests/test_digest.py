@@ -302,6 +302,36 @@ def test_shared_symbols_are_fetched_once_across_users(monkeypatch):
     assert all(result["market_context"].notna().all() for result in results)
 
 
+
+def test_cached_contexts_without_daily_bars_get_them(monkeypatch):
+    now = datetime.now(timezone.utc).isoformat()
+    add_metrics._save_context_cache({  # Saved before daily bars were added; otherwise current
+        "A": {"context": {"symbol": "A"}, "slow_fetched_at": now, "fresh_fetched_at": now},
+        "B": {"context": {"symbol": "B", "daily_bars": [{"date": "2026-10-16"}]}, "slow_fetched_at": now,
+              "fresh_fetched_at": now},
+    })
+    asked = []
+
+    class FakeDataFetcher:
+        def __init__(self, tickers):
+            pass
+
+        def congregate_LLM_input_data(self, symbols, as_dict_records=True):
+            raise AssertionError("a full fetch for a context that only lacked bars")
+
+        def recent_daily_bars(self, symbols, days):
+            asked.append((sorted(symbols), days))
+            return {symbol: [{"date": "2026-10-16", "close": 1.0}] for symbol in symbols}
+
+    monkeypatch.setattr(add_metrics, "HoldingsDataFetcher", FakeDataFetcher)
+    monkeypatch.setitem(add_metrics.params_dict, "DAILY_BARS_DAYS", 21)
+    result = add_metrics.add_metrics_to_holdings(None, pd.DataFrame({"symbol": ["A", "B"]}))
+    assert asked == [(["A"], 21)]  # B already has them
+    contexts = dict(zip(result["symbol"], result["market_context"]))
+    assert contexts["A"]["daily_bars"] == [{"date": "2026-10-16", "close": 1.0}]
+    assert "daily_bars" in add_metrics._load_context_cache()["A"]["context"]  # Saved, so it isn't asked again
+
+
 # --------------------------------------------------------------------------------------------- heartbeat status
 @pytest.mark.parametrize("when, expected", [
     ("2026-10-15T07:10", []),

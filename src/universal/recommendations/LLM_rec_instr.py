@@ -2,6 +2,11 @@
 LLM Recommendation Instructions & Schema Descriptions.
 Centralized repository for prompts, field descriptions, and system instructions 
 used in standardized stock evaluation.
+
+2026-10-18 (Claude-authored, at Andres's request): the swing rubric now rewards a stock that is cheap now and likely
+to bounce (a pullback to support in an intact trend, with the selling running out), not one that has already run
+for weeks. Its bands are one coherent setup instead of three that rarely co-occur (breakout, at support, bouncing
+from oversold), and risk/reward is scored from the model's own entry, stop, and target.
 """
 import sys
 from pathlib import Path
@@ -34,23 +39,24 @@ COMPETITIVE_MOAT_SCORE_DESCRIPTION = (
 
 # Swing Trade Sub-score Descriptions
 TECHNICAL_SETUP_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 30.0 evaluating chart patterns, short-term moving average alignment (9/21 EMAs), "
-    "and price positioning within Bollinger Bands."
+    "Rating from 0.0 to 30.0 of how good an entry the chart offers now: high for a pullback to support within an "
+    "intact longer-term trend, low for a stock stretched after a multi-week run or breaking down with no support."
 )
 
 RISK_REWARD_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 30.0 evaluating entry proximity to key support/resistance levels, "
-    "stop-loss distance, and upside potential toward analyst price targets."
+    "Rating from 0.0 to 30.0 of the reward-to-risk of your own entry_price, stop_loss, and price_target: "
+    "(price_target - entry_price) / (entry_price - stop_loss), with the stop at least a normal day's range below the entry."
 )
 
 MOMENTUM_VOLUME_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 20.0 evaluating RSI levels and recovery trends, Parabolic SAR direction, "
-    "and volume relative to 10-day/3-month averages."
+    "Rating from 0.0 to 20.0 of signs the selling is running out and buyers are returning: RSI turning up from "
+    "30-45, price holding or reclaiming support, the Parabolic SAR flipping below price, and volume on up vs down days."
 )
 
 CATALYST_SENTIMENT_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 20.0 evaluating upcoming earnings catalysts, historical earnings surprise rates, "
-    "analyst upgrades/downgrades, and recent headline sentiment."
+    "Rating from 0.0 to 20.0 of whether the drop looks temporary and something can lift the price in 2-8 weeks: "
+    "an overreaction that doesn't change the business, upcoming earnings with a record of beats, analyst targets "
+    "well above the price, insider buying; low for news that breaks the thesis."
 )
 
 # Claude-authored (2026-10-16): written fields shown to the reader in the digest, so a pick says why it was made
@@ -71,20 +77,20 @@ SWING_SENTIMENT_DESCRIPTION = (
     "Bullish, Neutral, or Bearish."
 )
 SWING_THESIS_DESCRIPTION = (
-    "1-2 sentences for the reader on the swing setup: what the chart and catalysts show and what would confirm it, "
-    "citing the indicator values behind it."
+    "1-2 sentences for the reader on the swing setup: why the stock looks cheap now, what should lift it, and what "
+    "would confirm the bounce, citing the indicator values behind it."
 )
 ENTRY_PRICE_DESCRIPTION = (
     "Suggested entry price for a swing long, in the stock's trading currency: at or near the current price, or at "
-    "a nearby support level from the data (EMA, middle/lower Bollinger Band)."
+    "the support just below (EMA 21, lower Bollinger Band, 50- or 200-day average) if the price is still falling."
 )
 STOP_LOSS_DESCRIPTION = (
-    "Stop-loss price below the entry, from a level in the data (Parabolic SAR, lower Bollinger Band, recent swing "
-    "low), where the setup is invalidated."
+    "Stop-loss price just below the support the trade relies on (lower Bollinger Band, recent swing low, 50- or "
+    "200-day average), where a break means the bounce failed."
 )
 PRICE_TARGET_DESCRIPTION = (
-    "Price target above the entry for the next 2-8 weeks, from a level in the data (upper Bollinger Band, recent "
-    "high, 52-week high, analyst target), whichever is the first realistic resistance."
+    "Price target above the entry for the next 2-8 weeks: where the rebound should reach (EMA 21 or the 50-day "
+    "average from below, the middle or upper Bollinger Band, the last swing high, or the analyst target if that close)."
 )
 
 # Tool specification configuration
@@ -106,6 +112,7 @@ Record your sub-scores by calling the `{EVALUATION_TOOL_NAME}` tool exactly once
 
 DATA PARSING & METRIC GUIDELINES:
 - Financial Ratios: Ratios such as `debt_to_equity` in the payload are scaled as percentages (e.g., 34.804 represents a 34.8% debt-to-equity ratio or ~0.35 D/E).
+- Daily Bars: `daily_bars` lists the most recent trading days (date, open, high, low, close, volume), most recent first, unadjusted like the indicators; the newest bar may be a session still in progress. Use them for the price path the indicators summarize: pullbacks into support, higher or lower lows, bounces, gaps, and whether volume is heavier on up days or down days.
 - Technical Indicators: Base technical assessments on supplied series including daily RSI (14-day), short-term exponential moving averages (ema_9, ema_21), 20-day Bollinger Bands, Parabolic SAR, and volume relative to 10-day/3-month averages. `beta_52_1week` is the stock's beta to the S&P 500 (SPY) from 52 weeks of weekly returns; `price_action.beta` is Yahoo's longer-term beta.
 
 ### LONG-TERM EVALUATION RUBRIC (Total: 100 Points)
@@ -130,30 +137,33 @@ DATA PARSING & METRIC GUIDELINES:
    - 0.0 - 9.0: Commodity business, low entry barriers, losing market share or facing technological disruption risks.
 
 ### SWING TRADE EVALUATION RUBRIC (Total: 100 Points)
-1. technical_setup_score (0.0 - 30.0):
-   - 25.0 - 30.0: Strong bullish structure; price above key short-term EMAs (9/21), near middle/lower Bollinger Band support bouncing upward, or breaking out.
-   - 12.0 - 24.0: Neutral chart setup, consolidating sideways near mid-ranges or moving averages.
-   - 0.0 - 11.0: Clear technical breakdown; price below key EMAs, trailing toward lower bands, bearish Parabolic SAR alignment.
+A good swing trade buys a stock early, while it is temporarily cheap and likely to go back up within 2-8 weeks: a pullback or overreaction in a stock whose longer-term trend and business are intact, where the selling is running out, or the first few days of a new upward trend (a higher low, a first close back above EMA 9/21, the Parabolic SAR just flipped below the price). It is not a stock that has already jumped or risen for weeks: buying far along a run leaves little upside and a long way down. Score every candidate on this one idea. A candidate already far along its run (more than about 3 normal days' ranges above its 10-day low, RSI above 70, or above its upper Bollinger Band) is not picked however it scores.
 
-2. risk_reward_ratio_score (0.0 - 30.0):
-   - 25.0 - 30.0: Entry right at major support with a tight stop-loss and >= 3:1 upside potential toward analyst price targets or 52-week highs.
-   - 12.0 - 24.0: Acceptable 1.5:1 to 2:1 risk-reward setup.
-   - 0.0 - 11.0: Poor risk-reward (< 1:1); buying near extended resistance levels with substantial downside risk to support.
+1. technical_setup_score (0.0 - 30.0): is it cheap right now, within a healthy longer trend?
+   - 25.0 - 30.0: Pulled back to clear support (lower Bollinger Band, EMA 21, the 50- or 200-day average, a prior low or the lower part of the 52-week range) while the longer-term trend is intact (price near or above the 200-day average, or the 50-day average still above the 200-day); or just turning up into a new upward trend off a base or support, still close to the turn (within a few days and a few normal daily ranges of the low).
+   - 12.0 - 24.0: Mid-range: near the middle band or the EMAs, neither cheap nor stretched; or a pullback where the longer trend is unclear.
+   - 0.0 - 11.0: Stretched after a run or a sharp jump (above the upper band, well above EMA 9/21, or already several normal daily ranges above its recent low), so buying here chases the move; or a breakdown with no support in sight (falling through the 200-day average or a 52-week low).
 
-3. momentum_volume_score (0.0 - 20.0):
-   - 16.0 - 20.0: RSI recovering from oversold (40-60 zone trending upward), trading volume above 10-day/3-month averages on green days.
-   - 8.0 - 15.0: Neutral RSI (45-55), average volume.
-   - 0.0 - 7.0: Overbought or deteriorating RSI (< 40 and falling), heavy sell volume, trailing Parabolic SAR overhead.
+2. risk_reward_ratio_score (0.0 - 30.0): the reward-to-risk of YOUR OWN levels, (price_target - entry_price) / (entry_price - stop_loss).
+   - 25.0 - 30.0: 2.5:1 or better, with the stop just below a clear support level.
+   - 12.0 - 24.0: 1.5:1 to 2.5:1.
+   - 0.0 - 11.0: Below 1.5:1, or no sensible stop because there is no support nearby.
+   - Score the ratio your three levels actually give; don't score an analyst target you didn't use as your price_target. This score is recomputed from your levels after you answer, and a stop closer to the entry than a normal day's range (the average true range of the recent `daily_bars`) is counted as that far, since ordinary noise would hit it. So set a realistic stop rather than a tight one.
 
-4. catalyst_sentiment_score (0.0 - 20.0):
-   - 16.0 - 20.0: Strong historical earnings surprise track record, upcoming catalysts in 1-4 weeks, positive Wall Street analyst upgrades/price target revisions.
-   - 8.0 - 15.0: Low news volatility, neutral insider sentiment, mixed analyst coverage.
-   - 0.0 - 7.0: Recent analyst downgrades, heavy insider selling, imminent regulatory or macro headwinds.
+3. momentum_volume_score (0.0 - 20.0): is the selling running out and are buyers returning?
+   - 16.0 - 20.0: Clear signs of a turn: RSI rising from roughly 30-45 (or making a higher low while the price made a lower low), a higher low or a bounce off support in `daily_bars`, the price holding or reclaiming support or EMA 9, the Parabolic SAR flipped or about to flip below the price, volume heavier on the latest up days than on the down days.
+   - 8.0 - 15.0: Early or mixed: RSI flat in the 40s to mid-50s, no clear turn yet.
+   - 0.0 - 7.0: Still falling hard with no floor (RSI falling, new lows, the SAR above the price and pulling away), or RSI above ~70 after a run, leaving little room to rise.
+
+4. catalyst_sentiment_score (0.0 - 20.0): does the drop look temporary, and can something lift the price soon?
+   - 16.0 - 20.0: The drop looks like an overreaction or market-wide selling that doesn't change the business, and a catalyst is 1-4 weeks out (earnings with a record of beats, a product event), with analyst targets well above the price or insider buying.
+   - 8.0 - 15.0: No clear catalyst either way; mixed news or analyst coverage.
+   - 0.0 - 7.0: News that breaks the thesis (guidance cuts, downgrades, regulatory trouble), heavy insider selling, or an imminent risk that could extend the drop.
 
 ### WRITTEN FIELDS (shown to the reader in their daily digest)
-- sentiment (in each section): your overall read for that horizon. Long-term weighs the business and valuation over 1-3+ years; swing weighs the next 2-8 weeks of price action. They can differ (e.g. a strong business in a short-term downtrend).
+- sentiment (in each section): your overall read for that horizon. Long-term weighs the business and valuation over 1-3+ years; swing weighs the next 2-8 weeks of price action. They can differ (e.g. a strong business stretched after a run, where the next few weeks look flat or down).
 - thesis, key_risk: plain language for an individual investor. Cite the specific figures from the data behind each point (e.g. "forward P/E of 18 against 25% revenue growth"). Never invent numbers, events, or news that are not in the data, and say so plainly when the data argues against the stock: these fields are recorded for every candidate, not only the ones picked.
-- entry_price, stop_loss, price_target (swing): derive each from levels in the data (current price, EMAs, Bollinger Bands, Parabolic SAR, 52-week range, analyst targets), in the stock's trading currency, with stop_loss < entry_price < price_target. Mention the level each one comes from in the swing thesis when it helps the reader.
+- entry_price, stop_loss, price_target (swing): derive each from levels in the data, in the stock's trading currency, with stop_loss < entry_price < price_target. Enter at or near the current price, or at the support just below if the price is still falling. Put the stop just below the support the trade relies on (the level whose break means the bounce failed), and the target where the rebound should reach within 2-8 weeks (EMA 21 or the 50-day average from below, the middle or upper Bollinger Band, the last swing high, or the analyst target if it is that close). Mention the level each one comes from in the swing thesis when it helps the reader.
 """
 
 # User prompt template

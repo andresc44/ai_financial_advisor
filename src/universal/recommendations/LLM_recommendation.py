@@ -128,6 +128,58 @@ class StockEvaluationBreakdown(BaseModel):
     swing: SwingSubScores
 
 
+MIN_RISK_FRACTION = 0.01  # A stop closer than 1% of the entry is counted as 1% away when scoring the plan
+
+
+def daily_atr(daily_bars: Any, days: int = 14) -> Optional[float]:
+    """
+    Claude-authored (2026-10-18): the average true range over the last `days` sessions, from `daily_bars` (newest
+    first, as DataFetcher.recent_daily_bars gives them): the size of a normal day's move. Each day's true range is the
+    largest of high - low and the gaps from the previous close. None with fewer than 4 ranges.
+    """
+    bars = [bar for bar in (daily_bars or []) if isinstance(bar, dict)
+            and all(isinstance(bar.get(key), (int, float)) for key in ("high", "low", "close"))]
+    ranges = [max(today["high"] - today["low"], abs(today["high"] - previous["close"]), abs(today["low"] - previous["close"]))
+              for today, previous in zip(bars, bars[1:])][:days]
+    return sum(ranges) / len(ranges) if len(ranges) >= 4 else None
+
+
+def plan_risk_reward_score(entry: Any, stop: Any, target: Any, atr: Optional[float] = None) -> float:
+    """
+    Claude-authored (2026-10-18): risk_reward_ratio_score (0-30) for a swing plan, by the rubric's bands in
+    LLM_rec_instr.py: below 1.5:1 scores 0-11 (0 at 0.5:1 or less), 1.5:1 to 2.5:1 scores 12-24, and 2.5:1 and up
+    scores 25-30 (30 from 4.5:1). Why in code: re-scoring 37 candidates showed the model doesn't score its own levels
+    (a 1.0:1 plan got 24/30 and an 8:1 plan 15/30). A plan that isn't 0 < stop < entry < target scores 0.
+    The risk is at least one `atr` (a normal day's move; daily_atr) and at least MIN_RISK_FRACTION of the entry: a
+    stop tighter than that is likely hit by ordinary noise, and on 2026-10-17 a falling stock (APH) scored 29/30 from
+    a stop 1.4% under the price. The top band was 3:1 until 2026-10-18; 2.5:1 is a solid 2-8 week swing trade.
+    """
+    if not all(isinstance(v, (int, float)) for v in (entry, stop, target)) or not 0 < stop < entry < target:
+        return 0.0
+    ratio = (target - entry) / max(entry - stop, entry * MIN_RISK_FRACTION, atr or 0.0)
+    if ratio < 1.5:
+        return round(max(0.0, ratio - 0.5) * 11, 1)
+    if ratio < 2.5:
+        return round(12 + (ratio - 1.5) * 12, 1)
+    return round(min(30.0, 25 + (ratio - 2.5) / 2 * 5), 1)
+
+
+def score_own_levels(symbol: str, breakdown: StockEvaluationBreakdown, atr: Optional[float] = None) -> StockEvaluationBreakdown:
+    """
+    Replaces the model's risk/reward sub-score with plan_risk_reward_score of its own levels, with the stop at least
+    one `atr` away (logged when the score changes).
+    """
+    swing = breakdown.swing
+    scored = plan_risk_reward_score(swing.entry_price, swing.stop_loss, swing.price_target, atr)
+    if scored != swing.risk_reward_ratio_score:
+        floored = atr is not None and swing.entry_price - swing.stop_loss < atr
+        logger.info(f"[{symbol}] Risk/reward {swing.risk_reward_ratio_score} -> {scored} from its plan "
+                    f"{swing.entry_price}/{swing.stop_loss}/{swing.price_target}"
+                    + (f" (stop counted as one ATR, {atr:.2f}, away)." if floored else "."))
+        swing.risk_reward_ratio_score = scored
+    return breakdown
+
+
 # Claude-authored (2026-10-13): strict tool use rejects numeric/string constraints in the schema it is sent,
 # so they are stripped from the copy sent to the API. The score ranges are still stated in each field's
 # description (from LLM_rec_instr.py) and enforced by Pydantic when the tool input is parsed.
@@ -202,7 +254,9 @@ class ParallelStockEvaluator:
         self.client = AsyncAnthropic(api_key=api_key) if self.deepseek is None else None
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
 
-    async def _evaluate_with_deepseek(self, symbol: str, user_prompt: str) -> Optional[StockEvaluationBreakdown]:
+    async def _evaluate_with_deepseek(
+        self, symbol: str, user_prompt: str, atr: Optional[float] = None
+    ) -> Optional[StockEvaluationBreakdown]:
         """
         Claude-authored (2026-10-16): one candidate scored on DeepSeek, with the same tool schema and validation.
         2026-10-17: a misshapen answer is repaired, and one still invalid is asked for once more (validated_answer).
@@ -216,6 +270,7 @@ class ParallelStockEvaluator:
         )
         if breakdown is None:
             return None
+        score_own_levels(symbol, breakdown, atr)  # Claude-authored (2026-10-18)
         logger.info(
             f"[{symbol}] Evaluated -> swingScore: {breakdown.swing.total_score:.1f}, "
             f"longScore: {breakdown.long_term.total_score:.1f}"
@@ -232,10 +287,11 @@ class ParallelStockEvaluator:
                 sanitized_payload, indent=2, default=str
             )
             user_prompt = format_user_prompt(symbol, sanitized_prompt_data)
+            atr = daily_atr(sanitized_payload.get("daily_bars"))  # Claude-authored (2026-10-18): floors the stop
 
             try:
                 if self.deepseek is not None:
-                    return await self._evaluate_with_deepseek(symbol, user_prompt)
+                    return await self._evaluate_with_deepseek(symbol, user_prompt, atr)
                 request = {
                     "model": self.config["model"],
                     "max_tokens": self.config["max_tokens"],
@@ -282,7 +338,7 @@ class ParallelStockEvaluator:
                     )
                     return None
 
-                breakdown = StockEvaluationBreakdown(**tool_block.input)
+                breakdown = score_own_levels(symbol, StockEvaluationBreakdown(**tool_block.input), atr)  # 2026-10-18
                 logger.info(
                     f"[{symbol}] Evaluated -> swingScore: {breakdown.swing.total_score:.1f}, "
                     f"longScore: {breakdown.long_term.total_score:.1f}"

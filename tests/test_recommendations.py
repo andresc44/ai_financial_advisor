@@ -1,4 +1,5 @@
 """Holdings evaluation: key failures, reuse of recent evaluations, portfolio weights, and the track record it writes."""
+import json
 import threading
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -150,3 +151,30 @@ def test_weights_use_the_whole_portfolio_even_for_a_subset():
 def test_weights_without_column_fall_back_to_the_subset():
     df = pd.DataFrame({"symbol": ["A", "B"], "market_value": [25.0, 75.0], "market_context": [None, None]})
     assert rec.build_holding_payloads(df)["B"]["portfolio_weight_pct"] == 75.0
+
+
+def test_holdings_labels_and_older_ones():
+    from pydantic import ValidationError
+
+    from src.personalized.LLM_hold_instr import RECOMMENDATIONS, current_recommendation
+
+    assert RECOMMENDATIONS == ("urgent_sell", "risky", "profit_sell", "buy_more", "hold")
+    for label in RECOMMENDATIONS:
+        rec.HoldingEvaluation(recommendation=label, sentiment="Neutral", rationale="x")
+    with pytest.raises(ValidationError):  # Labels from before 2026-10-18 are no longer accepted from the model
+        rec.HoldingEvaluation(recommendation="trim", sentiment="Neutral", rationale="x")
+    assert [current_recommendation(v) for v in ("risk_alert", "trim", "hold", None)] == ["risky", "profit_sell", "hold", None]
+    schema = json.dumps(rec.EVALUATION_TOOL_SPEC["input_schema"])
+    assert all(label in schema for label in RECOMMENDATIONS) and "risk_alert" not in schema
+
+
+def test_reused_evaluations_come_back_in_todays_labels(state_file):
+    now = datetime.now(timezone.utc)
+    recent = (now - timedelta(minutes=10)).isoformat()
+    holdings_state.save_state({"users": {"Andres": {"symbols": {  # Saved before 2026-10-18
+        "AAA": {"evaluated_at": recent, "price": 100.0, "recommendation": "risk_alert"},
+        "BBB": {"evaluated_at": recent, "price": 50.0, "recommendation": "trim"},
+    }}}}, state_file)
+    reused = holdings_state.reusable_evaluations("Andres", holdings(("AAA", "BBB"), (100.0, 50.0)), now, 60, 1.0,
+                                                 path=state_file)
+    assert {symbol: record["recommendation"] for symbol, record in reused.items()} == {"AAA": "risky", "BBB": "profit_sell"}

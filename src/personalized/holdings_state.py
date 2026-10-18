@@ -47,6 +47,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.personalized.LLM_hold_instr import current_recommendation  # noqa: E402
+
 STATE_PATH = project_root / "data" / "watchdog_state.json"
 _STATE_LOCK = threading.Lock()  # Users run in parallel threads; see update_user_state
 
@@ -225,7 +227,8 @@ def reusable_evaluations(
         if abs(price / last_price - 1) * 100 / natr >= max_natr_move:
             continue
         reusable[row["symbol"]] = {
-            "recommendation": record["recommendation"],
+            # 2026-10-18: a record saved before the labels changed comes back in today's labels
+            "recommendation": current_recommendation(record["recommendation"]),
             "sentiment": record.get("sentiment"),
             "rationale": record.get("rationale"),
         }

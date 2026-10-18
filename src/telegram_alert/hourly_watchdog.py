@@ -48,6 +48,7 @@ if str(project_root) not in sys.path:
 from src.market_session import block_id, is_in_session, market_date, market_phase
 from src.parameters import params_dict
 from src.personalized.add_metrics import HoldingsDataFetcher
+from src.personalized.LLM_hold_instr import current_recommendation
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.holdings_state import (
     add_claude_calls,
@@ -80,8 +81,9 @@ from src.telegram_alert.send_telegram import send_telegram_message
 WATCHDOG_PARAMS = params_dict["WATCHDOG"]
 
 # Claude-authored: when the daily Claude cap is hit, stocks whose last recommendation was most severe go first.
-# Never-evaluated stocks (None) rank just below risk_alert because their risk is unknown.
-SEVERITY_RANK = {"urgent_sell": 4, "risk_alert": 3, None: 2, "trim": 1, "hold": 0}
+# Never-evaluated stocks (None) rank just below risky because their risk is unknown. 2026-10-18: the new labels;
+# buy_more and profit_sell are time-sensitive opportunities, so they rank above hold.
+SEVERITY_RANK = {"urgent_sell": 4, "risky": 3, None: 2, "profit_sell": 1, "buy_more": 1, "hold": 0}
 
 
 # ==============================================================================================
@@ -203,7 +205,7 @@ def apply_daily_claude_limit(
 
     ordered = sorted(
         reasons,
-        key=lambda s: SEVERITY_RANK.get((symbol_states.get(s) or {}).get("recommendation"), 2),
+        key=lambda s: SEVERITY_RANK.get(current_recommendation((symbol_states.get(s) or {}).get("recommendation")), 2),
         reverse=True,
     )
     return {s: reasons[s] for s in ordered[:remaining]}, ordered[remaining:]

@@ -9,7 +9,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.parameters import params_dict
-from src.universal.recommendations.LLM_recommendation import run_llm_evaluation
+from src.universal.recommendations.LLM_recommendation import daily_atr, run_llm_evaluation
 
 logger = logging.getLogger("Finnbot.CandidateSelector")
 
@@ -32,6 +32,47 @@ def candidate_sector(ticker: str, sanitized_inputs: Dict[str, Dict[str, Any]]) -
     """Yahoo's sector for a candidate. A stock without one counts as its own sector, so missing data never blocks it."""
     sector = ((sanitized_inputs.get(ticker) or {}).get("profile") or {}).get("sector")
     return sector.strip() if isinstance(sector, str) and sector.strip() else f"(no sector: {ticker})"
+
+
+def _first(series: Any, field: str) -> Optional[float]:
+    """The newest value of an indicator series (newest first), or None."""
+    point = series[0] if isinstance(series, list) and series and isinstance(series[0], dict) else {}
+    value = point.get(field)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def too_far_along(context: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    Claude-authored (2026-10-18): why a swing candidate is already too far along its current run to be bought early,
+    e.g. "up 4.0 days' ranges (20%) from its 10-day low", or None. Andres wants swing picks caught early in a new
+    upward move, never after a jump; the model alone scored TRU, up 20% in 10 days, the best swing setup. Checks
+    params_dict["SWING_EARLY_ENTRY"] against the daily bars and indicators the model saw. Missing data proves
+    nothing, so it doesn't count against a stock.
+    """
+    rules = params_dict.get("SWING_EARLY_ENTRY") or {}
+    context = context or {}
+    bars = [bar for bar in context.get("daily_bars") or [] if isinstance(bar, dict)]
+    indicators = context.get("technical_indicators") or {}
+    price = bars[0].get("close") if bars else None
+    if not isinstance(price, (int, float)):
+        price = (context.get("price_action") or {}).get("current_price")
+    price = float(price) if isinstance(price, (int, float)) and price > 0 else None
+    reasons = []
+
+    lookback = int(rules.get("LOOKBACK_DAYS", 10))
+    lows = [bar["low"] for bar in bars[:lookback] if isinstance(bar.get("low"), (int, float))]
+    atr = daily_atr(bars)
+    if price and atr and lows and "MAX_RUN_ATR" in rules:
+        run = (price - min(lows)) / atr
+        if run > rules["MAX_RUN_ATR"]:
+            reasons.append(f"up {run:.1f} days' ranges ({(price / min(lows) - 1) * 100:.0f}%) from its {lookback}-day low")
+    rsi = _first(indicators.get("rsi_14_1day"), "rsi")
+    if rsi is not None and "MAX_RSI" in rules and rsi > rules["MAX_RSI"]:
+        reasons.append(f"RSI {rsi:.0f}")
+    upper = _first(indicators.get("bbands_20_1day"), "upper_band")
+    if price and upper and price > upper:
+        reasons.append("above its upper Bollinger Band")
+    return "; ".join(reasons) or None
 
 
 def pick_with_sector_rule(
@@ -135,14 +176,15 @@ def select_top_candidates(
         min_swing_score: Minimum swingScore cutoff. Defaults to params_dict['MIN_SWING_SCORE'].
         config: Optional custom configuration dictionary for the LLM call.
         stats: Claude-authored (2026-10-17), filled in when given: "sent" (candidates sent to the LLM), "scored"
-            (evaluations that came back valid), and "long_qualified" / "swing_qualified" (scored tickers at or above
+            (evaluations that came back valid), "swing_early" (2026-10-18: swing-qualified and not too_far_along), and
+            "long_qualified" / "swing_qualified" (scored tickers at or above
             each minimum score, before the picks are capped at long_n / swing_n; a ticker can clear both).
 
     Returns:
         Dict with keys 'top_long_term' and 'top_swing', containing lists of selected ticker objects.
     """
     stats = stats if stats is not None else {}
-    stats.update(sent=len(sanitized_inputs or {}), scored=0, long_qualified=0, swing_qualified=0)
+    stats.update(sent=len(sanitized_inputs or {}), scored=0, long_qualified=0, swing_qualified=0, swing_early=0)
     if not sanitized_inputs:
         logger.warning("No sanitized inputs provided for selection.")
         return {"top_long_term": [], "top_swing": []}
@@ -190,6 +232,10 @@ def select_top_candidates(
     
     stats["long_qualified"] = len(eligible_long)
     stats["swing_qualified"] = sum(1 for s in scores_map.values() if s.get("swingScore", 0.0) >= min_swing_score)
+    # Claude-authored (2026-10-18): a swing pick must still be early in its move (too_far_along)
+    too_far = {ticker: too_far_along(sanitized_inputs.get(ticker)) for ticker, s in scores_map.items()
+               if s.get("swingScore", 0.0) >= min_swing_score}
+    stats["swing_early"] = sum(1 for reason in too_far.values() if reason is None)
     # Claude-authored (2026-10-17): the sector rule decides among the stocks that cleared the bar
     sector_rules = params_dict.get("PICK_SECTOR_RULES") or {}
     sector_of = lambda ticker: candidate_sector(ticker, sanitized_inputs)  # noqa: E731
@@ -219,7 +265,10 @@ def select_top_candidates(
             continue
 
         swing_score = scores.get("swingScore", 0.0)
-        if swing_score >= min_swing_score:
+        if swing_score >= min_swing_score and too_far.get(ticker):
+            logger.info(f"[{ticker}] Swing score {swing_score:.1f}, but left out: already too far along its run "
+                        f"({too_far[ticker]}).")
+        elif swing_score >= min_swing_score:
             eligible_swing.append((ticker, scores))
         else:
             logger.info(

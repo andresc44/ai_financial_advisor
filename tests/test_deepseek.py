@@ -74,7 +74,7 @@ def test_tool_arguments_from_a_call_or_from_json_text():
 
 
 # --------------------------------------------------------------------------------------------- holdings on DeepSeek
-HOLD = {"recommendation": "trim", "sentiment": "Bearish", "rationale": "RSI 74 after a 30% run."}
+HOLD = {"recommendation": "profit_sell", "sentiment": "Bearish", "rationale": "RSI 74 after a 30% run."}
 PAYLOADS = {f"S{i}": {"symbol": f"S{i}"} for i in range(4)}
 DEEPSEEK = {"model": "deepseek-flash", "effort": "none", "max_concurrency": 1}
 
@@ -82,7 +82,7 @@ DEEPSEEK = {"model": "deepseek-flash", "effort": "none", "max_concurrency": 1}
 def test_holdings_evaluated_on_deepseek_with_costs(deepseek_server):
     deepseek_server["plan"] = lambda n, body: (503, {"error": {"message": "busy"}}) if n == 1 else (200, completion(HOLD))
     evaluations, key_error = rec.run_holding_evaluation(PAYLOADS, api_key="ds-key", config=DEEPSEEK, user_name="Andres")
-    assert key_error is None and set(evaluations) == set(PAYLOADS) and evaluations["S0"]["recommendation"] == "trim"
+    assert key_error is None and set(evaluations) == set(PAYLOADS) and evaluations["S0"]["recommendation"] == "profit_sell"
     assert len(deepseek_server["requests"]) == 5  # One retry after the 503
     assert all(body["model"] == "deepseek-flash" for body in deepseek_server["requests"])
     rows = [json.loads(line) for line in usage.LEDGER_PATH.read_text().splitlines()]
@@ -101,7 +101,7 @@ def test_deepseek_key_failure_stops_the_run(deepseek_server, status, reason):
 
 
 def test_answers_that_dont_fit_the_schema_are_asked_once_more_then_skipped(deepseek_server):
-    deepseek_server["plan"] = lambda n, body: (200, completion({"recommendation": "buy_more", "sentiment": "Bullish", "rationale": "x"}))
+    deepseek_server["plan"] = lambda n, body: (200, completion({"recommendation": "sell_half", "sentiment": "Bullish", "rationale": "x"}))
     evaluations, key_error = rec.run_holding_evaluation({"S0": {}}, api_key="ds-key", config=DEEPSEEK, user_name="Andres")
     assert evaluations == {} and key_error is None
     assert len(deepseek_server["requests"]) == 2  # The first answer and one retry
@@ -113,7 +113,7 @@ def test_an_invalid_answer_is_replaced_by_the_retry(deepseek_server):
     answers = {1: completion(content="I think it's a hold.", finish="stop"), 2: completion(HOLD)}
     deepseek_server["plan"] = lambda n, body: (200, answers[n])
     evaluations, _ = rec.run_holding_evaluation({"S0": {}}, api_key="ds-key", config=DEEPSEEK, user_name="Andres")
-    assert evaluations["S0"]["recommendation"] == "trim" and len(deepseek_server["requests"]) == 2
+    assert evaluations["S0"]["recommendation"] == "profit_sell" and len(deepseek_server["requests"]) == 2
 
 
 def test_a_cut_off_answer_is_not_asked_again(deepseek_server):

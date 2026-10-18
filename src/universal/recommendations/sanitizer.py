@@ -276,6 +276,8 @@ def sanitize_ticker_payload(ticker_symbol, raw_data):
             "sar_1day": extract_indicator_series(twelvedata.get("sar_1day"), ["sar"]),
             "beta_52_1week": extract_indicator_series(twelvedata.get("beta_52_1week"), ["beta"])
         },
+        # Claude-authored (2026-10-18): the last DAILY_BARS_DAYS daily bars, newest first (DataFetcher.recent_daily_bars)
+        "daily_bars": raw_data.get("daily_bars") or [],
         "recent_headlines_and_catalysts": process_news(raw_news)
     }
     return sanitized

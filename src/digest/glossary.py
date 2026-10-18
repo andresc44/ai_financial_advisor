@@ -5,20 +5,25 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-17: created. Static text, shown in a collapsed card at the bottom of the email (create_html.py and
   email_template.html). Keep entries to a sentence or two: fit_for_gmail drops the whole glossary first when a
   digest would pass Gmail's ~102 KB clipping limit.
+- 2026-10-18: the new holdings signals (Buy more, Hold, Risky, Profit sell, Urgent sell), and swing ideas as
+  pullbacks likely to bounce.
 """
 
 # (category, [(term, explanation), ...]), in the order the email shows them
 GLOSSARY = [
     ("Signals & ideas", [
-        ("Hold", "The position looks fine; no action suggested."),
-        ("Trim", "Consider selling part of the position, e.g. to lock in gains or shrink an oversized weight."),
-        ("Risk alert", "Something is going wrong, such as a broken trend, bad news, or too much weight. Watch closely "
-                       "and decide soon."),
+        ("Buy more", "The stock has pulled back and looks cheap, with signs it is rebounding: a good time to add."),
+        ("Hold", "The position is healthy. Give it time to reach its next peak before selling."),
+        ("Risky", "Something looks off and needs close watching. Selling to be safe may make sense, but now isn't "
+                  "necessarily a good price."),
+        ("Profit sell", "It has risen well, but the signs say the run may turn down soon: a good moment to sell "
+                        "and lock in the gain."),
         ("Urgent sell", "A serious, time-sensitive problem. Consider selling at the next chance; it also triggers a "
                         "phone alert."),
         ("Sentiment", "The model's overall read on a stock: Bullish (likely up), Neutral, or Bearish (likely down)."),
         ("Score", "0-100: how strongly a new idea meets the model's checklist. Higher is stronger; 90+ shows in green."),
-        ("Swing idea", "A short-term trade lasting days to a few weeks, with a planned entry, stop, and target."),
+        ("Swing idea", "A stock that has pulled back and looks likely to bounce within days to a few weeks, with a "
+                       "planned entry, stop, and target."),
         ("Long-term idea", "A business worth owning for years, judged on valuation, financial health, growth, and "
                            "competitive moat."),
     ]),
@@ -28,7 +33,7 @@ GLOSSARY = [
         ("Unrealized P/L", "Your gain or loss on positions you still hold, versus what you paid. It becomes realized "
                            "only when you sell."),
         ("Weight", "A position's share of your total portfolio value."),
-        ("Flagged", "Positions marked Trim, Risk alert, or Urgent sell."),
+        ("Flagged", "Positions marked Risky, Profit sell, or Urgent sell."),
         ("Beta", "How much a stock or portfolio tends to move with the S&P 500: 1 moves with it, 2 about twice as "
                  "much, below 1 is calmer."),
         ("Volatility", "How much the price typically swings over a year. Higher means a bumpier ride."),

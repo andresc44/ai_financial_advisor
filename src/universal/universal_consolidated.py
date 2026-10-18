@@ -100,6 +100,8 @@ def screening_counts(fetcher, stats: dict, recommendations: dict) -> dict:
                        "min_score": params_dict["MIN_LONG_SCORE"]})
         stages.append({"stage": "swing_score", "count": stats["swing_qualified"],
                        "min_score": params_dict["MIN_SWING_SCORE"]})
+        if stats["swing_qualified"]:  # 2026-10-18: of those, the ones not already too far along their run
+            stages.append({"stage": "swing_early", "count": stats.get("swing_early", stats["swing_qualified"])})
     long_term = len(recommendations.get("top_long_term") or [])
     swing = len(recommendations.get("top_swing") or [])
     stages.append({"stage": "picked", "count": long_term + swing, "long_term": long_term, "swing": swing})

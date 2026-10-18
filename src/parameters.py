@@ -170,6 +170,12 @@ params_dict = {
     # goes to Twelve Data, whose free plan allows 8 credits a minute (one per ticker per indicator).
     # "twelvedata" sends everything to Twelve Data, as before.
     "TECHNICAL_INDICATOR_SOURCE": "yahoo",
+    # Claude-authored (2026-10-18): how many of the most recent daily bars (date, open, high, low, close, volume) go to
+    # the LLM with each stock, for new-stock scoring and holdings alike. They show the price path the indicators only
+    # summarize: pullbacks into support, higher lows, bounces, gaps, and whether volume is heavier on up or down days.
+    # They come from the same Yahoo download as the indicators (no extra calls). At 21 they add ~0.9K input tokens per
+    # stock: ~33K a run for 37 candidates, about $0.01 on deepseek-flash or $0.07 on claude-sonnet-5-5. 0 leaves them out.
+    "DAILY_BARS_DAYS": 21,
     "TWELVEDATA_FILTERS": [
         # --- Category A: Standalone Bounded Momentum ---
         # ("rsi", "1day", "<=", 70),                                            # Standard 14-period RSI
@@ -330,6 +336,12 @@ params_dict = {
     # A stock the rule leaves out makes room for the next best that fits, if it clears the minimum score, so a
     # list can come up short; the log says which stocks were left out.
     "PICK_SECTOR_RULES": {"LONG_TERM": "all_different", "SWING": "majority_different"},
+    # Claude-authored (2026-10-18): a swing pick must still be early in its move. A stock past any of these is left
+    # out however it scores (scorer.too_far_along): more than MAX_RUN_ATR normal days' ranges (14-day ATR) above
+    # its LOOKBACK_DAYS low, an RSI above MAX_RSI, or a close above its upper Bollinger Band. Calibrated on
+    # 2026-10-16's 97 candidates: the ones just turning up near support were 0.9-1.9 ranges above their 10-day low;
+    # 26 of 97 were more than 3, e.g. TRU, up 20% in 10 days and then the best swing score.
+    "SWING_EARLY_ENTRY": {"LOOKBACK_DAYS": 10, "MAX_RUN_ATR": 3.0, "MAX_RSI": 70},
 
     # Claude-authored (2026-10-16): data attached to each universal pick for the digest
     # (src/universal/recommendations/enriched_rec.py), as "name in the digest": "section.field" in the sanitized data

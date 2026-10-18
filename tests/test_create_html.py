@@ -89,8 +89,8 @@ def payload(**overrides):
         "headline_news": {"macro_stories": [{"priority": "HIGH", "event_summary": "The central bank held rates.",
                                              "market_impact": "Yields stay high.", "source_url": "https://example.com/a"}]},
         "universal_issues": [],
-        "holdings": [holding("AAA", "risk_alert", 30.0), holding("BBB", "hold", 50.0),
-                     holding("CCC", "urgent_sell", 5.0), holding("DDD", "trim", 15.0)],
+        "holdings": [holding("AAA", "risky", 30.0), holding("BBB", "hold", 50.0),
+                     holding("CCC", "urgent_sell", 5.0), holding("DDD", "profit_sell", 15.0)],
         "portfolio_beta": 1.4,
         "portfolio_review": [{"category": "WATCH", "text": "AAA is 30% of the portfolio.", "symbols": ["AAA"]},
                              {"category": "NOTE", "text": "BBB is steady.", "symbols": ["BBB"]}],
@@ -119,9 +119,9 @@ def test_sections_follow_the_requested_order():
 
 def test_holdings_most_urgent_first_with_each_stock_on_one_card():
     view = ch.build_view(payload(holdings=[
-        holding("BBB", "hold", 50.0), holding("AAA", "risk_alert", 40.0, account="Individual TFSA"),
-        holding("AAA", "risk_alert", 40.0, account="Individual RRSP"), holding("CCC", "urgent_sell", 5.0),
-        holding("DDD", "trim", 15.0), holding("EEE", "risk_alert", 25.0), holding("FFF", None, 1.0),
+        holding("BBB", "hold", 50.0), holding("AAA", "risky", 40.0, account="Individual TFSA"),
+        holding("AAA", "risky", 40.0, account="Individual RRSP"), holding("CCC", "urgent_sell", 5.0),
+        holding("DDD", "profit_sell", 15.0), holding("EEE", "risky", 25.0), holding("FFF", None, 1.0),
     ]))
     assert [card["symbol"] for card in view["holdings"]] == ["CCC", "AAA", "EEE", "DDD", "BBB", "FFF"]
     merged = view["holdings"][1]
@@ -138,14 +138,14 @@ def test_overview_and_risk_figures():
     assert portfolio["value"] == "$4,000.00"
     assert portfolio["session"] == "Prev. day · Oct 15"
     assert portfolio["change"] == "▲ $20.00 · 0.50%"
-    # Unrealized: a 10% gain on cost; flagged: urgent sell, risk alert, and trim (an urgent sell makes it red)
+    # Unrealized: a 10% gain on cost; flagged: urgent sell, risky, and profit sell (an urgent sell makes it red)
     assert [stat["value"] for stat in portfolio["stats"]] == ["+$400", "3 of 4", "2"]
     assert (portfolio["stats"][1]["sub"], portfolio["stats"][1]["tone"]) == ("50% of value", "neg")
     assert [chip["text"] for chip in portfolio["attention"]] == ["CCC", "AAA", "DDD"]  # Most urgent first
     assert [item["text"] for item in portfolio["earnings"]] == ["AAA Oct 21", "BBB Oct 21", "CCC Oct 21", "DDD Oct 21"]
     assert risk["beta"]["value"] == "1.40" and risk["beta"]["label"] == "Above-market risk"
     assert [(m["label"], m["pct"]) for m in risk["mix"]] == [
-        ("Urgent sell", "5%"), ("Risk alert", "30%"), ("Trim", "15%"), ("Hold", "50%")]
+        ("Urgent sell", "5%"), ("Risky", "30%"), ("Profit sell", "15%"), ("Hold", "50%")]
     assert [n["text"] for n in risk["watch"]] == ["AAA is 30% of the portfolio."]
     assert [n["text"] for n in risk["notes"]] == ["BBB is steady."]
 
@@ -225,7 +225,7 @@ def test_issues_are_shown_first(monkeypatch):
 
 def test_a_full_digest_fits_under_gmails_clipping_limit():
     full = payload(
-        holdings=[holding(f"T{i:02d}", "risk_alert" if i % 2 else "hold", 10.0) for i in range(10)],
+        holdings=[holding(f"T{i:02d}", "risky" if i % 2 else "hold", 10.0) for i in range(10)],
         recommendations={"top_long_term": [long_pick("L1"), long_pick("L2")],
                          "top_swing": [swing_pick(f"S{i}") for i in range(5)]},
     )
@@ -239,7 +239,7 @@ def test_a_full_digest_fits_under_gmails_clipping_limit():
 
 
 def test_a_large_portfolio_drops_low_priority_news_to_fit():
-    large = payload(holdings=[holding(f"T{i:02d}", "risk_alert" if i < 4 else "hold", 5.0) for i in range(20)])
+    large = payload(holdings=[holding(f"T{i:02d}", "risky" if i < 4 else "hold", 5.0) for i in range(20)])
     view = ch.build_view(large)
     html = ch.fit_for_gmail(view, TEMPLATE_DIR)
     assert len(html.encode("utf-8")) <= ch.GMAIL_CLIP_BYTES
@@ -363,7 +363,7 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     assert view["account"]["summary"] == "Questrade · 1 account · 4 positions"
     assert flat(view["markets_summary"]) == "S&P 500 +0.3% prev. day · 1 story"
     assert view["markets_summary"][0]["tone"] == "pos"  # Only the change is coloured, not "S&P 500"
-    assert flat(view["holdings_summary"]) == "1 urgent sell · 1 risk alert · 1 trim · 1 hold"
+    assert flat(view["holdings_summary"]) == "1 urgent sell · 1 risky · 1 profit sell · 1 hold"
     assert [part["dot"] for part in view["holdings_summary"]] == ["#DC2626", "#F97316", "#F59E0B", "#38BDF8"]
     assert (flat(view["swing_summary"]), flat(view["long_summary"])) == ("SWA 85", "LTA 91")
 
@@ -561,13 +561,14 @@ def test_about_section_ends_with_the_stocks_left_after_each_screening_stage():
     stages = [{"stage": "listings", "count": 7012}, {"stage": "screener", "count": 635, "rules": ["price >= 30.0"]},
               {"stage": "yahoo", "count": 85}, {"stage": "finnhub", "count": 37}, {"stage": "technical", "count": 37},
               {"stage": "scored", "count": 36, "of": 37}, {"stage": "long_term_score", "count": 16, "min_score": 80.0},
-              {"stage": "swing_score", "count": 0, "min_score": 80.0},
+              {"stage": "swing_score", "count": 0, "min_score": 80.0}, {"stage": "swing_early", "count": 0},
               {"stage": "picked", "count": 2, "long_term": 2, "swing": 0}, {"stage": "unknown", "count": 1}]
     view, html = render(payload(screening={"stages": stages}))
     assert view["screening"] == [
         ("US-listed stocks", "7,012"), ("Size, volume & price", "635"), ("Analyst & fundamentals screen", "85"),
         ("Growth & debt screen", "37"), ("Technical screen", "37"), ("Scored by AI", "36 of 37"),
-        ("Long-term score 80+", "16"), ("Swing score 80+", "0"), ("Picked", "2 long-term · 0 swing")]
+        ("Long-term score 80+", "16"), ("Swing score 80+", "0"), ("Still early in their run", "0"),
+        ("Picked", "2 long-term · 0 swing")]
     about = html.index("About this digest")
     assert about < html.index("Estimated.") < html.index("Stocks left after each screening stage") < html.index("7,012")
     assert "STOCKS LEFT AFTER EACH SCREENING STAGE" in ch.render_text(view) and "  Scored by AI: 36 of 37" in ch.render_text(view)
@@ -578,3 +579,24 @@ def test_about_section_ends_with_the_stocks_left_after_each_screening_stage():
     view, html = render(payload())
     assert view["screening"] == [] and "screening stage" not in html
     assert ch.build_view(payload(screening={}, api_usage=None))["screening"] == []
+
+
+def test_buy_more_is_a_chip_but_not_flagged_and_older_labels_are_translated():
+    view = ch.build_view(payload(holdings=[holding("AAA", "buy_more", 40.0), holding("BBB", "hold", 30.0),
+                                           holding("CCC", "trim", 20.0), holding("DDD", "risk_alert", 10.0)]))
+    cards = {card["symbol"]: card for card in view["holdings"]}
+    # Labels saved before 2026-10-18 (watchdog state, older payloads) show as today's
+    assert (cards["CCC"]["signal"]["text"], cards["DDD"]["signal"]["text"]) == ("Profit sell", "Risky")
+    assert [card["symbol"] for card in view["holdings"]] == ["DDD", "CCC", "AAA", "BBB"]  # Most urgent first
+    portfolio = view["portfolio"]
+    assert portfolio["stats"][1]["value"] == "2 of 4"  # Buy more isn't a reason to sell or watch ...
+    assert [chip["text"] for chip in portfolio["attention"]] == ["DDD", "CCC", "AAA"]  # ... but it is worth a look
+    assert cards["AAA"]["signal"]["text"] == "Buy more" and cards["AAA"]["signal_key"] == "buy_more"
+    assert flat(view["holdings_summary"]) == "1 risky \u00b7 1 profit sell \u00b7 1 buy more \u00b7 1 hold"
+    assert "1 risky \u00b7 1 profit sell \u00b7 1 buy more" in view["preheader"]
+    many = ch.build_view(payload(holdings=[holding("A1", "risky"), holding("A2", "risky"), holding("B1", "buy_more"),
+                                           holding("B2", "buy_more"), holding("C1", "urgent_sell"),
+                                           holding("C2", "urgent_sell")]))
+    assert flat(many["holdings_summary"]) == "2 urgent sells \u00b7 2 risky \u00b7 2 buy more"
+    calm = ch.build_view(payload(holdings=[holding("A", "buy_more"), holding("B", "hold")]))
+    assert calm["portfolio"]["stats"][1]["sub"] == "none flagged"

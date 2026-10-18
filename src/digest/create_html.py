@@ -39,6 +39,7 @@ from src.admins import contact_admin, is_admin, notice_text
 from src.fx_rates import usd_rates
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
+from src.personalized.LLM_hold_instr import current_recommendation
 from src.digest.glossary import GLOSSARY
 from src.personalized.portfolio_review import build_portfolio_summary
 
@@ -56,13 +57,18 @@ INK, BODY, MUTED = "#0F2A44", "#334155", "#64748B"
 TONES = {"pos": "#15803D", "neg": "#B91C1C", "warn": "#B45309", "flat": BODY, "ink": INK, "muted": MUTED}
 
 # recommendation -> (label, badge text colour, badge colour, bar colour, sort order: most urgent first)
+# 2026-10-18: the labels in LLM_hold_instr.RECOMMENDATIONS; an older payload's labels are translated first
 SIGNALS = {
     "urgent_sell": ("Urgent sell", "#7F1D1D", "#FECACA", "#DC2626", 0),
-    "risk_alert": ("Risk alert", "#9A3412", "#FFEDD5", "#F97316", 1),
-    "trim": ("Trim", "#92400E", "#FEF3C7", "#F59E0B", 2),
-    "hold": ("Hold", "#075985", "#E0F2FE", "#38BDF8", 3),
+    "risky": ("Risky", "#9A3412", "#FFEDD5", "#F97316", 1),
+    "profit_sell": ("Profit sell", "#92400E", "#FEF3C7", "#F59E0B", 2),
+    "buy_more": ("Buy more", "#166534", "#DCFCE7", "#16A34A", 3),
+    "hold": ("Hold", "#075985", "#E0F2FE", "#38BDF8", 4),
 }
-NOT_EVALUATED = ("Not evaluated", "#475569", "#F1F5F9", "#CBD5E1", 4)
+NOT_EVALUATED = ("Not evaluated", "#475569", "#F1F5F9", "#CBD5E1", 5)
+# How a count of each reads, e.g. "2 urgent sells", "3 risky", "1 buy more"
+SIGNAL_PLURALS = {"Urgent sell": "urgent sells", "Risky": "risky", "Profit sell": "profit sells",
+                  "Buy more": "buy more", "Hold": "holds", "Not evaluated": "not evaluated"}
 SENTIMENTS = {"Bullish": ("#166534", "#DCFCE7"), "Bearish": ("#991B1B", "#FEE2E2"), "Neutral": ("#475569", "#F1F5F9")}
 PRIORITY_DOTS = {"HIGH": "#DC2626", "MEDIUM": "#F59E0B", "LOW": "#94A3B8"}
 CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£"}
@@ -97,8 +103,9 @@ LONG_TERM_SCORES = (  # (sub-score, label, maximum), as in LLM_rec_instr.py
     ("growth_momentum_score", "Growth momentum", 25), ("competitive_moat_score", "Competitive moat", 25),
 )
 SWING_SCORES = (
-    ("technical_setup_score", "Technical setup", 30), ("risk_reward_ratio_score", "Risk / reward", 30),
-    ("momentum_volume_score", "Momentum & volume", 20), ("catalyst_sentiment_score", "Catalysts & sentiment", 20),
+    # 2026-10-18: labels for the swing rubric's meaning (a pullback likely to bounce); the field names are unchanged
+    ("technical_setup_score", "Pullback setup", 30), ("risk_reward_ratio_score", "Risk / reward", 30),
+    ("momentum_volume_score", "Rebound signals", 20), ("catalyst_sentiment_score", "Catalysts & sentiment", 20),
 )
 SWING_EARNINGS_WARNING_DAYS = 14  # A swing pick reporting earnings this soon gets a visible warning
 
@@ -422,7 +429,8 @@ def _listing_note(holding: dict) -> list[str]:
 
 def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     first = lots[0]  # Price, signal, news, and indicators are the same for every lot of a stock
-    label, fg, bg, bar, order = SIGNALS.get(first.get("recommendation"), NOT_EVALUATED)
+    recommendation = current_recommendation(first.get("recommendation"))
+    label, fg, bg, bar, order = SIGNALS.get(recommendation, NOT_EVALUATED)
     value = sum(_num(lot.get("market_value")) or 0.0 for lot in lots)
     shares = sum(_num(lot.get("shares")) or 0.0 for lot in lots)
     gain, gain_pct = _unrealized(lots)
@@ -488,7 +496,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         "weight_pct": weight or 0.0,
         "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts + _listing_note(first)),
         "signal": _badge(label, fg, bg),
-        "signal_key": first.get("recommendation") if first.get("recommendation") in SIGNALS else None,
+        "signal_key": recommendation if recommendation in SIGNALS else None,
         "signal_bar": bar,
         "order": order,
         "sentiment": _sentiment_badge(first.get("sentiment")),
@@ -513,13 +521,18 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
 
 
 def _holding_cards(holdings: list[dict], day: str) -> list[dict]:
-    """Most urgent signal first (urgent sell, risk alert, trim, hold), then largest position."""
+    """Most urgent signal first (urgent sell, risky, profit sell, buy more, hold), then largest position."""
     cards = [_holding_card(symbol, lots, day) for symbol, lots in _lots_by_symbol(holdings).items()]
     return sorted(cards, key=lambda card: (card["order"], -card["weight_pct"]))
 
 
 def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _signal_count(count: int, label: str) -> str:
+    """e.g. '1 urgent sell', '2 urgent sells', '3 risky' (SIGNAL_PLURALS)."""
+    return f"{count} {label.lower() if count == 1 else SIGNAL_PLURALS.get(label, label.lower())}"
 
 
 def _holdings_note(cards: list[dict], holdings: list[dict], day: str) -> str:
@@ -539,15 +552,15 @@ def _part(text: str, tone: Optional[str] = None, dot: Optional[str] = None, pref
 
 
 def _signal_counts(cards: list[dict]) -> list[dict]:
-    """The holdings section's summary, e.g. '● 6 risk alerts · ● 4 holds', most urgent first."""
+    """The holdings section's summary, e.g. '● 6 risky · ● 4 holds', most urgent first."""
     counts: dict[str, list] = {}
     for card in cards:
-        counts.setdefault(card["signal"]["text"].lower(), [0, card["signal_bar"]])[0] += 1
-    return [_part(_plural(count, label) if label != "not evaluated" else f"{count} not evaluated", dot=color)
-            for label, (count, color) in counts.items()]
+        counts.setdefault(card["signal"]["text"], [0, card["signal_bar"]])[0] += 1
+    return [_part(_signal_count(count, label), dot=color) for label, (count, color) in counts.items()]
 
 
-FLAGGED_SIGNALS = ("urgent_sell", "risk_alert", "trim")
+FLAGGED_SIGNALS = ("urgent_sell", "risky", "profit_sell")  # The "Flagged" figure: reasons to sell or watch
+ATTENTION_SIGNALS = FLAGGED_SIGNALS + ("buy_more",)  # The "Needs attention" chips: anything to act on
 
 
 def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: tuple[int, int],
@@ -566,6 +579,7 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
     session = _session_date(holdings)
     flagged = [card for card in cards if card["signal_key"] in FLAGGED_SIGNALS]
     flagged_share = sum(card["weight_pct"] for card in flagged)
+    attention = [card for card in cards if card["signal_key"] in ATTENTION_SIGNALS]  # 2026-10-18: buy more too
     flagged_tone = ("neg" if any(card["signal_key"] == "urgent_sell" for card in flagged)
                     else "warn" if flagged else "pos")
     earnings = sorted(
@@ -585,11 +599,11 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
         "stats": [
             _stat("Unrealized", _signed_money(gain, 0), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
             _stat("Flagged", f"{len(flagged)} of {len(cards)}", flagged_tone,
-                  f"{flagged_share:.0f}% of value" if flagged else "all on hold"),
+                  f"{flagged_share:.0f}% of value" if flagged else "none flagged"),
             _stat("New ideas", str(long_n + swing_n), sub=f"{long_n} long · {swing_n} swing"),
         ],
         # Each chip and earnings entry carries its holding's anchor: tapping it in the AMP version opens that row
-        "attention": [card["signal"] | {"text": card["symbol"], "anchor": card["anchor"]} for card in flagged],
+        "attention": [card["signal"] | {"text": card["symbol"], "anchor": card["anchor"]} for card in attention],
         "earnings": [_badge(f"{symbol} {when}", INK, "#F1F5F9") | {"anchor": anchor}
                      for _, symbol, when, anchor in earnings],
     }
@@ -922,6 +936,7 @@ SCREENING_LABELS = {
     "scored": "Scored by AI",
     "long_term_score": "Long-term score {min_score}+",
     "swing_score": "Swing score {min_score}+",
+    "swing_early": "Still early in their run",
     "picked": "Picked",
 }
 
@@ -954,8 +969,8 @@ def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market:
     parts = []
     if portfolio:
         parts.append(f"Portfolio {portfolio['value']} {MONEY_CURRENCY} ({portfolio['change_pct']} {day})")
-    flagged = Counter(card["signal"]["text"] for card in cards if card["signal_key"] in ("urgent_sell", "risk_alert", "trim"))
-    parts += [f"{count} {label.lower()}{'s' if count > 1 and label != 'Trim' else ''}" for label, count in flagged.items()]
+    flagged = Counter(card["signal"]["text"] for card in cards if card["signal_key"] in ATTENTION_SIGNALS)
+    parts += [_signal_count(count, label) for label, count in flagged.items()]
     parts.append(f"{ideas} new idea{'s' if ideas != 1 else ''}")
     if market and market["rows"]:
         first = market["rows"][0]

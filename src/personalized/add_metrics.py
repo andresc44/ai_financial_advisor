@@ -10,6 +10,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   the close); the quote and news are refreshed when older than FRESH_CONTEXT_MAX_AGE_MINUTES.
 - 2026-10-15: cache decisions, fetching, and saving happen under shared_locks.MARKET_DATA_LOCK, because the
   digest and watchdog now run users in parallel threads that share the Finnhub / Twelve Data keys.
+- 2026-10-18: a cached context without `daily_bars` (saved before they were added) gets them from one Yahoo
+  download, instead of waiting for its next full fetch.
 See docs/watchdog.md.
 """
 import json
@@ -164,13 +166,19 @@ def add_metrics_to_holdings(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
             s for s in formatted_symbols
             if s not in needs_full and _parse_time(cache[s].get("fresh_fetched_at")) < fresh_cutoff
         ]
+        bar_days = int(params_dict.get("DAILY_BARS_DAYS") or 0)
+        needs_bars = [  # Claude-authored (2026-10-18)
+            s for s in formatted_symbols
+            if bar_days > 0 and s not in needs_full and "daily_bars" not in (cache[s].get("context") or {})
+        ]
         print(
             f"Market context for {len(formatted_symbols)} held symbols: {len(needs_full)} full fetch, "
             f"{len(needs_fresh)} quote/news refresh, "
             f"{len(formatted_symbols) - len(needs_full) - len(needs_fresh)} from cache"
+            + (f", {len(needs_bars)} getting daily bars" if needs_bars else "")
         )
 
-        if needs_full or needs_fresh:
+        if needs_full or needs_fresh or needs_bars:
             try:
                 fetcher = HoldingsDataFetcher(tickers=formatted_symbols)
             except ValueError as e:
@@ -190,6 +198,9 @@ def add_metrics_to_holdings(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
                 for symbol in needs_fresh:
                     cache[symbol]["context"] = _refresh_fresh_sections(fetcher, symbol, cache[symbol]["context"])
                     cache[symbol]["fresh_fetched_at"] = now_iso
+                bars = fetcher.recent_daily_bars(needs_bars, bar_days) if needs_bars else {}
+                for symbol in needs_bars:
+                    cache[symbol]["context"]["daily_bars"] = bars.get(symbol, [])
 
                 retention_cutoff = now - timedelta(days=WATCHDOG_PARAMS["CONTEXT_CACHE_RETENTION_DAYS"])
                 cache = {

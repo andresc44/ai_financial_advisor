@@ -37,10 +37,12 @@ def evaluation(long_scores, swing_scores, levels):
     }
 
 
+# The swing risk/reward sub-score (second) is recomputed from each plan (plan_risk_reward_score, 2026-10-18)
 EVALUATIONS = {
     "AAA": evaluation((22, 21, 20, 20), (20, 20, 15, 15), (200, 190, 220)),   # Long 83: the long-term pick
-    "BBB": evaluation((10, 10, 15, 15), (26, 25, 17, 17), (100, 104, 120)),   # Swing 85, stop above entry
-    "CCC": evaluation((12, 12, 12, 12), (25, 24, 16, 16), (100, 95, 112.5)),  # Swing 81
+    "BBB": evaluation((10, 10, 15, 15), (26, 25, 17, 17), (100, 104, 120)),   # Stop above entry: risk/reward 0, swing 60
+    "CCC": evaluation((12, 12, 12, 12), (25, 24, 16, 16), (100, 96, 116)),    # 4:1 plan: risk/reward 28.8, swing 85.8
+    "DDD": evaluation((10, 10, 10, 10), (24, 24, 16, 16), (50, 48, 58)),      # 4:1 plan: swing 84.8
 }
 
 
@@ -71,11 +73,40 @@ def test_picks_carry_claudes_reasoning_and_sane_levels(claude_scores):
     assert long_pick["sub_scores"] == {"valuation_score": 22, "financial_health_score": 21,
                                        "growth_momentum_score": 20, "competitive_moat_score": 20}
 
-    assert [p["ticker"] for p in picks["top_swing"]] == ["BBB", "CCC"]  # AAA is already the long-term pick
-    bad, good = picks["top_swing"]
-    assert bad["sentiment"] == "Neutral" and bad["thesis"]
+    # AAA is already the long-term pick; BBB's model scores added up to 85, but its plan has the stop above the entry
+    assert [p["ticker"] for p in picks["top_swing"]] == ["CCC", "DDD"]
+    good = picks["top_swing"][0]
+    assert good["sentiment"] == "Neutral" and good["thesis"]
+    assert good["swingScore"] == 85.8 and good["sub_scores"]["risk_reward_ratio_score"] == 28.8  # Not the model's 24
+    assert (good["entry_price"], good["stop_loss"], good["price_target"], good["risk_reward"]) == (100, 96, 116, 4.0)
+    from src.universal.recommendations.scorer import swing_reasoning
+
+    bad = swing_reasoning("BBB", {"sub_scores": EVALUATIONS["BBB"]})
     assert (bad["entry_price"], bad["stop_loss"], bad["price_target"], bad["risk_reward"]) == (None,) * 4
-    assert (good["entry_price"], good["stop_loss"], good["price_target"], good["risk_reward"]) == (100, 95, 112.5, 2.5)
+
+
+def test_risk_reward_is_scored_from_the_plan_by_the_rubric_bands():
+    from src.universal.recommendations.LLM_recommendation import plan_risk_reward_score as score
+
+    # Top band from 2.5:1 (3:1 until 2026-10-18)
+    assert [score(100, 95, 100 + 5 * ratio) for ratio in (0.5, 1, 1.5, 2, 2.5, 3.5, 4.5, 8)] == [
+        0.0, 5.5, 12.0, 18.0, 25.0, 27.5, 30.0, 30.0]
+    assert score(100, 104, 120) == 0.0 and score(100, 95, 99) == 0.0 and score(None, 95, 110) == 0.0  # Inconsistent
+    assert score(100, 99.9, 102.5) == score(100, 99, 102.5) == 25.0  # A stop under 1% away counts as 1%: 2.5:1
+    # A stop tighter than a normal day's range counts as one ATR away: APH on 2026-10-16, still falling, with its stop
+    # 1.1 under the entry, scores the full 30 (5.5:1); with its ~2.4 ATR it is 2.1:1
+    assert score(79.4, 78.3, 84.5) == 30.0 and score(79.4, 78.3, 84.5, atr=2.4) == 19.5
+    assert score(100, 90, 125, atr=2.0) == 25.0  # A stop wider than the ATR is used as it is: 2.5:1
+
+
+def test_daily_atr_is_a_normal_days_range():
+    from src.universal.recommendations.LLM_recommendation import daily_atr
+
+    bars = [{"high": 11.0, "low": 10.0, "close": 10.5}] * 6  # Newest first; each day's range is 1
+    assert daily_atr(bars) == 1.0
+    gap = [{"high": 13.0, "low": 12.5, "close": 12.8}] + bars  # Gapped up from 10.5: true range 13 - 10.5 = 2.5
+    assert daily_atr(gap) == (2.5 + 5 * 1.0) / 6
+    assert daily_atr(bars[:3]) is None and daily_atr(None) is None  # Too few bars
 
 
 def test_tool_schema_asks_for_the_written_fields():
@@ -313,11 +344,11 @@ def test_scorer_reports_how_many_were_scored_and_cleared_each_bar(claude_scores)
     stats = {}
     select_top_candidates({symbol: {"symbol": symbol} for symbol in EVALUATIONS}, long_n=2, swing_n=1,
                           min_long_score=80, min_swing_score=80, stats=stats)
-    # AAA is long 83 / swing 70, BBB swing 85, CCC swing 81: both swing setups count, though only one is picked
-    assert stats == {"sent": 3, "scored": 3, "long_qualified": 1, "swing_qualified": 2}
+    # AAA is long 83, CCC and DDD swing 85.8 and 84.8 (BBB 60): both swing setups count, though only one is picked
+    assert stats == {"sent": 4, "scored": 4, "long_qualified": 1, "swing_qualified": 2, "swing_early": 2}
     empty = {}
     select_top_candidates({}, stats=empty)
-    assert empty == {"sent": 0, "scored": 0, "long_qualified": 0, "swing_qualified": 0}
+    assert empty == {"sent": 0, "scored": 0, "long_qualified": 0, "swing_qualified": 0, "swing_early": 0}
 
 
 def test_filter_all_records_how_many_each_stage_kept():
@@ -441,3 +472,97 @@ def test_configured_sector_rules_are_known():
 
     assert set(params_dict["PICK_SECTOR_RULES"]) == {"LONG_TERM", "SWING"}
     assert all(rule in SECTOR_RULES for rule in params_dict["PICK_SECTOR_RULES"].values())
+
+
+# --------------------------------------------------------------------------------------------- daily bars
+def bars_frame(days, start=100.0):
+    index = pd.bdate_range("2026-09-01", periods=days)
+    closes = [start + i for i in range(days)]
+    return pd.DataFrame({"Open": [c - 0.5 for c in closes], "High": [c + 1 for c in closes],
+                         "Low": [c - 1 for c in closes], "Close": closes, "Volume": [1000.0 + i for i in range(days)]},
+                        index=index)
+
+
+def fetcher_with_bars(cache):
+    fetcher = filter_tickers.DataFetcher.__new__(filter_tickers.DataFetcher)
+    fetcher._daily_bars_cache = cache
+    return fetcher
+
+
+def test_recent_daily_bars_are_the_last_n_newest_first():
+    penny = bars_frame(25)
+    penny[["Open", "High", "Low", "Close"]] /= 1000.123  # A stock under $1, e.g. 0.12398
+    fetcher = fetcher_with_bars({"AAA": bars_frame(30), "PENNY": penny, "SPY": bars_frame(30), "GONE": None})
+    bars = fetcher.recent_daily_bars(["AAA", "PENNY", "GONE"], 21)
+    assert len(bars["AAA"]) == 21 and bars["AAA"][0] == {
+        "date": "2026-10-12", "open": 128.5, "high": 130.0, "low": 128.0, "close": 129.0, "volume": 1029}
+    assert bars["AAA"][-1]["date"] == "2026-09-14" and bars["AAA"][-1]["close"] == 109.0  # 21 trading days back
+    assert bars["PENNY"][0]["close"] == round(124 / 1000.123, 4) == 0.124  # Under $1: 4 decimals
+    assert bars["PENNY"][-1]["close"] == round(104 / 1000.123, 4) == 0.104
+    assert bars["GONE"] == []  # No prices from Yahoo
+    assert fetcher.recent_daily_bars(["AAA"], 0) == {}  # DAILY_BARS_DAYS = 0 leaves them out
+
+
+def test_daily_bars_reach_the_llm_input(monkeypatch):
+    from src.universal.recommendations.sanitizer import sanitize_ticker_payload
+
+    fetcher = fetcher_with_bars({"AAA": bars_frame(30), "SPY": bars_frame(30)})
+    fetcher.fetch_all = lambda tickers: {t: {"yahoo": {"currentPrice": 129.0}, "finnhub": {}, "twelvedata": {}} for t in tickers}
+    fetcher.fetch_all_news = lambda tickers: {}
+    fetcher.fetch_series_data = lambda tickers: {}
+    monkeypatch.setitem(filter_tickers.params_dict, "DAILY_BARS_DAYS", 5)
+    packet = fetcher.congregate_LLM_input_data(["AAA"])["AAA"]
+    assert [bar["date"] for bar in packet["daily_bars"]] == ["2026-10-12", "2026-10-09", "2026-10-08", "2026-10-07",
+                                                              "2026-10-06"]  # Newest first, weekend skipped
+    sanitized = sanitize_ticker_payload("AAA", packet)
+    assert sanitized["daily_bars"] == packet["daily_bars"]
+    assert sanitize_ticker_payload("BBB", {"yahoo": {}})["daily_bars"] == []  # Older cached packets have none
+
+
+def test_daily_bars_setting():
+    from src.parameters import params_dict
+
+    assert params_dict["DAILY_BARS_DAYS"] == 21
+
+
+# --------------------------------------------------------------------------------------------- early entries only
+def run_context(lows, last_close, rsi=55.0, upper=None):
+    """A context whose 10 newest bars have these lows (newest first) and a normal daily range of 1.0."""
+    bars = [{"date": f"2026-10-{16 - i:02d}", "open": low + 0.5, "high": low + 1.0, "low": low, "close": low + 0.5}
+            for i, low in enumerate(lows)]
+    bars[0]["close"] = last_close
+    bars[0]["high"] = max(bars[0]["high"], last_close)
+    indicators = {"rsi_14_1day": [{"rsi": rsi}]}
+    if upper is not None:
+        indicators["bbands_20_1day"] = [{"upper_band": upper, "middle_band": upper - 5, "lower_band": upper - 10}]
+    return {"daily_bars": bars, "technical_indicators": indicators}
+
+
+def test_a_stock_too_far_along_its_run_is_named():
+    from src.universal.recommendations.scorer import too_far_along
+
+    flat = [100.0] * 12  # Lows of 100, ranges of about 1
+    assert too_far_along(run_context(flat, 101.5)) is None  # 1.5 ranges off the low: still early
+    assert too_far_along(run_context(flat, 105.0)).startswith("up 3.7 days")  # The jump day widens the ATR too
+    assert too_far_along(run_context(flat, 101.0, rsi=74)) == "RSI 74"
+    assert too_far_along(run_context(flat, 101.0, upper=100.8)) == "above its upper Bollinger Band"
+    assert too_far_along({}) is None and too_far_along(None) is None  # Missing data proves nothing
+
+
+def test_swing_picks_already_far_along_are_left_out(monkeypatch):
+    import src.universal.recommendations.scorer as scorer
+
+    scores = {"EARLY": (60, 85), "JUMPED": (60, 90), "HOT": (60, 88)}
+    monkeypatch.setattr(scorer, "run_llm_evaluation", lambda sanitized_inputs, config=None, issues=None: {
+        t: {"longScore": long, "swingScore": swing, "sub_scores": {}} for t, (long, swing) in scores.items()})
+    flat = [100.0] * 12
+    inputs = {"EARLY": run_context(flat, 101.5), "JUMPED": run_context(flat, 106.0), "HOT": run_context(flat, 101.0, rsi=78)}
+    stats = {}
+    picks = scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80, min_swing_score=80, stats=stats)
+    assert [p["ticker"] for p in picks["top_swing"]] == ["EARLY"]  # The two higher scores had already run
+    assert (stats["swing_qualified"], stats["swing_early"]) == (3, 1)
+    fetcher = SimpleNamespace(stage_counts={}, ticker_file=None)
+    stages = {s["stage"]: s["count"] for s in universal.screening_counts(fetcher, stats, picks)["stages"]}
+    assert (stages["swing_score"], stages["swing_early"]) == (3, 1)
+    stats.update(swing_qualified=0, swing_early=0)  # No 80+ swing: no "still early" row
+    assert "swing_early" not in {s["stage"] for s in universal.screening_counts(fetcher, stats, picks)["stages"]}

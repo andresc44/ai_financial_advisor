@@ -2,6 +2,20 @@
 
 The watchdog re-evaluates each user's holdings on that user's own schedule and sends a Telegram alert when Claude recommends `urgent_sell`. Each user also picks which Claude model and effort level evaluates their holdings.
 
+**Holdings signals** (changed 2026-10-18; `src/personalized/LLM_hold_instr.py`):
+
+| Signal | Meaning |
+|---|---|
+| `buy_more` | The stock is rebounding: it has pulled back, looks cheap, and the data suggests it will go back up, so now is a good time to add. Not for a stock that has already run for weeks, or one still falling with no floor. |
+| `hold` | Healthy. Give it time to reach its next swing peak before selling. |
+| `risky` | Something looks suspicious and needs close watching. Selling to be safe may make sense, but now isn't necessarily a good time to sell. |
+| `profit_sell` | It has risen recently, but the indicators say the run may turn down soon: an opportunistic time to sell. |
+| `urgent_sell` | Unchanged: a specific, time-sensitive problem. The only signal that sends a Telegram alert. |
+
+They replace `hold` / `trim` / `risk_alert` / `urgent_sell`. Labels saved before the change are read as today's (`risk_alert` as `risky`, `trim` as `profit_sell`), so the watchdog state, reused evaluations, and older payloads keep working. The track record keeps each label as it was given.
+
+In the email, Buy more is green and comes after the sell-side signals. It gets a "Needs attention" chip, but isn't counted as Flagged, which means a reason to sell or watch.
+
 > **Authorship:** this feature was designed with and written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-13, at Andres's request. [Authorship](#authorship) lists every file Claude wrote or changed and why. In code, Claude's work is marked with an `Authorship:` docstring (new files) or a `Claude-authored (2026-10-13)` comment (changes to existing files), so `grep -rn "Claude-authored\|Authorship:" src/` finds all of it.
 
 ## How one run works
@@ -123,6 +137,11 @@ Thinking adds output tokens.
 
 Since then `LLM["UNIVERSAL"]` is `deepseek-flash` (effort `none`), and so is Andres's `ANDRES_HOLDINGS_LLM_MODEL`.
 
+**Setting the scoring model in `.env`.** `UNIVERSAL_LLM_MODEL` and `UNIVERSAL_LLM_EFFORT` override `LLM["UNIVERSAL"]`, so each machine can choose without editing `parameters.py`:
+- **Model:** any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS`. A model that isn't allowed is ignored with a warning, and `parameters.py` is used.
+- **Effort:** if it's unset or the model doesn't accept it, the effort is `parameters.py`'s when that's the same model, and otherwise the provider's default (`none` for DeepSeek).
+- **Checking:** `python -m src.check_config` shows the model in use, and reports a set but unusable value as INVALID.
+
 **Misshapen answers** (`validated_answer` in `src/deepseek_client.py`, added 2026-10-17). Without thinking, `deepseek-flash` sometimes breaks the schema's shape: in that run it nested the swing section inside `long_term` (4 stocks) or added keys like `valuation_score_note` (2), and those stocks were never scored.
 - **Repair:** `repair_arguments` moves a section back beside its sibling and drops keys the schema doesn't allow, using the tool's schema. It never changes values, so an out-of-range score still fails validation. Each fix is logged as a warning, e.g. "Fixed the answer's shape: moved long_term.swing to swing".
 - **One retry:** an answer that is missing, not JSON, or still invalid is asked for once more (`INVALID_ANSWER_RETRIES`). One cut off at `max_tokens` or withheld by the content filter isn't, since it would fail the same way. Both answers are billed.
@@ -137,11 +156,6 @@ A broken holdings source used to look exactly like an empty portfolio. Now each 
 | Source | Reasons |
 |---|---|
 | SnapTrade | `api_error` (unreachable or keys rejected), `no_accounts`, `connection_disabled` (the brokerage needs the user to log in again through SnapTrade), `positions_error` (one account's positions failed), `stale_sync` (holdings not synced for `HOLDINGS.STALE_SYNC_HOURS`, default 96) |
-**Setting the scoring model in `.env`.** `UNIVERSAL_LLM_MODEL` and `UNIVERSAL_LLM_EFFORT` override `LLM["UNIVERSAL"]`, so each machine can choose without editing `parameters.py`:
-- **Model:** any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS`. A model that isn't allowed is ignored with a warning, and `parameters.py` is used.
-- **Effort:** if it's unset or the model doesn't accept it, the effort is `parameters.py`'s when that's the same model, and otherwise the provider's default (`none` for DeepSeek).
-- **Checking:** `python -m src.check_config` shows the model in use, and reports a set but unusable value as INVALID.
-
 | Google Sheets | `sheet_unavailable` (wrong ID or not shared with the service account), `sheet_empty`, `sheet_invalid` (missing `symbol`, `shares_qty`, or `avg_purchase_price`) |
 
 Holdings that could still be read are evaluated as usual.
@@ -330,9 +344,9 @@ It is built for a phone first: one column up to 600 px wide.
 | Level | What's shown while collapsed | Inside |
 |---|---|---|
 | Always open | Header, notices, overview card | – |
-| 1. Section card | A coloured icon, the title and a count, and a coloured one-line summary, e.g. "Your holdings 10 · ● 6 risk alerts · ● 4 holds". The arrow is on the right, as in mobile apps. A section with nothing in it is a plain card saying why, e.g. "No setups scored 80+ today". | The section's key figures and its rows |
+| 1. Section card | A coloured icon, the title and a count, and a coloured one-line summary, e.g. "Your holdings 10 · ● 6 risky · ● 4 holds". The arrow is on the right, as in mobile apps. A section with nothing in it is a plain card saying why, e.g. "No setups scored 80+ today". | The section's key figures and its rows |
 | 2. Row | **Holdings and ideas:** ticker, signal or score (green from 90), value, weight and day change<br>**Portfolio risk:** each review note's short title<br>**Markets & macro:** each story's headline | **Stock:** figures (a 2×2 grid), catalysts, its chart, the smaller dropdowns, and Yahoo/Finviz/TradingView buttons<br>**Note:** its full text<br>**Story:** why it matters, and a source button |
-| 3. Small dropdown | "Why risk alert" (the reasoning, named after the signal), News, All indicators, extra figures, About this digest | The content |
+| 3. Small dropdown | "Why risky" (the reasoning, named after the signal), News, All indicators, extra figures, About this digest | The content |
 
 - **Starting state:** everything starts collapsed. List any of `"risk"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
 - **Note titles:** Gemini's portfolio review now writes a 3–8 word title for each note. Payloads saved before 2026-10-17 use the note's first clause instead.
@@ -413,7 +427,7 @@ venv/bin/python -m src.track_record                 # all recommendations
 venv/bin/python -m src.track_record --since 2026-11-01
 ```
 
-It prints, per recommendation (hold / trim / risk_alert / urgent_sell) and per universal list (long_term / swing): how many, the average return 1, 5, and 20 trading days later, the share that went up, the average return minus SPY's over the same days, and how many are still pending. A good `urgent_sell` record shows negative returns; a good `long_term` list beats SPY.
+It prints, per recommendation (buy_more / hold / risky / profit_sell / urgent_sell; older rows keep hold / trim / risk_alert) and per universal list (long_term / swing): how many, the average return 1, 5, and 20 trading days later, the share that went up, the average return minus SPY's over the same days, and how many are still pending. A good `urgent_sell` record shows negative returns; a good `long_term` list beats SPY.
 
 ### Logs and failure alerts
 
@@ -455,6 +469,13 @@ The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and T
 - **Covered:** rsi, ema, sma, bbands, sar, adx, and atr, on daily or weekly bars. They are computed from unadjusted bars with TA-Lib's conventions. Checked against Twelve Data, they matched to within 0.0001% (`tests/test_local_indicators.py` replays it on saved AAPL data).
 - **beta:** market beta against SPY.
 - **Everything else** (another indicator, an intraday interval, an option like `ma_type`) still goes to Twelve Data. Set the source to `"twelvedata"` to send everything there.
+
+**Daily bars** (`DAILY_BARS_DAYS`, default 21, added 2026-10-18): each stock's LLM input, for new-stock scoring and holdings alike, includes its last 21 daily bars as `daily_bars`: date, open, high, low, close, and volume, newest first, unadjusted like the indicators.
+- **Why:** the indicators only summarize the price path. The bars let the model see pullbacks into support, higher lows, bounces, gaps, and whether volume is heavier on up or down days, which the swing rubric's rebound signals and the holdings' buy-more check ask for.
+- **Source:** the same Yahoo download as the indicators, so no extra calls. The newest bar can be a session still in progress.
+- **Cost:** about 0.9K input tokens per stock, ~33K a run for 37 candidates: about $0.01 on `deepseek-flash`, $0.07 on `claude-sonnet-5-5`.
+- **Holdings cache:** cached holdings contexts get bars at their next full fetch, after the next market open or close.
+- **Turning them off:** set `DAILY_BARS_DAYS` to `0`.
 | More than `UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT` (20%) of tickers missing Yahoo, Finnhub, or Twelve Data data | Picks are still made, but flagged. |
 
 Each problem is added to the universal payload's `universal_issues` (`{"source", "reason", "message"}`), so the email can say why picks are missing or based on partial data. Each is also sent to `OPS.ALERT_USERS` by Telegram, once per cooldown. The macro news (`src/universal/market_news.get_macro_stories`, still disabled) works the same way with the shared `GEMINI_API_KEY`: on failure it returns no stories plus the issue, and never raises.
@@ -471,6 +492,14 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
 
 - **Swing levels:** the levels are only kept when they're consistent (0 < stop < entry < target). Otherwise all four are `null` and the log says why. `risk_reward` is the upside to the target per unit of risk to the stop, e.g. `2.5` for 2.5:1.
 - **Thresholds:** a stock needs a total of at least `MIN_LONG_SCORE` / `MIN_SWING_SCORE` (80 out of 100) to be picked, so some days have fewer picks than `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT`, or none.
+- **Swing rubric** (rewritten 2026-10-18, `src/universal/recommendations/LLM_rec_instr.py`): a good swing trade buys a stock while it is temporarily cheap and likely to go back up within 2-8 weeks, i.e. a pullback to support in an intact trend where the selling is running out, not one that has already risen for weeks. The four parts:
+  - **Pullback setup** (`technical_setup_score`, 30): high at support in an intact longer trend; low when stretched after a run or breaking down with no support.
+  - **Risk / reward** (`risk_reward_ratio_score`, 30): scored from the model's own entry, stop, and target. The stop goes just below the support the trade relies on, and the target is where the rebound should reach. Bands: below 1.5:1 scores 0-11, 1.5:1 to 2.5:1 scores 12-24, 2.5:1 and up 25-30 (top band from 2.5:1 since 2026-10-18; it was 3:1). A stop closer than a normal day's range (the 14-day average true range from the daily bars, and at least 1% of the price) is counted as that far, so a tight stop on a falling stock can't inflate the score.
+  - **Rebound signals** (`momentum_volume_score`, 20): RSI turning up from 30-45, the price holding or reclaiming support, the Parabolic SAR flipping below the price, and volume on up days. RSI above ~70 after a run scores low.
+  - **Catalysts & sentiment** (`catalyst_sentiment_score`, 20): whether the drop looks temporary and something can lift the price soon.
+
+  The field names are unchanged, so older payloads and the track record still read. The old bands described three setups that rarely happen together (breakout, at support, bouncing from oversold), and never scored the model's own levels.
+- **Early entries only** (`SWING_EARLY_ENTRY`, added 2026-10-18): a swing pick must still be early in its move. A stock that scores 80+ is left out if it is more than 3 normal days' ranges (14-day ATR) above its 10-day low, has an RSI above 70, or closes above its upper Bollinger Band (`scorer.too_far_along`; the log says which). The check only removes picks, so a day with no good early setup has no swing picks. Calibrated on 2026-10-16's 97 candidates: stocks just turning up near support were 0.9-1.9 ranges above their 10-day low, and 26 of 97 were more than 3, including TRU (up 20% in 10 days), which the model had scored as the best swing setup. The screening counts show "Still early in their run" under "Swing score 80+".
 - **Sector mix** (`PICK_SECTOR_RULES`, added 2026-10-17): the two long-term picks are from different sectors (`all_different`), and more than half the swing picks are from different sectors (`majority_different`: distinct sectors > picks / 2, e.g. 3 sectors among 5 picks), by Yahoo's sector. A stock the rule leaves out makes room for the next best that fits and clears the bar, so a list can come up short; the log names each stock left out. A stock without a sector counts as its own. `"any"` turns a rule off.
 - **Track record:** it also keeps each pick's sentiment and swing levels, for checking later whether they held up.
 
@@ -538,7 +567,7 @@ Everything below was written by Claude (Claude Opus 5.5 via Claude Code) on 2026
 | `src/personalized/user_settings.py` (new) | Reads, validates and defaults per-user settings | One place that turns `.env` values into settings, so a typo can't crash the run or send an invalid API request. |
 | `src/personalized/holdings_state.py` (new) | `data/watchdog_state.json` storage | The memory needed to evaluate "only when needed", shared by the watchdog and the digest. |
 | `src/personalized/add_metrics.py` | Whole file: market context for holdings, plus the daily cache | Gives the sell-side LLM the same evidence as the buy-side LLM, and keeps API use bounded at higher check frequencies. |
-| `src/personalized/recommendation.py` | Whole file: Claude hold/trim/risk_alert/urgent_sell evaluation, per-user model and effort, session context, refusal fallbacks, state recording | Replaced placeholder rules that referenced non-existent columns. |
+| `src/personalized/recommendation.py` | Whole file: Claude buy_more/hold/risky/profit_sell/urgent_sell evaluation (hold/trim/risk_alert/urgent_sell before 2026-10-18), per-user model and effort, session context, refusal fallbacks, state recording | Replaced placeholder rules that referenced non-existent columns. |
 | `src/personalized/LLM_hold_instr.py` | Whole file: prompt and rubric | Keeps the sell-side prompt separate from the code, mirroring `LLM_rec_instr.py`. |
 | `src/telegram_alert/hourly_watchdog.py` | Everything below the `Claude-authored` banner, plus `--dry-run` / `--now`. `load_and_prune_alert_logs` and `is_alert_suppressed` are Andres's originals, unchanged. | Per-user scheduling and gates, plus fixes: alerts were sent before the cooldown check, the duplicate key could never match, and one user's failure stopped the loop. |
 | `src/personalized/pull_holdings_data.py` | `src.*` imports, `user_name` / `claude_overrides` in `__init__`, session-price methods, `symbols` parameter on `get_holdings_digest_payload`, guard for a missing `GOOGLE_APPLICATION_CREDENTIALS` | Needed by the watchdog. The guard fixes a `TypeError` crash. |

@@ -636,6 +636,35 @@ class DataFetcher:
 
         return series_payload
 
+    def recent_daily_bars(self, symbols: List[str], days: int) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Claude-authored (2026-10-18): {symbol: the last `days` daily bars, newest first, as {"date", "open", "high",
+        "low", "close", "volume"}}, from this run's Yahoo download (_daily_bars, shared with the indicators).
+        Unadjusted, like the indicators. Prices keep cents (4 decimals under $1). A symbol without prices gets [].
+        """
+        if days <= 0 or not symbols:
+            return {}
+        cache = self._daily_bars(symbols)
+
+        def price(value: Any) -> Optional[float]:
+            if value is None or pd.isna(value):
+                return None
+            return round(float(value), 2 if abs(float(value)) >= 1 else 4)
+
+        bars: Dict[str, List[Dict[str, Any]]] = {}
+        for symbol in symbols:
+            frame = cache.get(symbol)
+            if frame is None or frame.empty:
+                bars[symbol] = []
+                continue
+            bars[symbol] = [
+                {"date": when.strftime("%Y-%m-%d"), "open": price(bar["Open"]), "high": price(bar["High"]),
+                 "low": price(bar["Low"]), "close": price(bar["Close"]),
+                 "volume": None if pd.isna(bar["Volume"]) else int(bar["Volume"])}
+                for when, bar in frame.tail(days).iloc[::-1].iterrows()
+            ]
+        return bars
+
     def congregate_LLM_input_data(
         self,
         tickers: Optional[List[str]] = None,
@@ -661,6 +690,9 @@ class DataFetcher:
             f"✓ Successfully fetched series data for {len(series_data)} tickers."
         )
 
+        # Claude-authored (2026-10-18): the last DAILY_BARS_DAYS daily bars per stock
+        daily_bars = self.recent_daily_bars(tickers, int(params_dict.get("DAILY_BARS_DAYS") or 0))
+
         llm_payload: Dict[str, Dict[str, Any]] = {}
 
         for symbol in tickers:
@@ -685,6 +717,7 @@ class DataFetcher:
                 "finnhub": finnhub_payload,
                 "twelvedata": symbol_market.get("twelvedata", {}),
                 "news": news_payload,
+                "daily_bars": daily_bars.get(symbol, []),
             }
             print(
                 f"✓ Aggregated LLM payload for {symbol}: {len(news_payload)} news articles"

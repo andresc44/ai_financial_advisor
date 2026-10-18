@@ -1,4 +1,4 @@
-# File to have Claude evaluate each held position and attach a hold / trim / risk_alert / urgent_sell recommendation.
+# File to have Claude evaluate each held position and attach a buy_more / hold / risky / profit_sell / urgent_sell recommendation.
 """
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's request.
 - 2026-10-13: replaced the placeholder rule-based logic with a Claude evaluation modelled on
@@ -92,7 +92,7 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 class HoldingEvaluation(BaseModel):
     model_config = ConfigDict(extra="forbid")  # Emits additionalProperties: false, required for strict tool use
 
-    recommendation: Literal["hold", "trim", "risk_alert", "urgent_sell"] = Field(
+    recommendation: Literal["buy_more", "hold", "risky", "profit_sell", "urgent_sell"] = Field(  # 2026-10-18
         ..., description=RECOMMENDATION_DESCRIPTION
     )
     sentiment: Literal["Bullish", "Neutral", "Bearish"] = Field(..., description=SENTIMENT_DESCRIPTION)
@@ -344,7 +344,7 @@ def add_recommendations(
     self, holdings_df: pd.DataFrame, reuse_recent_evaluations: bool = False
 ) -> pd.DataFrame:
     """
-    Uses Claude to add a 'recommendation' (hold / trim / risk_alert / urgent_sell), a 'sentiment'
+    Uses Claude to add a 'recommendation' (buy_more / hold / risky / profit_sell / urgent_sell), a 'sentiment'
     (Bullish / Neutral / Bearish), and a 'recommendation_rationale' to each holding, based on the position
     data and the 'market_context' column added by add_metrics_to_holdings. Uses the user's model/effort
     (self.llm_settings: Claude or DeepSeek) with their own key for it, and records results in the watchdog state file.
