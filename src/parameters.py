@@ -42,6 +42,10 @@ params_dict = {
     # Claude-authored (2026-10-16): stages 2 and 3, rewritten to send roughly 30-50 candidates to Claude: profitable,
     # growing, reasonably valued companies that analysts favour. Calibrated against that day's live data with the
     # stage 1 settings above: 595 tickers -> 83 after Yahoo -> 38 after Finnhub (37 companies; GOOG/GOOGL count once).
+    # 2026-10-18: loosened a step at Andres's request, to send ~100 to the LLM. Calibrated on that day's data (635 ->
+    # 86 -> 38 with the old values): 635 -> 183 after Yahoo -> 98 after Finnhub. The old value is noted on each
+    # changed rule. More candidates also mean a longer run (the Finnhub stage is 4 calls per Yahoo survivor) and
+    # ~2.5x the LLM cost of scoring them.
     # Counts move with markets and earnings seasons; each run's log shows how many tickers each stage kept.
     # Why the split: Yahoo is free and fetched YAHOO_FETCH_CONCURRENCY tickers at a time, so it does most of the
     # narrowing. Finnhub's free plan allows 60 calls a minute and costs 4 calls per ticker (~4 s each), so it only
@@ -52,23 +56,23 @@ params_dict = {
     #Stage 2 Yahoo Filter Parameters
     "YAHOO_FILTERS": [ #["<", "<=", ">", ">=", "==", "=", "!="]
         ("averageVolume", ">=", 1_000_000),     # 3-month average daily volume (shares): liquid on most days, not just one
-        ("numberOfAnalystOpinions", ">=", 10),  # Enough coverage for the consensus below to mean something
-        ("recommendationMean", "<=", 2.2),      # Analyst consensus, 1 = Strong Buy ... 3 = Hold ... 5 = Sell
+        ("numberOfAnalystOpinions", ">=", 8),   # Enough coverage for the consensus below to mean something (was 10)
+        ("recommendationMean", "<=", 2.4),      # Analyst consensus, 1 = Strong Buy ... 3 = Hold ... 5 = Sell (was 2.2)
         ("forwardPE", ">", 0),                  # Expected to be profitable over the next 12 months
-        ("forwardPE", "<=", 30),                # Not priced for perfection
-        ("profitMargins", ">=", 0.10),          # Net margin, a fraction: >= 10%
-        ("revenueGrowth", ">=", 0.08),          # Latest quarter's revenue vs a year earlier, a fraction: >= 8%
-        ("returnOnEquity", ">=", 0.18),         # A fraction: >= 18%. Missing for negative-equity companies, which drop out
+        ("forwardPE", "<=", 35),                # Not priced for perfection (was 30)
+        ("profitMargins", ">=", 0.07),          # Net margin, a fraction: >= 7% (was 10%)
+        ("revenueGrowth", ">=", 0.05),          # Latest quarter's revenue vs a year earlier, a fraction: >= 5% (was 8%)
+        ("returnOnEquity", ">=", 0.12),         # A fraction: >= 12% (was 18%). Missing for negative-equity companies, which drop out
         # Other fields the stage can use: trailingPE, pegRatio, earningsGrowth, debtToEquity (a percentage, missing for
         # banks), freeCashflow, dividendYield, beta, marketCap (dollars)
     ],
     #Stage 3 Finnhub Filter Parameters: (section, field, operator, threshold); percentages are in percent
     "FINNHUB_FILTERS": [
-        ("basic_financials", "revenueGrowthTTMYoy", ">=", 12),            # TTM revenue growth >= 12%: sustained, not one quarter
+        ("basic_financials", "revenueGrowthTTMYoy", ">=", 9),             # TTM revenue growth >= 9% (was 12%): sustained, not one quarter
         ("basic_financials", "epsGrowthTTMYoy", ">", 0),                   # TTM earnings per share growing
-        ("basic_financials", "totalDebt/totalEquityQuarterly", "<=", 1.5), # Debt-to-equity as a ratio (1.5 = 150%)
+        ("basic_financials", "totalDebt/totalEquityQuarterly", "<=", 1.75), # Debt-to-equity as a ratio, 1.75 = 175% (was 1.5)
         ("basic_financials", "peTTM", ">", 0),                             # Profitable over the last 12 months
-        ("basic_financials", "peTTM", "<=", 60),                           # Trailing valuation sanity check
+        ("basic_financials", "peTTM", "<=", 65),                           # Trailing valuation sanity check (was 60)
         # Other fields: netProfitMarginTTM, roeTTM, currentRatioQuarterly, 52WeekPriceReturnDaily, beta (all in
         # basic_financials), and ("profile", "marketCapitalization", ...) in millions
     ],
