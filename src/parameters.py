@@ -22,6 +22,9 @@ params_dict = {
 
     # API Settings
     "FINNHUB_RATE_LIMIT_SLEEP": 0.05,
+    # Claude-authored (2026-10-18): Finnhub calls are paced to this many a minute (data_source_guard.FinnhubPacer).
+    # 60 is the free plan's limit (Finnhub's X-Ratelimit-Limit header). Raise it with a paid plan.
+    "FINNHUB_CALLS_PER_MINUTE": 60,
     # Stage 1 Ticker Filter Parameters
     "MKTCAP_MIN": 10000.0,  # Minimum market cap in Millions USD
     "MKTCAP_MAX": None,  # Maximum market cap in Millions USD

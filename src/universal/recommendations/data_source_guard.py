@@ -11,16 +11,32 @@ allowance, or a revoked key quietly produced recommendations scored on partial d
 - missing_data_issues flags any source missing for more than UNIVERSAL_DATA_QUALITY.MAX_MISSING_PCT of tickers.
 Every problem is recorded once in DataSourceIssues; the universal content reports them to the admins and puts
 them in the digest payload (universal_issues).
+
+2026-10-18: Finnhub calls are paced to FINNHUB_CALLS_PER_MINUTE (FinnhubPacer) instead of being sent as fast as
+possible and retried on 429. With ~1,100 calls a run after the looser filters, three retries (2, 5, 15 s) sometimes
+all landed in the same blocked minute and the call was given up (TEL's recommendation trends on 2026-10-17). A
+429 can still come from another process using the key in the same minute, so a last retry waits 60 s, longer than
+Finnhub's window (X-Ratelimit-Reset is 60 s after the window's first call).
 """
 import re
+import sys
 import threading
 import time
+from collections import deque
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 import finnhub
 
-FINNHUB_RETRY_DELAYS = (2, 5, 15)  # Seconds between retries of a rate-limited Finnhub call
+project_root = Path(__file__).resolve().parents[3]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.parameters import params_dict  # noqa: E402
+
+# Seconds between retries of a rate-limited Finnhub call. The last outlasts Finnhub's one-minute window (2026-10-18)
+FINNHUB_RETRY_DELAYS = (2, 5, 15, 60)
 TWELVEDATA_MINUTE_WAITS = 2        # How many times to wait out Twelve Data's per-minute credit limit
 
 
@@ -63,10 +79,41 @@ def finnhub_symbol(symbol: str) -> str:
     return SHARE_CLASS.sub(r"\1.\2", symbol) if isinstance(symbol, str) else symbol
 
 
+class FinnhubPacer:
+    """
+    Claude-authored (2026-10-18): at most `calls` Finnhub calls in any `period` seconds, shared by every thread and
+    client in the process (one key). A rolling window that never exceeds the limit also never exceeds it in
+    Finnhub's own one-minute windows. FINNHUB_RATE_LIMIT_SLEEP still spaces the calls within a minute, which keeps
+    them under Finnhub's 30-a-second cap.
+    """
+
+    def __init__(self, calls: int, period: float = 60.0) -> None:
+        self.calls, self.period = max(1, int(calls)), period
+        self._sent: deque = deque()
+        self._lock = threading.Lock()
+
+    def wait(self) -> None:
+        """Blocks until one more call fits in the window, then counts it."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                while self._sent and now - self._sent[0] >= self.period:
+                    self._sent.popleft()
+                if len(self._sent) < self.calls:
+                    self._sent.append(now)
+                    return
+                delay = self.period - (now - self._sent[0]) + 0.05
+            time.sleep(delay)
+
+
+FINNHUB_PACER = FinnhubPacer(params_dict.get("FINNHUB_CALLS_PER_MINUTE", 60))
+
+
 class GuardedFinnhubClient:
     """
     finnhub.Client with rate-limit retries and a stop after a rejected key (see module docstring).
     2026-10-17: share-class tickers are passed to Finnhub in its own form (finnhub_symbol).
+    2026-10-18: every attempt, retries included, waits its turn in FINNHUB_PACER.
     """
 
     def __init__(self, client: finnhub.Client, issues: DataSourceIssues) -> None:
@@ -87,6 +134,7 @@ class GuardedFinnhubClient:
             if self._key_rejected:
                 raise DataSourceUnavailable("Finnhub key was rejected earlier in this run")
             for delay in (*FINNHUB_RETRY_DELAYS, None):
+                FINNHUB_PACER.wait()
                 try:
                     return attribute(*args, **kwargs)
                 except finnhub.FinnhubAPIException as e:

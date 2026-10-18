@@ -441,7 +441,7 @@ The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and T
 | Shared Anthropic key missing, invalid, out of credits, or over its spend limit | A free check runs before any data is fetched. The digest goes out with empty picks. |
 | The key fails partway through scoring | Scoring stops; candidates already scored are kept. |
 | `FINNHUB_API_KEY` missing | The digest goes out with empty picks. |
-| Finnhub rate limit (429) | Retried after 2, 5, and 15 s. |
+| Finnhub rate limit (429) | Calls are paced to `FINNHUB_CALLS_PER_MINUTE` (60, the free plan's limit) in any 60 s, so it shouldn't happen (added 2026-10-18). If it does, e.g. another process used the key in the same minute, the call is retried after 2, 5, 15, and 60 s; the last wait outlasts Finnhub's one-minute window. |
 | Finnhub rejects the key (401) | No more Finnhub calls this run. |
 | Twelve Data per-minute limit | Waits for the next minute, up to 2 times per request. |
 | Twelve Data daily credits used up, or key rejected | No more Twelve Data calls this run. |

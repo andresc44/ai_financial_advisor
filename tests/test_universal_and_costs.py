@@ -122,7 +122,7 @@ def test_finnhub_persistent_rate_limit_is_reported(no_sleep):
     client, issues, state = guarded(lambda n: (_ for _ in ()).throw(finnhub_error(429)))
     with pytest.raises(finnhub.FinnhubAPIException):
         client.quote("AAPL")
-    assert state["calls"] == 4 and [i["reason"] for i in issues.items] == ["rate_limited"]
+    assert state["calls"] == 5 and [i["reason"] for i in issues.items] == ["rate_limited"]  # 4 retries (2026-10-18)
 
 
 # --------------------------------------------------------------------------------------------- Twelve Data
@@ -394,3 +394,32 @@ def test_share_class_tickers_use_each_sources_form():
     client.company_news(symbol="BF-B", _from="2026-10-10", to="2026-10-17")
     client.quote("AAPL")
     assert seen == ["BRK.B", "BF.B", "AAPL"]
+
+
+def test_finnhub_calls_are_paced_to_the_plans_limit(monkeypatch):
+    clock = {"now": 1000.0}
+    slept = []
+
+    def sleep(seconds):
+        slept.append(round(seconds, 2))
+        clock["now"] += seconds
+
+    monkeypatch.setattr(guard.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(guard.time, "sleep", sleep)
+    pacer = guard.FinnhubPacer(3, period=60)
+    for _ in range(3):
+        pacer.wait()
+    assert slept == []  # Three fit in the first minute
+    clock["now"] += 10
+    pacer.wait()  # The fourth waits until the first call is a minute old
+    assert slept == [50.05] and clock["now"] >= 1060
+
+
+def test_finnhub_rate_limit_outlasting_the_window_is_still_retried(no_sleep):
+    client, issues, state = guarded(lambda n: (_ for _ in ()).throw(finnhub_error(429)) if n <= 4 else {"c": 1})
+    assert client.quote("AAPL") == {"c": 1} and state["calls"] == 5
+    assert no_sleep == [2, 5, 15, 60] and issues.items == []  # The 60 s wait outlasts Finnhub's minute
+    client, issues, state = guarded(lambda n: (_ for _ in ()).throw(finnhub_error(429)))
+    with pytest.raises(finnhub.FinnhubAPIException):
+        client.quote("AAPL")
+    assert [i["reason"] for i in issues.items] == ["rate_limited"]  # Only after every retry

@@ -92,6 +92,11 @@ def isolated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(deepseek_client.DeepSeekClient, "__init__", offline_init)
 
+    # 2026-10-18: each test starts with an empty Finnhub pacing window
+    from src.universal.recommendations import data_source_guard
+
+    monkeypatch.setattr(data_source_guard, "FINNHUB_PACER", data_source_guard.FinnhubPacer(60))
+
     # 2026-10-16: the universal content's macro news (a real Gemini call with the .env key) and market dashboard
     # (Yahoo, FRED, CNN, Wikipedia) are replaced with "nothing fetched"; tests of them call the real functions
     import src.universal.universal_consolidated as universal
