@@ -299,16 +299,21 @@ params_dict = {
     # 2026-10-17: UNIVERSAL switched to deepseek-flash at Andres's request. Measured on the same 37 candidates:
     # $0.06 vs $1.23 for claude-sonnet-5-5, with the same two long-term picks. Its misshapen answers are repaired or
     # asked for again (deepseek_client.validated_answer).
+    # 2026-10-19: effort "low" (thinking) at Andres's request. On 8 candidates scored twice each, swing scores moved
+    # 3.5 points on average between runs (max 6) instead of 9.9 (max 31.5) without thinking. About 5x the output
+    # tokens: the first full run (95 candidates) cost $0.28 instead of ~$0.11 and took 27 minutes instead of ~17.
     "LLM": {
-        "UNIVERSAL": {"model": "deepseek-flash", "effort": "none"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
+        "UNIVERSAL": {"model": "deepseek-flash", "effort": "low"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
         "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"},   # Default for holdings; each user's own key.
-        # A user overrides it with <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT in .env.
+        # A user picks their own holdings model and effort with <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT
+        # in .env; a DeepSeek model chosen without an effort gets DEEPSEEK_CONFIG["effort"]. UNIVERSAL_LLM_MODEL /
+        # UNIVERSAL_LLM_EFFORT in .env override UNIVERSAL on one machine.
     },
     # Claude-authored (2026-10-16): DeepSeek request settings (src/deepseek_client.py). Note: prompts and the user's
     # holdings data go to DeepSeek's servers when a DeepSeek model is chosen.
     "DEEPSEEK_CONFIG": {
         "base_url": "https://api.deepseek.com",
-        "effort": "none",          # Default when a DeepSeek model is chosen without an effort: non-thinking
+        "effort": "low",           # Default when a DeepSeek model is chosen without an effort: low thinking (2026-10-19)
         "max_tokens": None,        # None = DeepSeek's default (8K without thinking, 64K with); thinking counts toward it
         "max_concurrency": 10,     # Requests in flight at once (DeepSeek has no fixed rate limit; it slows down instead)
         "timeout_seconds": 300,    # Thinking responses can take minutes

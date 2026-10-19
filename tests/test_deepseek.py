@@ -202,9 +202,10 @@ def clean_env(monkeypatch):
 
 @pytest.mark.parametrize("env, expected", [
     ({}, ("Anthropic", "claude-sonnet-5-5", "medium")),                                      # LLM["HOLDINGS"]
-    ({"HOLDINGS_LLM_MODEL": "deepseek-v4-pro"}, ("DeepSeek", "deepseek-v4-pro", "none")),     # Provider default effort
+    ({"HOLDINGS_LLM_MODEL": "deepseek-v4-pro"}, ("DeepSeek", "deepseek-v4-pro", "low")),      # Provider default effort
     ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "high"}, ("DeepSeek", "deepseek-flash", "high")),
-    ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "medium"}, ("DeepSeek", "deepseek-flash", "none")),
+    ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "medium"}, ("DeepSeek", "deepseek-flash", "low")),
+    ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "none"}, ("DeepSeek", "deepseek-flash", "none")),
     ({"HOLDINGS_CLAUDE_MODEL": "claude-opus-5-5", "HOLDINGS_CLAUDE_EFFORT": "high"}, ("Anthropic", "claude-opus-5-5", "high")),
     ({"HOLDINGS_LLM_MODEL": "gpt-9"}, ("Anthropic", "claude-sonnet-5-5", "medium")),          # Unknown: the default
 ])
@@ -237,11 +238,11 @@ def universal_env(monkeypatch):
 
 @pytest.mark.parametrize("env, expected", [
     ({}, ("Anthropic", "claude-sonnet-5-5", "medium")),                                    # LLM["UNIVERSAL"]
-    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash"}, ("DeepSeek", "deepseek-flash", "none")),     # Not parameters.py's "medium"
+    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash"}, ("DeepSeek", "deepseek-flash", "low")),      # Not parameters.py's "medium"
     ({"UNIVERSAL_LLM_MODEL": "deepseek-flash", "UNIVERSAL_LLM_EFFORT": "HIGH"}, ("DeepSeek", "deepseek-flash", "high")),
     ({"UNIVERSAL_LLM_EFFORT": "low"}, ("Anthropic", "claude-sonnet-5-5", "low")),          # Effort alone
     ({"UNIVERSAL_LLM_MODEL": "gpt-9"}, ("Anthropic", "claude-sonnet-5-5", "medium")),       # Not allowed: parameters.py
-    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash", "UNIVERSAL_LLM_EFFORT": "medium"}, ("DeepSeek", "deepseek-flash", "none")),
+    ({"UNIVERSAL_LLM_MODEL": "deepseek-flash", "UNIVERSAL_LLM_EFFORT": "medium"}, ("DeepSeek", "deepseek-flash", "low")),
 ])
 def test_universal_model_and_effort_come_from_env_first(universal_env, env, expected):
     for key, value in env.items():

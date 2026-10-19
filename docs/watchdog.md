@@ -79,7 +79,7 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 | `watchdog_session` | `ANDRES_WATCHDOG_SESSION=extended` | `regular`, `extended`, `24_7` |
 | `watchdog_tripwire` | `ANDRES_WATCHDOG_TRIPWIRE=true` | `true` / `false` (also `yes`/`no`, `1`/`0`) |
 | `holdings_llm_model` | `ANDRES_HOLDINGS_LLM_MODEL=deepseek-flash` | any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS` (default `LLM["HOLDINGS"]`) |
-| `holdings_llm_effort` | `ANDRES_HOLDINGS_LLM_EFFORT=none` | Claude: `low` `medium` `high` `xhigh` `max`; DeepSeek: `none` (no thinking) `low` `high` `max` |
+| `holdings_llm_effort` | `ANDRES_HOLDINGS_LLM_EFFORT=low` | Claude: `low` `medium` `high` `xhigh` `max`; DeepSeek: `none` (no thinking) `low` (the default) `high` `max` |
 | `holdings_claude_model` / `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-sonnet-5-5` | older names, still read when the `LLM` ones above are unset |
 | `receive_holding_news` | `ANDRES_RECEIVE_HOLDING_NEWS=True` | `True` / `False` (default `True`): Gemini news bullets for each holding |
 | `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic key (required when their model is Claude) |
@@ -135,11 +135,22 @@ Thinking adds output tokens.
 | Long-term picks | NVDA 94.5, TSM 92.5 | TSM 96, NVDA 93.5 |
 | Holdings | | Same signal on 8 of 10 |
 
-Since then `LLM["UNIVERSAL"]` is `deepseek-flash` (effort `none`), and so is Andres's `ANDRES_HOLDINGS_LLM_MODEL`.
+Since then `LLM["UNIVERSAL"]` is `deepseek-flash`, and so is Andres's `ANDRES_HOLDINGS_LLM_MODEL`; both use effort `low` since 2026-10-19 (below).
+
+**Low thinking** (2026-10-19). A DeepSeek model now thinks at effort `low` unless an effort is set: `DEEPSEEK_CONFIG["effort"]`, `LLM["UNIVERSAL"]`, and Andres's `.env`. Without thinking, the same stock's swing score could move by 10 points or more from one run to the next. Measured on 8 candidates, each scored twice per setting:
+
+| `deepseek-flash` | `none` | `low` |
+|---|---|---|
+| Swing score change between runs | 9.9 on average, up to 31.5 | 3.5 on average, up to 6.1 |
+| Long-term score change between runs | 2.7, up to 7.0 | 3.4, up to 6.5 |
+| Output tokens per stock | ~540 | ~3,000 (mostly thinking) |
+| Time for 8 stocks at once | 5 s | 23 to 31 s |
+
+The first full run with it (2026-10-19) scored 95 candidates for $0.28 instead of ~$0.11, and took 27 minutes instead of ~17. Andres's 10 holdings cost $0.02. Setting the effort to `none` turns thinking off again.
 
 **Setting the scoring model in `.env`.** `UNIVERSAL_LLM_MODEL` and `UNIVERSAL_LLM_EFFORT` override `LLM["UNIVERSAL"]`, so each machine can choose without editing `parameters.py`:
 - **Model:** any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS`. A model that isn't allowed is ignored with a warning, and `parameters.py` is used.
-- **Effort:** if it's unset or the model doesn't accept it, the effort is `parameters.py`'s when that's the same model, and otherwise the provider's default (`none` for DeepSeek).
+- **Effort:** if it's unset or the model doesn't accept it, the effort is `parameters.py`'s when that's the same model, and otherwise the provider's default (`low` for DeepSeek).
 - **Checking:** `python -m src.check_config` shows the model in use, and reports a set but unusable value as INVALID.
 
 **Misshapen answers** (`validated_answer` in `src/deepseek_client.py`, added 2026-10-17). Without thinking, `deepseek-flash` sometimes breaks the schema's shape: in that run it nested the swing section inside `long_term` (4 stocks) or added keys like `valuation_score_note` (2), and those stocks were never scored.
