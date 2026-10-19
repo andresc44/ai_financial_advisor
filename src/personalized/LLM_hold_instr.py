@@ -17,6 +17,9 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   profit_sell (a recent riser whose run looks to be tiring), and urgent_sell (unchanged). They replace hold /
   trim / risk_alert / urgent_sell; current_recommendation translates the old ones still in saved state. A good
   add is a stock that is cheap now and likely to recover, not one that has already run for weeks.
+- 2026-10-19: the rationale is at most 2 plain sentences on what the trend is doing and what it suggests (plus
+  any important news), with indicator names used sparingly, at Andres's request. Why: rationales had grown to ~900 characters of indicator names and
+  values, hard to read on a phone and a tenth of the email's size.
 """
 
 # The recommendations, most urgent first (the digest's order)
@@ -42,17 +45,15 @@ SENTIMENT_DESCRIPTION = (
 )
 
 RATIONALE_DESCRIPTION = (
-    "1-3 sentences citing the specific data points (with values) that drove the decision. "
-    "For 'buy_more', name the support it is bouncing from and the sign the decline is ending; for 'profit_sell', "
-    "the sign the run is tiring; for 'urgent_sell', the triggering event or breakdown and why it cannot wait for "
-    "the next digest."
+    "At most 2 short sentences in plain language (see RATIONALE in the instructions): what the price trend is "
+    "doing and what it suggests for the position, plus the effect of any important news."
 )
 
 # Tool specification configuration
 EVALUATION_TOOL_NAME = "record_holding_recommendation"
 EVALUATION_TOOL_DESCRIPTION = (
     "Record the buy_more / hold / risky / profit_sell / urgent_sell recommendation for a currently held position, "
-    "your Bullish / Neutral / Bearish sentiment on the stock, and a short data-backed rationale."
+    "your Bullish / Neutral / Bearish sentiment on the stock, and a short plain-language rationale."
 )
 
 # System level instructions for LLM with explicit recommendation rubric
@@ -117,6 +118,13 @@ Separately from the recommendation, rate your overall outlook on the stock itsel
 - Judge the stock, not the position: ignore the user's cost basis, unrealized gain, and position size.
 - It may differ from the recommendation, e.g. 'Bullish' with 'profit_sell' for a stretched winner that should cool off, or 'Bearish' with 'hold' when the concern is still minor.
 - Most large companies carry a buy consensus, so analyst ratings alone are not enough for 'Bullish'. Use 'Neutral' when the evidence is mixed or thin.
+
+### RATIONALE
+The rationale is read on a phone by an investor, not an analyst. Write at most 2 short sentences:
+- Say what the price trend is doing and what that suggests, in plain words: e.g. "falling steadily for two weeks with no sign of a floor yet", "bouncing off its recent low as selling fades", "stretched after a fast run and starting to stall".
+- Add the effect of important news or an upcoming event when it matters to the decision (an earnings date, a deal, a downgrade).
+- Use indicator names sparingly: one is fine when it's the clearest way to make the point (e.g. "RSI near 30, so it's oversold"), but don't string several together with their values (not "below EMA 9 (290.0) and EMA 21 (289.5) with the PSAR at 301.64"). Use numbers sparingly too, such as a big move ("down 15% since Oct 6") or a date.
+- For 'buy_more', say why the decline looks to be ending; for 'profit_sell', why the run looks tired; for 'urgent_sell', what happened and why it can't wait for the next digest.
 """
 
 # User prompt template

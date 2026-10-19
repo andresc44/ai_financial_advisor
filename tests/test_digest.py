@@ -138,7 +138,7 @@ def personal_env(monkeypatch):
         companies_seen.update(companies)
         time.sleep(0.2)
         overlap["news_saw_claude_running"] = overlap["claude_running"]
-        item = news.SymbolNewsItem(priority="HIGH", event_summary="e.", stock_impact="i.", source_url=None)
+        item = news.SymbolNewsItem(priority="HIGH", summary="e.", source_url=None)
         return {symbol: [item] for symbol in companies}, None
 
     monkeypatch.setattr(pc, "PortfolioFetcher", FakeFetcher)
@@ -193,7 +193,7 @@ def test_only_links_google_search_returned_are_kept(monkeypatch):
         is_redirect=True, headers={"Location": targets[url]}))
     chunks = [SimpleNamespace(web=SimpleNamespace(uri=redirect + "a")), SimpleNamespace(web=SimpleNamespace(uri="https://sec.gov/f/8k"))]
     response = SimpleNamespace(candidates=[SimpleNamespace(grounding_metadata=SimpleNamespace(grounding_chunks=chunks))])
-    items = [news.SymbolNewsItem(priority="HIGH", event_summary="", stock_impact="", source_url=url) for url in (
+    items = [news.SymbolNewsItem(priority="HIGH", summary="", source_url=url) for url in (
         "http://reuters.com/business/alpha-beats", "https://www.sec.gov/f/8k/", "https://www.reuters.com/business/invented", None)]
     news._verify_source_urls(items, news._grounded_urls(response))
     assert [item.source_url for item in items] == [targets[redirect + "a"], "https://sec.gov/f/8k", None, None]
@@ -444,7 +444,7 @@ def test_grounding_redirects_are_verified_without_metadata(monkeypatch):
     monkeypatch.setattr(news.requests, "get", lambda url, allow_redirects, timeout: SimpleNamespace(
         is_redirect=url in targets, headers={"Location": targets.get(url)}))
     response = SimpleNamespace(candidates=[SimpleNamespace(grounding_metadata=None)])
-    items = [news.SymbolNewsItem(priority="HIGH", event_summary="", stock_impact="", source_url=url) for url in (
+    items = [news.SymbolNewsItem(priority="HIGH", summary="", source_url=url) for url in (
         redirect + "real", redirect + "made-up-token", "https://www.reuters.com/business/invented")]
     news._verify_source_urls(items, news._grounded_urls(response))
     assert [item.source_url for item in items] == [targets[redirect + "real"], None, None]

@@ -47,10 +47,11 @@ GROUNDING_REDIRECT_HOST = "vertexaisearch.cloud.google.com"  # Gemini API ground
 REDIRECT_TIMEOUT_SECONDS = 5
 
 # 1. Define Pydantic Schema
+# Claude-authored (2026-10-19): one sentence per story (what happened and its direct impact) at Andres's request,
+# instead of an event sentence plus a 1-3 week outlook sentence; the news bullets were a fifth of the email's size.
 class SymbolNewsItem(BaseModel):
     priority: str               # Expects "HIGH", "MEDIUM", or "LOW"
-    event_summary: str          # 1 concise sentence on what occurred
-    stock_impact: str           # 1 concise sentence on the likely effect on the stock
+    summary: str                # 1 succinct sentence: what happened and its direct impact on the stock
     source_url: Optional[str]   # Link to the source; replaced by the verified URL, or None if unverifiable
 
 class SymbolNewsPayload(BaseModel):
@@ -73,8 +74,7 @@ Report each story once, even if several outlets covered it. Return fewer stories
 FORMATTING REQUIREMENTS:
 Keep all fields extremely succinct and direct:
 - priority: Must be "HIGH", "MEDIUM", or "LOW".
-- event_summary: 1 concise sentence summarizing what occurred, including when.
-- stock_impact: 1 concise sentence on the likely effect on the stock over the next 1-3 weeks.
+- summary: ONE succinct sentence of at most 25 words covering what happened, when (e.g. "Oct 15"), and its direct impact on the stock, e.g. "Beat Q3 estimates on Oct 15 and raised full-year guidance; shares rose 6%." or "Agreed on Oct 5 to buy RXO for $5.8B, adding debt and pausing buybacks." Never add a second sentence or a generic outlook.
 - source_url: The exact URL of the search result the story came from, copied verbatim. Use null if you cannot point to one; never construct or guess a URL.
 """
 

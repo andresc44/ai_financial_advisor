@@ -59,7 +59,7 @@ def fetch_holdings_news(
 def attach_news_bullets(holdings: list[dict], news: dict[str, list[SymbolNewsItem]]) -> list[dict]:
     """
     Claude-authored (2026-10-14): adds 'news_bullets' to each holding:
-    {"priority": "HIGH" | "MEDIUM" | "LOW", "text": "What happened. Likely effect.", "source_url": "..." | None}
+    {"priority": "HIGH" | "MEDIUM" | "LOW", "text": "What happened and its direct impact.", "source_url": "..." | None}
     dicts, highest priority first. source_url is only set when it matches a page Google Search grounding returned
     (see symbol_specific_news._verify_source_urls). Stocks without news get an empty list.
     """
@@ -67,7 +67,7 @@ def attach_news_bullets(holdings: list[dict], news: dict[str, list[SymbolNewsIte
         holding["news_bullets"] = [
             {
                 "priority": item.priority,
-                "text": f"{item.event_summary} {item.stock_impact}",
+                "text": item.summary,
                 "source_url": item.source_url,
             }
             for item in news.get(holding.get("symbol"), [])

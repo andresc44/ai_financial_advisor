@@ -411,6 +411,8 @@ Other limits:
 **Gmail's size limit.** Gmail hides everything past about 102 KB of the HTML version behind "[Message clipped]".
 - **Normal size:** a typical digest is about 90 KB.
 - **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: the glossary (about 10 KB), low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions. A typical digest of about 10 holdings keeps the glossary, at about 96 KB in each version.
+- **Where the bytes go** (2026-10-19, 10 holdings, 29 news bullets, 2 long-term ideas): holdings about half (news bullets 21 KB, reasoning 9 KB, figures 7 KB), long-term ideas 10 KB (about 5 KB each; a swing idea is about 3.4 KB), glossary 10 KB. Only about a quarter of the bytes were readable text; the rest was markup.
+- **Trimmed on 2026-10-19:** repeated inline colours, paddings and alignments became short classes in the `<style>` block (104.3 to 93.8 KB for the AMP version, with no visible change), holding news became one sentence per story (about 55% shorter), and the holdings reasoning became at most 2 plain sentences. With 10 holdings and 5 swing ideas, only the glossary should need to go.
 - **Never removed:** each holding's signal, figures and reasoning.
 - **Capacity:** about 20 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
 - **Untrimmed:** the plain-text version is always complete.

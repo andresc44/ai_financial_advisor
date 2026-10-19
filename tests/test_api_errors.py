@@ -132,7 +132,7 @@ def gemini_server(monkeypatch):
         if response is None:
             is_review = b"Review this portfolio" in request.content
             text = json.dumps({"notes": []} if is_review else {"news_items": [
-                {"priority": "high", "event_summary": "x.", "stock_impact": "y.", "source_url": None}]})
+                {"priority": "high", "summary": "x.", "source_url": None}]})
             return gemini_ok(text)
         return response
 
