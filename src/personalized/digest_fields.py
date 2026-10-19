@@ -139,7 +139,9 @@ def add_digest_fields(holdings_df: pd.DataFrame) -> pd.DataFrame:
     today = market_date(datetime.now(timezone.utc))
     window_days = DIGEST_PARAMS["CATALYST_WINDOW_DAYS"]
 
-    df["ma_status"] = [_ma_status(ctx, price) for ctx, price in zip(contexts, df["current_price"])]
+    # 2026-10-20: the price the card shows (valuation_price), not an extended-hours quote
+    prices = df["valuation_price"] if "valuation_price" in df.columns else df["current_price"]
+    df["ma_status"] = [_ma_status(ctx, price) for ctx, price in zip(contexts, prices)]
     claude_sentiment = df["sentiment"] if "sentiment" in df.columns else pd.Series(None, index=df.index)
     df["sentiment"] = [
         sentiment if isinstance(sentiment, str) else _analyst_sentiment(ctx)

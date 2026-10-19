@@ -396,6 +396,17 @@ def test_overview_chips_open_their_holding_in_the_amp_version():
     assert "<button" not in html and " on=" not in html
 
 
+
+def test_a_cards_price_is_the_one_its_value_and_day_change_use():
+    # 2026-10-20: outside regular hours the broker's price is an extended-hours quote; the card shows valuation_price,
+    # the session close its value and daily change are measured at (payloads without it fall back to current_price)
+    pre_market = holding("SOXL", value=749.36, current_price=103.39, valuation_price=93.67)
+    card = ch.build_view(payload(holdings=[pre_market]))["holdings"][0]
+    assert card["stats"][0]["value"] == "$93.67"
+    older = holding("SOXL", value=749.36, current_price=93.67)
+    assert ch.build_view(payload(holdings=[older]))["holdings"][0]["stats"][0]["value"] == "$93.67"
+
+
 def test_four_figure_boxes_form_a_2x2_grid():
     # Four boxes side by side ran past a phone's right edge in the Gmail app (2026-10-17), so they wrap 2x2;
     # up to three stay in one row

@@ -254,7 +254,7 @@ def _quote_links(symbol: str) -> dict:
 # Claude-authored (2026-10-17): holdings in these currencies are shown in US dollars at the current rate. GBX is a
 # London price in pence (fx_rates turns it into GBP / 100). Any other currency is left as it is, i.e. treated as USD.
 CONVERT_TO_USD = ("CAD", "AUD", "GBP", "GBX")
-PER_SHARE_FIELDS = ("current_price", "avg_cost_basis", "last_close")
+PER_SHARE_FIELDS = ("current_price", "valuation_price", "avg_cost_basis", "last_close")
 MONEY_FIELDS = ("market_value", "total_cost_basis", "unrealized_pnl", "daily_pnl")  # pull_holdings_data's USD_MONEY_COLUMNS
 
 
@@ -291,7 +291,7 @@ def holdings_in_usd(holdings: list[dict]) -> tuple[list[dict], list[str], list[s
             converted.append(holding)
             continue
         holding = dict(holding)
-        holding["listed_currency"], holding["listed_price"] = code, _num(holding.get("current_price"))
+        holding["listed_currency"], holding["listed_price"] = code, _price(holding)
         for field in PER_SHARE_FIELDS:
             if _num(holding.get(field)) is not None:
                 holding[field] = holding[f"{field}_usd"] = _num(holding[field]) * rate
@@ -437,6 +437,15 @@ def _listing_note(holding: dict) -> list[str]:
             f"{rate * (100 if code == 'GBX' else 1):.4f} USD)"]
 
 
+def _price(holding: dict) -> Optional[float]:
+    """
+    Claude-authored (2026-10-20): the price the holding's value and daily P/L are measured at (valuation_price: the
+    session's close, or the live price while it's open). Payloads before 2026-10-20 only have the broker's price.
+    """
+    return _num(holding.get("valuation_price")) if _num(holding.get("valuation_price")) is not None else _num(
+        holding.get("current_price"))
+
+
 def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     first = lots[0]  # Price, signal, news, and indicators are the same for every lot of a stock
     recommendation = current_recommendation(first.get("recommendation"))
@@ -452,7 +461,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     rsi = _num(first.get("rsi"))
 
     stats = [
-        _stat(f"Price · {currency}", _money(first.get("current_price"), symbol=CURRENCY_SYMBOLS.get(currency, f"{currency} ")),
+        _stat(f"Price · {currency}", _money(_price(first), symbol=CURRENCY_SYMBOLS.get(currency, f"{currency} ")),
               sub=f"{_signed_pct(daily_pct, 2)} {day}" if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
         _stat(f"Unrealized · {MONEY_CURRENCY}", _signed_money(gain), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
         _stat("RSI 14", _fixed(rsi, 0),

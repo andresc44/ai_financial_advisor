@@ -60,6 +60,36 @@ def test_daily_pnl(monkeypatch, when, yahoo, broker_price, expected_pnl, expecte
     assert out["daily_pnl_session"].iloc[0] == expected_session
 
 
+
+@pytest.mark.parametrize("when, broker_price, valued_at", [
+    ("2026-10-19T07:20", 103.39, 93.67),  # Pre-market Monday: Friday's close, not the pre-market quote
+    ("2026-10-16T19:00", 94.31, 93.67),   # After hours: the session's close
+    ("2026-10-19T11:00", 101.00, 101.00),  # During the session: the live price
+])
+def test_holdings_are_valued_at_the_price_the_daily_pnl_uses(monkeypatch, when, broker_price, valued_at):
+    # 2026-10-20: a 7:20 ET Monday run valued SOXL at its pre-market quote beside Friday's P/L, so the portfolio's
+    # value minus the day's change wasn't the previous close's value
+    fixed = datetime.fromisoformat(when).replace(tzinfo=ET)
+
+    class FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz) if tz else fixed
+
+    monkeypatch.setattr(phd, "datetime", FakeDateTime)
+    fetcher = phd.PortfolioFetcher.__new__(phd.PortfolioFetcher)
+    series = closes(("2026-10-15", 107.35), ("2026-10-16", 93.67))
+    monkeypatch.setattr(fetcher, "_fetch_yfinance_daily_closes", lambda symbols: {"SOXL": series})
+    out = fetcher.calculate_daily_pnl(pd.DataFrame({"symbol": ["SOXL"], "shares": [8.0], "current_price": [broker_price],
+                                                    "total_cost_basis": [860.24]})).iloc[0]
+    assert out["valuation_price"] == pytest.approx(valued_at)
+    assert out["current_price"] == broker_price  # The broker's quote is kept for the watchdog
+    assert out["market_value"] == pytest.approx(8 * valued_at)
+    assert out["market_value"] - out["daily_pnl"] == pytest.approx(8 * out["last_close"])  # The figures add up
+    assert out["unrealized_pnl"] == pytest.approx(8 * valued_at - 860.24)
+    assert out["unrealized_pnl_pct"] == pytest.approx((8 * valued_at - 860.24) / 860.24 * 100)
+
+
 def test_single_ticker_download_shape_works(monkeypatch):
     """yfinance 1.x returns per-ticker columns even for one ticker; that used to give $0 P/L and NaN indicators."""
     index = pd.DatetimeIndex(pd.bdate_range("2026-06-01", periods=60))

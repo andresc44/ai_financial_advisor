@@ -35,7 +35,7 @@ from src.fx_rates import normalize_currency, usd_rates
 # Claude-authored (2026-10-15): convert_to_usd converts these money amounts to USD in place ...
 USD_MONEY_COLUMNS = ("market_value", "total_cost_basis", "unrealized_pnl", "daily_pnl")
 # ... and adds a <column>_usd display copy of these per-share prices, which otherwise stay in the listing's currency
-USD_PER_SHARE_COLUMNS = ("current_price", "avg_cost_basis", "last_close")
+USD_PER_SHARE_COLUMNS = ("current_price", "valuation_price", "avg_cost_basis", "last_close")
 
 
 def portfolio_weights(holdings: pd.DataFrame) -> pd.Series:
@@ -380,6 +380,13 @@ class PortfolioFetcher:
           its official close vs the close before it, so after-hours or pre-market broker prices never leak in
           (the watchdog tracks extended-hours moves separately with session_price).
         `last_close` is that session's previous close. Stocks without Yahoo data keep the old fallback of 0 P/L.
+
+        2026-10-20: holdings are valued at that same price (`valuation_price`: the session's official close once
+        it's over, the live price while it's open), so market_value - daily_pnl is the previous close's value and
+        the digest's figures add up. Before, market_value and unrealized P/L used the broker's latest price, which
+        outside regular hours is a pre-market or after-hours quote: a 7:20 ET Monday run valued SOXL at 103.39
+        beside Friday's -12.7% to a 93.67 close, and the portfolio total was $175 off. current_price keeps the
+        broker's price (the watchdog's extended-hours checks use it).
         """
         if df is None:
             df = self.get_holdings_df()
@@ -417,6 +424,12 @@ class PortfolioFetcher:
         pnl_price = pd.to_numeric(df["symbol"].map(session_closes), errors="coerce").fillna(df["current_price"])
 
         df["daily_pnl"] = (pnl_price - df["last_close"]) * df["shares"]
+        df["valuation_price"] = pnl_price
+        df["market_value"] = df["shares"] * pnl_price
+        if "total_cost_basis" in df.columns:
+            df["unrealized_pnl"] = df["market_value"] - df["total_cost_basis"]
+            df["unrealized_pnl_pct"] = (df["unrealized_pnl"] / df["total_cost_basis"] * 100).where(
+                df["total_cost_basis"] > 0, 0.0)
         df["daily_pnl_pct"] = (
             (pnl_price - df["last_close"]) / df["last_close"] * 100
         ).where(df["last_close"] > 0, 0.0)
@@ -871,7 +884,8 @@ class PortfolioFetcher:
                 "description",
                 "shares",
                 "avg_cost_basis",
-                "current_price",
+                "current_price",  # The broker's latest price (outside regular hours, an extended-hours quote)
+                "valuation_price",  # The price market_value, unrealized_pnl, and daily_pnl are measured at
                 "market_value",
                 "daily_pnl",
                 "daily_pnl_pct",
@@ -880,6 +894,7 @@ class PortfolioFetcher:
                 "last_close",  # Close before that session, in the listing's currency
                 "last_close_usd",  # Same in USD; previous portfolio value = sum(last_close_usd x shares)
                 "current_price_usd",  # Per-share prices in USD for display (money columns above are already USD)
+                "valuation_price_usd",
                 "avg_cost_basis_usd",
                 "fx_rate_to_usd",  # USD per unit of `currency` used for the conversion
                 "unrealized_pnl",
