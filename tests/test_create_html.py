@@ -136,7 +136,7 @@ def test_overview_and_risk_figures():
     view = ch.build_view(payload())
     portfolio, risk = view["portfolio"], view["risk"]
     assert portfolio["value"] == "$4,000.00"
-    assert portfolio["session"] == "Prev. day · Oct 15"
+    assert portfolio["session"] == "Prev. day · Thu, Oct 15"  # With the day of the week (2026-10-18)
     assert portfolio["change"] == "▲ $20.00 · 0.50%"
     # Unrealized: a 10% gain on cost; flagged: urgent sell, risky, and profit sell (an urgent sell makes it red)
     assert [stat["value"] for stat in portfolio["stats"]] == ["+$400", "3 of 4", "2"]
@@ -232,9 +232,9 @@ def test_a_full_digest_fits_under_gmails_clipping_limit():
     view = ch.build_view(full)
     html = ch.fit_for_gmail(view, TEMPLATE_DIR)
     assert len(html.encode("utf-8")) <= ch.GMAIL_CLIP_BYTES
-    # 10 holdings with 3 news items each, 5 swing and 2 long-term ideas fit once the glossary, the first thing
-    # left out, is dropped: every news item stays
-    assert view["trimmed"] is True and view["glossary"] == []
+    # 10 holdings with 3 news items each, 5 swing and 2 long-term ideas fit. Since the repeated inline styles
+    # became classes (2026-10-19), nothing is left out, not even the glossary
+    assert view["trimmed"] is False and view["glossary"]
     assert all(len(card["news"]) == 3 for card in view["holdings"])
 
 
@@ -401,7 +401,7 @@ def test_four_figure_boxes_form_a_2x2_grid():
     # up to three stay in one row
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
     row_start = html.rfind("<details>", 0, html.index(">AAA<"))
-    grid = html[html.index('<table role="presentation" width="100%" style="background-color:#F5F7FA;', row_start):]
+    grid = html[html.index('<table role="presentation" width="100%" class="sg">', row_start):]
     grid = grid[:grid.index("</table>")]
     assert grid.count("<tr>") == 2 and grid.count('width="50%"') == 4
     overview = html[html.index("Your portfolio"):html.index(">Portfolio risk<")]
@@ -473,7 +473,7 @@ def test_daily_changes_say_prev_day_before_the_open_and_day_after_the_close():
     pre = ch.build_view(payload())
     post = ch.build_view(payload(period="Post-Market", subject="Finnbot Post-Market Digest 2026-10-16"))
     assert (pre["day_label"], post["day_label"]) == ("Prev. day", "Day")
-    assert pre["portfolio"]["session"] == "Prev. day · Oct 15" and post["portfolio"]["session"] == "Day · Oct 15"
+    assert pre["portfolio"]["session"] == "Prev. day · Thu, Oct 15" and post["portfolio"]["session"] == "Day · Thu, Oct 15"
     assert pre["holdings"][0]["stats"][0]["sub"] == "+0.50% prev. day"
     assert post["holdings"][0]["stats"][0]["sub"] == "+0.50% day"
     assert pre["holdings_note"].endswith("Prev. day = the Oct 15 session")

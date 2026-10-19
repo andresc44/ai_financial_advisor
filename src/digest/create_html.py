@@ -55,6 +55,9 @@ CHART_WIDTH, CHART_HEIGHT = 466, 219  # Finviz's large daily chart (s=l)
 FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 INK, BODY, MUTED = "#0F2A44", "#334155", "#64748B"
 TONES = {"pos": "#15803D", "neg": "#B91C1C", "warn": "#B45309", "flat": BODY, "ink": INK, "muted": MUTED}
+# Claude-authored (2026-10-19): each tone's class in the template's <style> block, which the template uses instead of
+# repeating style="color:..." on every figure (the same colours as TONES)
+TONE_CLASSES = {"pos": "pos", "neg": "neg", "warn": "wn", "flat": "fl", "ink": "ink", "muted": "mu"}
 
 # recommendation -> (label, badge text colour, badge colour, bar colour, sort order: most urgent first)
 # 2026-10-18: the labels in LLM_hold_instr.RECOMMENDATIONS; an older payload's labels are translated first
@@ -385,10 +388,17 @@ def _issues(payload: dict) -> list[dict]:
     return issues
 
 
-def _session_date(holdings: list[dict]) -> Optional[str]:
-    """'Oct 15': the trading session the daily P/L covers (before the open, the previous trading day)."""
+def _session_date(holdings: list[dict], weekday: bool = False) -> Optional[str]:
+    """
+    'Oct 15', or 'Thu, Oct 15' with weekday=True (2026-10-18, for the overview): the trading session the daily
+    P/L covers (before the open, the previous trading day).
+    """
     sessions = Counter(h.get("daily_pnl_session") for h in holdings if h.get("daily_pnl_session"))
-    return _short_date(sessions.most_common(1)[0][0]) if sessions else None
+    if not sessions:
+        return None
+    session = sessions.most_common(1)[0][0]
+    day = _day(session)
+    return f"{day:%a}, {_short_date(session)}" if weekday and day else _short_date(session)
 
 
 def _has_value(text: str) -> bool:
@@ -576,7 +586,7 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
     daily_pnl = sum(_num(h.get("daily_pnl")) or 0.0 for h in holdings)
     gain, gain_pct = _unrealized(holdings)
     long_n, swing_n = idea_counts
-    session = _session_date(holdings)
+    session = _session_date(holdings, weekday=True)  # e.g. "Day · Fri, Oct 16"
     flagged = [card for card in cards if card["signal_key"] in FLAGGED_SIGNALS]
     flagged_share = sum(card["weight_pct"] for card in flagged)
     attention = [card for card in cards if card["signal_key"] in ATTENTION_SIGNALS]  # 2026-10-18: buy more too
@@ -1090,7 +1100,7 @@ def build_environment(template_dir: Path) -> Environment:
         undefined=StrictUndefined,  # fail loudly on a missing/misspelled variable
     )
     # FONT is our own constant: as Markup its quotes aren't escaped to &#39; in every cell that uses it
-    env.globals.update(FONT=Markup(FONT), INK=INK, BODY=BODY, MUTED=MUTED, TONES=TONES)
+    env.globals.update(FONT=Markup(FONT), INK=INK, BODY=BODY, MUTED=MUTED, TONES=TONES, TC=TONE_CLASSES)
     return env
 
 
