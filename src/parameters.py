@@ -527,7 +527,8 @@ params_dict = {
     # Claude-authored (2026-10-14): email digest display fields (src/personalized/digest_fields.py)
     "DIGEST": {
         "CATALYST_WINDOW_DAYS": 14,              # Holding cards list upcoming earnings within this many days
-        "SYMBOL_NEWS_BULLETS": 3,                # News bullets per holding card (src/personalized/symbol_specific_news.py)
+        "SYMBOL_NEWS_BULLETS": 2,                # News bullets per holding card (src/personalized/symbol_specific_news.py); 2026-10-20: 2, was 3
+        "SYMBOL_NEWS_MIN_PRIORITY": "MEDIUM",    # Claude-authored (2026-10-20): lower-priority stories (routine commentary, recaps) are left out
         "SYMBOL_NEWS_LOOKBACK_DAYS": 7,          # How many days back Gemini searches for each holding's news
         "PORTFOLIO_REVIEW_BULLETS": 5,           # Max notes in the whole-portfolio review (src/personalized/portfolio_review.py)
         # Claude-authored (2026-10-15): parallelism and reuse

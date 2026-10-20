@@ -64,6 +64,8 @@ Both the watchdog and the digest process several users at once (`MAX_PARALLEL_US
 | `WATCHDOG.FRESH_CONTEXT_MAX_AGE_MINUTES` | `30` | Cached quote and news older than this are re-fetched. |
 | `WATCHDOG.MAX_PARALLEL_USERS` | `4` | Users checked at the same time each hour. |
 | `DIGEST.MAX_PARALLEL_USERS` | `4` | Users whose digest content is built at the same time, alongside the universal content. |
+| `DIGEST.SYMBOL_NEWS_BULLETS` | `2` | Gemini news stories per holding card (3 before 2026-10-20). |
+| `DIGEST.SYMBOL_NEWS_MIN_PRIORITY` | `"MEDIUM"` | Lowest story priority kept (added 2026-10-20): LOW stories, such as routine commentary and recaps, are left out. |
 | `DIGEST.SYMBOL_NEWS_CONCURRENCY` | `4` | Gemini news requests in flight at once per user. Lower it if a free-tier Gemini key keeps hitting per-minute limits. |
 | `DIGEST.REUSE_EVALUATION_MAX_AGE_MINUTES` | `60` | The digest reuses an evaluation this recent (if the stock moved less than `REEVAL_NATR_MULTIPLE` NATRs since) instead of calling Claude again. `0` turns reuse off. |
 | `ALLOWED_CLAUDE_MODELS` | see file | Models a user may pick, each with the effort levels it accepts. |

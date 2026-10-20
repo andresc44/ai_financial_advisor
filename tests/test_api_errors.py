@@ -177,6 +177,17 @@ def test_gemini_non_key_errors_fail_per_stock_without_retry(gemini_server):
     assert all(items == [] for items in result.values())
 
 
+def test_holding_news_keeps_the_top_two_stories_of_medium_priority_or_higher(gemini_server):
+    # 2026-10-20: at most DIGEST.SYMBOL_NEWS_BULLETS (2) per stock, and no LOW stories
+    items = [{"priority": p, "summary": f"{p} story.", "source_url": None} for p in ("low", "medium", "LOW", "high", "medium")]
+    gemini_server["plan"] = lambda n: gemini_ok(json.dumps({"news_items": items}))
+    result, key_error = news.fetch_symbol_news({"AAA": "Alpha"}, "g-key", user_name=USER)
+    assert key_error is None and [item.priority for item in result["AAA"]] == ["HIGH", "MEDIUM"]
+    only_low = [{"priority": "LOW", "summary": "A recap.", "source_url": None}]
+    gemini_server["plan"] = lambda n: gemini_ok(json.dumps({"news_items": only_low}))
+    assert news.fetch_symbol_news({"AAA": "Alpha"}, "g-key", user_name=USER)[0]["AAA"] == []
+
+
 # --------------------------------------------------------------------------------------------- wording per reader
 def test_key_errors_give_the_fix_to_admins_and_the_contact_line_to_everyone_else(monkeypatch):
     monkeypatch.setitem(params_dict["OPS"], "ALERT_USERS", ["Andres"])

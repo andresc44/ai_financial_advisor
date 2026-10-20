@@ -15,6 +15,9 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   and the digest starts this while Claude evaluates the holdings.
 - 2026-10-16: gemini-3.6-flash returns no grounding metadata with a response schema, so no link survived the check.
   Grounding redirect links the model writes are now verified by following them (see _verify_source_urls).
+- 2026-10-20: at most 2 stories per stock (SYMBOL_NEWS_BULLETS), and only those of SYMBOL_NEWS_MIN_PRIORITY
+  (MEDIUM) or higher, at Andres's request: LOW stories (routine commentary, recaps, listicles) were filler and the
+  news bullets were the largest part of the email. The request asks for them, and anything lower is dropped.
 """
 import sys
 import threading
@@ -43,6 +46,9 @@ from src.usage_tracking import record_gemini_response
 DIGEST_PARAMS = params_dict["DIGEST"]
 GEMINI_MODEL = params_dict["GEMINI_MODELS"]["HOLDING_NEWS"]  # Claude-authored (2026-10-16): set in parameters.py
 PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+# Claude-authored (2026-10-20): the priorities kept, e.g. ["HIGH", "MEDIUM"]
+KEPT_PRIORITIES = [p for p, rank in PRIORITY_ORDER.items()
+                   if rank <= PRIORITY_ORDER.get(str(DIGEST_PARAMS.get("SYMBOL_NEWS_MIN_PRIORITY", "MEDIUM")).upper(), 1)]
 GROUNDING_REDIRECT_HOST = "vertexaisearch.cloud.google.com"  # Gemini API grounding links redirect through here
 REDIRECT_TIMEOUT_SECONDS = 5
 
@@ -155,7 +161,9 @@ def fetch_news_for_symbol(
     today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
         f"Today is {today:%Y-%m-%d}. Perform a web search for news about {company} (ticker: {symbol}) "
-        f"from the past {lookback_days} days. Select the top {max_items} items based on priority."
+        f"from the past {lookback_days} days. Select the top {max_items} items based on priority. "
+        f"Include only {' or '.join(KEPT_PRIORITIES)} priority stories; return fewer, or none, rather than a "
+        f"lower-priority one."
     )
 
     chat = client.chats.create(
@@ -234,6 +242,7 @@ def fetch_symbol_news(
 
         for item in payload.news_items:
             item.priority = item.priority.strip().upper()
+        payload.news_items = [item for item in payload.news_items if item.priority in KEPT_PRIORITIES]
         payload.news_items.sort(key=lambda item: PRIORITY_ORDER.get(item.priority, len(PRIORITY_ORDER)))
         news[symbol] = payload.news_items[:max_items]
 
