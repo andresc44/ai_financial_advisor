@@ -390,6 +390,10 @@ def test_overview_chips_open_their_holding_in_the_amp_version():
     # ...and the row, once open, focuses its own header, which scrolls it into view and highlights it
     assert '<amp-accordion animate id="acc-h-ccc"><section on="expand:hdr-h-ccc.focus"><header class="fh p12" id="hdr-h-ccc">' in amp
     assert '<amp-accordion animate id="acc-s-holdings">' in amp
+    # 2026-10-20: the row's Why and News dropdowns handle their own expand event; AMP otherwise passes it up to the
+    # row, whose focus action jumped the page ~650px up to the row's header when that was scrolled off screen
+    for part in ("why", "news"):
+        assert (f'<section on="expand:hdr-h-ccc-{part}.focus"><header class="fh p6" id="hdr-h-ccc-{part}">') in amp
     assert amp.count("<button") == len(view["portfolio"]["attention"]) + len(view["portfolio"]["earnings"])
     # The HTML version keeps plain chips: jump links don't work in the Gmail app, nor into closed dropdowns
     html = ch.render_html(view, TEMPLATE_DIR)

@@ -51,7 +51,11 @@
     stock's row; the row then focuses its own header (fold's focus_on_open), which scrolls it into view and
     highlights it. AMP email has no scroll action, and focusing straight from the button fails while the row is
     still hidden; closing and reopening the row makes its expand event fire even if it was open. Elsewhere it
-    is a plain chip. -#}
+    is a plain chip.
+    2026-10-20: AMP hands an expand event to the nearest element up the page with an `on` handler for it, so
+    opening a holding's Why or News dropdown also ran the row's focus action: with the row's header scrolled off
+    the top, the page jumped ~650px up to it. Those dropdowns now handle their own expand event (focusing their
+    own header, which is on screen since it was just tapped), so it stops there. -#}
 {%- macro jump(b) -%}
 {% if amp %}<button type="button" class="bd jp" style="background-color:{{ b.bg }};color:{{ b.fg }};" on="tap:acc-s-holdings.expand,acc-{{ b.anchor }}.collapse,acc-{{ b.anchor }}.expand">{{ b.text }}</button>{% else %}{{ badge(b) }}{% endif %}
 {%- endmacro -%}
@@ -447,13 +451,13 @@ u + .body .cv{display:none;}
 {% endfor %}
 {% if h.chart %}{{ chart(h.chart) }}{% endif %}
 {% if h.rationale %}
-{% call fold("Why " ~ h.signal.text|lower, top="t10") %}
+{% call fold("Why " ~ h.signal.text|lower, top="t10", anchor=h.anchor ~ "-why", focus_on_open=true) %}
 {{ h.rationale }}
 {% if h.volatility %}<div class="xs mu t6">{{ h.volatility }}</div>{% endif %}
 {% endcall %}
 {% endif %}
 {% if h.news %}
-{% call fold("News (" ~ h.news|length ~ ")") %}
+{% call fold("News (" ~ h.news|length ~ ")", anchor=h.anchor ~ "-news", focus_on_open=true) %}
 <table {{ T }}>
 {% for n in h.news %}
 <tr><td class="nd"><span class="dot" style="background-color:{{ n.dot }};"></span></td><td class="nt">{{ n.text }}{% if n.url %} <a href="{{ n.url }}" class="lk">Source</a>{% endif %}</td></tr>

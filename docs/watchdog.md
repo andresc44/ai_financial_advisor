@@ -316,6 +316,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
    - "Earnings soon" for holdings reporting within the catalyst window;
    - **Jumping to a stock:** in the AMP version, tapping a stock in either list opens Your holdings and that stock's row, then scrolls to it and highlights it.
      - **How:** AMP email has no scroll action, so the row focuses its own header once it has opened (its `expand` event), and focusing scrolls it into view.
+     - **Fixed 2026-10-20, unwanted jumps:** AMP hands an `expand` event to the nearest element up the page that handles it, so opening a holding's Why or News dropdown also ran the row's focus action. With the row's header scrolled off the top, the page jumped about 650 px up to it. Those dropdowns now handle their own `expand` event by focusing their own header, which is on screen because it was just tapped. In a phone-sized browser test, with the email as the page and inside a Gmail-like auto-sized frame, no tap moves the page any more, and the chips still jump.
      - **Tested:** in a browser with real taps. Whether the Gmail app lets the email scroll its own view is unconfirmed; if not, the row still opens and is highlighted.
      - **HTML version:** the chips stay plain there, because jump links don't work in the Gmail app or into closed dropdowns.
    - the connected brokerage, with each account's value in a small dropdown.
