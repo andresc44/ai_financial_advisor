@@ -7,6 +7,10 @@ used in standardized stock evaluation.
 to bounce (a pullback to support in an intact trend, with the selling running out), not one that has already run
 for weeks. Its bands are one coherent setup instead of three that rarely co-occur (breakout, at support, bouncing
 from oversold), and risk/reward is scored from the model's own entry, stop, and target.
+
+2026-10-20 (Claude-authored, at Andres's request): the theses are at most 2 short plain sentences on what the data
+means, with figures and indicator names used sparingly (they had become lists of 8-10 figures the card already
+shows), and the key risk is one short sentence, like the holdings rationale (LLM_hold_instr.RATIONALE).
 """
 import sys
 from pathlib import Path
@@ -65,20 +69,22 @@ LONG_TERM_SENTIMENT_DESCRIPTION = (
     "Bullish, Neutral, or Bearish."
 )
 LONG_TERM_THESIS_DESCRIPTION = (
-    "1-2 sentences for the reader on why the stock does or doesn't suit a long-term portfolio, citing the 2-3 "
-    "figures from the data that drive the long-term scores."
+    "At most 2 short sentences in plain language on why the business does or doesn't suit a long-term portfolio: "
+    "what the data says about it (e.g. cheap for how fast it's growing, a fortress balance sheet), not a list of "
+    "figures (see WRITTEN FIELDS)."
 )
 KEY_RISK_DESCRIPTION = (
-    "One sentence on the single biggest risk to the long-term thesis, citing the supporting figure or headline "
-    "where the data has one."
+    "One short sentence (at most about 25 words) on the single biggest risk to the long-term thesis and what it "
+    "would mean for the stock."
 )
 SWING_SENTIMENT_DESCRIPTION = (
     "Outlook for the share price over the next 2-8 weeks, from the technicals, catalysts, and headlines: "
     "Bullish, Neutral, or Bearish."
 )
 SWING_THESIS_DESCRIPTION = (
-    "1-2 sentences for the reader on the swing setup: why the stock looks cheap now, what should lift it, and what "
-    "would confirm the bounce, citing the indicator values behind it."
+    "At most 2 short sentences in plain language on the swing setup: why the stock looks cheap now, what should "
+    "lift it, and what would confirm the bounce, describing what the chart is doing rather than listing "
+    "indicator values (see WRITTEN FIELDS)."
 )
 ENTRY_PRICE_DESCRIPTION = (
     "Suggested entry price for a swing long, in the stock's trading currency: at or near the current price, or at "
@@ -162,8 +168,8 @@ A good swing trade buys a stock early, while it is temporarily cheap and likely 
 
 ### WRITTEN FIELDS (shown to the reader in their daily digest)
 - sentiment (in each section): your overall read for that horizon. Long-term weighs the business and valuation over 1-3+ years; swing weighs the next 2-8 weeks of price action. They can differ (e.g. a strong business stretched after a run, where the next few weeks look flat or down).
-- thesis, key_risk: plain language for an individual investor. Cite the specific figures from the data behind each point (e.g. "forward P/E of 18 against 25% revenue growth"). Never invent numbers, events, or news that are not in the data, and say so plainly when the data argues against the stock: these fields are recorded for every candidate, not only the ones picked.
-- entry_price, stop_loss, price_target (swing): derive each from levels in the data, in the stock's trading currency, with stop_loss < entry_price < price_target. Enter at or near the current price, or at the support just below if the price is still falling. Put the stop just below the support the trade relies on (the level whose break means the bounce failed), and the target where the rebound should reach within 2-8 weeks (EMA 21 or the 50-day average from below, the middle or upper Bollinger Band, the last swing high, or the analyst target if it is that close). Mention the level each one comes from in the swing thesis when it helps the reader.
+- thesis, key_risk: read on a phone by an individual investor, not an analyst. Keep the thesis to at most 2 short sentences and the key risk to one. Say what the data means and how to read it (e.g. "cheap for how fast it's growing", "a fortress balance sheet", "pulled back to its long-term trend line with the selling fading") rather than listing figures: the card already shows the price levels, key figures, and score breakdown beside the text. Use a figure or an indicator name sparingly, only when it is the clearest way to make the point, and never string several together (not "forward P/E of 13.6, a PEG of 0.26, 106% revenue growth and a 66% operating margin"). Never invent numbers, events, or news that are not in the data, and say so plainly when the data argues against the stock: these fields are recorded for every candidate, not only the ones picked.
+- entry_price, stop_loss, price_target (swing): derive each from levels in the data, in the stock's trading currency, with stop_loss < entry_price < price_target. Enter at or near the current price, or at the support just below if the price is still falling. Put the stop just below the support the trade relies on (the level whose break means the bounce failed), and the target where the rebound should reach within 2-8 weeks (EMA 21 or the 50-day average from below, the middle or upper Bollinger Band, the last swing high, or the analyst target if it is that close). The card shows the three levels, so the swing thesis needn't repeat them.
 """
 
 # User prompt template

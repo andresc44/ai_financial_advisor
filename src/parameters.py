@@ -435,7 +435,8 @@ params_dict = {
     # Both run in the background while the picks are built; set one to False to leave it out (e.g. to save the
     # Gemini call while testing).
     "UNIVERSAL_EXTRAS": {
-        "MACRO_NEWS": True,        # Top 5 macro stories from Gemini with Google Search, shared GEMINI_API_KEY
+        "MACRO_NEWS": True,        # Top macro stories from Gemini with Google Search, shared GEMINI_API_KEY
+        "MACRO_NEWS_STORIES": 4,   # How many (Claude-authored, 2026-10-20: 4, was 5, to shorten the email)
         "MARKET_DASHBOARD": True,  # Index/VIX/yield moves, 10Y-2Y spread (FRED_API_KEY), Fear & Greed, S&P breadth
     },
 

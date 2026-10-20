@@ -1,4 +1,4 @@
-#File to connect to Gemini API and fetch top 5 macroeconomic stories for daily digest, with Google Search grounding enabled.
+#File to connect to Gemini API and fetch the top macroeconomic stories for daily digest, with Google Search grounding enabled.
 """
 Claude-authored changes (Claude Opus 5.5 via Claude Code, 2026-10-16), at Andres's request, ahead of switching
 the macro news on:
@@ -9,6 +9,8 @@ the macro news on:
   returned as an issue for universal_issues and sent to the admins. Usage is recorded under the shared key.
 - When enabled (later on 2026-10-16): links are verified like the per-stock news (a source_url is kept only when it
   matches a page Google Search grounding returned, else None), and the prompt states today's date.
+- 2026-10-20: STORY_COUNT stories (UNIVERSAL_EXTRAS.MACRO_NEWS_STORIES, 4; was 5), each with a one-sentence
+  market impact (was 1-2 sentences), at Andres's request: the stories were about 6% of the email.
 """
 import os
 import sys
@@ -35,6 +37,7 @@ from src.personalized.symbol_specific_news import _grounded_urls, _verify_source
 from src.usage_tracking import record_gemini_response
 
 MACRO_NEWS_MODEL = params_dict["GEMINI_MODELS"]["MACRO_NEWS"]  # Claude-authored (2026-10-16): set in parameters.py
+STORY_COUNT = int(params_dict["UNIVERSAL_EXTRAS"].get("MACRO_NEWS_STORIES", 4))  # Claude-authored (2026-10-20)
 
 # 1. Load variables from .env file into environment
 load_dotenv()
@@ -45,15 +48,15 @@ if not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
 class MacroStory(BaseModel):
     priority: str        # Expects "HIGH", "MEDIUM", or "LOW"
     event_summary: str   # 1 concise sentence on what occurred
-    market_impact: str   # 1-2 concise sentences on market/sector ripple effects
+    market_impact: str   # 1 succinct sentence on the direct market/sector effect
     source_url: Optional[str]  # Direct link to the primary news source; None unless grounding returned that page
 
 class DigestPayload(BaseModel):
     macro_stories: list[MacroStory]
 
 # 3. System Prompt
-SYSTEM_PROMPT = """
-You are a senior macro strategist. Extract the top 5 major global stories from the news feed or web search results for a daily digest.
+SYSTEM_PROMPT = f"""
+You are a senior macro strategist. Extract the top {STORY_COUNT} major global stories from the news feed or web search results for a daily digest.
 
 PRIORITY HIERARCHY:
 1. HIGH: Geopolitical shocks, emergency central bank actions, sharp energy/commodity spikes, or major broad-market shifts (+/- 2% intraday).
@@ -61,13 +64,13 @@ PRIORITY HIERARCHY:
 3. LOW (FILTER OUT): Routine commentary, minor corporate updates, or normal sector fluctuations.
 
 SELECTION RULE:
-Select strictly the 5 highest-priority stories available. Do NOT balance across tiers (e.g., return 5 HIGH items if 5 exist). Only fall back to lower tiers if higher-priority events are absent.
+Select strictly the {STORY_COUNT} highest-priority stories available. Do NOT balance across tiers (e.g., return {STORY_COUNT} HIGH items if {STORY_COUNT} exist). Only fall back to lower tiers if higher-priority events are absent.
 
 FORMATTING REQUIREMENTS:
 Keep all fields extremely succinct and direct:
 - priority: Must be "HIGH", "MEDIUM", or "LOW".
 - event_summary: 1 concise sentence summarizing what occurred.
-- market_impact: 1-2 concise sentences analyzing direct asset, sector, yield, or volatility impacts over the next 1-3 weeks.
+- market_impact: ONE succinct sentence of at most 25 words on the direct effect on assets, sectors, yields, or volatility, e.g. "Higher oil costs raise inflation risk, lifting yields and weighing on airlines." Never add a second sentence.
 - source_url: The direct URL link to the original article source.
 """
 
@@ -80,7 +83,7 @@ def fetch_live_macro_stories() -> DigestPayload:
     today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
         f"Today is {today:%Y-%m-%d}. Perform a web search for today's top global macroeconomic, central bank, "
-        "and high-impact world financial news. Select the top 5 items based on priority."
+        f"and high-impact world financial news. Select the top {STORY_COUNT} items based on priority."
     )
 
     print("[DIAGNOSTIC] Creating Chat session with Google Search grounding enabled...")
@@ -105,6 +108,7 @@ def fetch_live_macro_stories() -> DigestPayload:
     print(f"[DIAGNOSTIC] Response received successfully in {elapsed}s.")
 
     payload = DigestPayload.model_validate_json(response.text)
+    payload.macro_stories = payload.macro_stories[:STORY_COUNT]  # Claude-authored (2026-10-20): in case it sends more
     _verify_source_urls(payload.macro_stories, _grounded_urls(response))  # Claude-authored (2026-10-16)
     return payload
 

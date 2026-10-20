@@ -416,6 +416,7 @@ Other limits:
 - **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: the glossary (about 10 KB), low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions. A typical digest of about 10 holdings keeps the glossary, at about 96 KB in each version.
 - **Where the bytes go** (2026-10-19, 10 holdings, 29 news bullets, 2 long-term ideas): holdings about half (news bullets 21 KB, reasoning 9 KB, figures 7 KB), long-term ideas 10 KB (about 5 KB each; a swing idea is about 3.4 KB), glossary 10 KB. Only about a quarter of the bytes were readable text; the rest was markup.
 - **Trimmed on 2026-10-19:** repeated inline colours, paddings and alignments became short classes in the `<style>` block (104.3 to 93.8 KB for the AMP version, with no visible change), holding news became one sentence per story (about 55% shorter), and the holdings reasoning became at most 2 plain sentences. With 10 holdings and 5 swing ideas, only the glossary should need to go.
+- **Trimmed on 2026-10-20:** 4 macro stories, each with a one-sentence impact (5.0 to 3.8 KB), a tighter glossary with every term kept (9.6 to 8.8 KB), and idea pitches in plain words with one-sentence key risks. The 2026-10-19 post-market AMP digest was 83.9 KB. A day with 5 swing ideas (about 3.6 KB each) would be about 102 KB, so the glossary would still be left out that day.
 - **Never removed:** each holding's signal, figures and reasoning.
 - **Capacity:** about 20 stocks fit; a larger portfolio needs Gmail's "View entire message" link for the rest.
 - **Untrimmed:** the plain-text version is always complete.
@@ -520,7 +521,7 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
 - **Track record:** it also keeps each pick's sentiment and swing levels, for checking later whether they held up.
 
 **Macro content.** It is switched with `UNIVERSAL_EXTRAS`, and both parts are on by default. Both run in the background while the picks are built, and both are included even when no picks could be made.
-- `headline_news`: `{"macro_stories": [{"priority", "event_summary", "market_impact", "source_url"}]}` from Gemini with Google Search, using the shared `GEMINI_API_KEY`. A `source_url` is kept only when it matches a page the search returned; otherwise it's `null`.
+- `headline_news`: `{"macro_stories": [{"priority", "event_summary", "market_impact", "source_url"}]}`, the top `UNIVERSAL_EXTRAS.MACRO_NEWS_STORIES` (4) stories, each impact one sentence, from Gemini with Google Search, using the shared `GEMINI_API_KEY`. A `source_url` is kept only when it matches a page the search returned; otherwise it's `null`.
 - `market_data`: index, VIX, dollar, 10-year yield, and oil moves (1 day, 5 days, 1 month); the 10Y–2Y spread (FRED); CNN Fear & Greed; and the share of S&P 500 stocks above their 50-day average.
 
 A section that can't be fetched holds `{"Error": ...}` and adds a `universal_issues` entry. It never stops the digest.
