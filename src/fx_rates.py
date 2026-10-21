@@ -5,6 +5,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-15, a
 Why: SnapTrade and Google Sheets holdings can mix CAD (TSX listings) and USD positions. Totals, portfolio weights,
 beta, and the portfolio review used to add those amounts together unconverted. PortfolioFetcher.convert_to_usd now
 converts money amounts with the rates from here, so everything the reader sees is in USD.
+2026-10-21: also EUR, GBP (and pence), AUD, and COP holdings, and each user's home currency, which the digest's
+overview shows the portfolio in (create_html).
 
 Rates are USD per one unit of the currency, from Yahoo's "<CODE>USD=X" daily close. If Yahoo fails, the last good
 rate saved in data/fx_rates.json is used (with a warning); with neither, the rate is None and amounts in that
@@ -26,7 +28,7 @@ project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.market_session import exchange_calendar_code
+from src.market_session import listing
 
 CACHE_PATH = project_root / "data" / "fx_rates.json"
 _LOCK = threading.Lock()  # Users' holdings load in parallel threads; one fetch and cache write at a time
@@ -36,14 +38,15 @@ PENCE_CODES = {"GBX", "GBp"}  # Yahoo quotes London listings in pence
 def normalize_currency(value: Any, symbol: Optional[str] = None) -> str:
     """
     ISO currency code from SnapTrade (a dict with "code"), Sheets / Yahoo (a string), or nothing. Missing values
-    fall back to the listing's currency judged by its Yahoo suffix: CAD for Canadian listings, otherwise USD.
+    fall back to the listing's currency judged by its Yahoo suffix (2026-10-21: market_session.LISTING_SUFFIXES, e.g.
+    CAD for .TO, EUR for .DE, COP for .CL), otherwise USD.
     """
     if isinstance(value, dict):
         value = value.get("code")
     if isinstance(value, str) and value.strip():
         value = value.strip()
         return "GBX" if value in PENCE_CODES else value.upper()
-    return "CAD" if symbol and exchange_calendar_code(symbol) == "XTSE" else "USD"
+    return listing(symbol)[1] if symbol else "USD"
 
 
 def _load_cache() -> dict:

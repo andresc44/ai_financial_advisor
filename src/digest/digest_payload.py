@@ -24,11 +24,12 @@ import os
 from src.digest.create_html import html_main
 from src.digest.send_gmail import send_html_email
 from src.universal.universal_consolidated import get_universal_content
-from src.personalized.personalized_consolidated import get_personal_content
+from src.personalized.personalized_consolidated import get_ideas_only_content, get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
 from src.market_session import market_date
 from src.run_logging import name_thread, start_run_log, write_run_status
+from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
 import copy
 
@@ -85,6 +86,7 @@ class DigestPayload:
         Claude-authored (2026-10-15): the user's personal content, or {} when their holdings source is not
         SNAPTRADE or SHEETS. It neither reads nor changes self.payload, so several users can be built at once,
         alongside the universal content.
+        2026-10-21: NO_HOLDINGS users get an ideas-only digest (personalized_consolidated.get_ideas_only_content).
         """
         name_thread(user_name)  # Claude-authored (2026-10-15): log lines from this thread show the user
         user_profile = USER_PROFILES.get(user_name)
@@ -98,6 +100,8 @@ class DigestPayload:
                 " in USER_PROFILES."
             )
         holdings_source = os.environ.get(holdings_source_value)
+        if holdings_source == "NO_HOLDINGS":
+            return get_ideas_only_content(user_name)
         if holdings_source not in ["SNAPTRADE", "SHEETS"]:
             return {}  # No personal content if holdings_source is not valid
         return get_personal_content(user_name)
@@ -192,10 +196,15 @@ def run_daily_digests(
     instead of running create_html and emailing it. Nothing is recorded as sent, users who already received the
     digest are built anyway, and missed digests aren't checked, so a test run never changes what cron sends.
     `period` ("Pre-Market" / "Post-Market", payload-only) builds that digest now, even outside its send window.
+
+    2026-10-21: on a weekday the NYSE is closed, a cron run from DIGEST.PRE_MARKET_TIME_ET on tells the admins on
+    Telegram, once (src/telegram_alert/holiday_notice.py).
     """
     now = now or datetime.now(timezone.utc)
     stamp = now.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M ET")
     print(f"[{stamp}] Starting digest {'payload build' if payload_only else 'check'}...")
+    if not (check_only or payload_only):
+        send_holiday_notice(now)
     missed = [] if payload_only else missed_digests(recipients, now, alert=not check_only)
     missed_note = f" Missed today: {'; '.join(missed)}." if missed else ""
 

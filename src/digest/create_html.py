@@ -40,7 +40,7 @@ from src.fx_rates import usd_rates
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 from src.personalized.LLM_hold_instr import current_recommendation
-from src.digest.glossary import GLOSSARY
+from src.digest.glossary import GLOSSARY, HOLDINGS_ONLY_TERMS, IDEAS_ONLY_CATEGORY_NAMES
 from src.personalized.portfolio_review import build_portfolio_summary
 
 TEMPLATE_NAME = "email_template.html"
@@ -74,7 +74,9 @@ SIGNAL_PLURALS = {"Urgent sell": "urgent sells", "Risky": "risky", "Profit sell"
                   "Buy more": "buy more", "Hold": "holds", "Not evaluated": "not evaluated"}
 SENTIMENTS = {"Bullish": ("#166534", "#DCFCE7"), "Bearish": ("#991B1B", "#FEE2E2"), "Neutral": ("#475569", "#F1F5F9")}
 PRIORITY_DOTS = {"HIGH": "#DC2626", "MEDIUM": "#F59E0B", "LOW": "#94A3B8"}
-CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£"}
+CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£", "COP": "COP$"}
+# Claude-authored (2026-10-21): shown without cents, since a share or a portfolio runs to thousands or millions of them
+WHOLE_UNIT_CURRENCIES = ("COP",)
 # Claude-authored (2026-10-17): the currency of the holdings' money amounts (market value, daily and unrealized
 # P/L, cost): pull_holdings_data converts them to USD (USD_MONEY_COLUMNS). Per-share prices stay in each holding's
 # listing currency, its `currency` field. The swing and long-term ideas come from the US screener and the market
@@ -138,11 +140,57 @@ def _money(value: Any, decimals: int = 2, symbol: str = "$") -> str:
     return f"{'-' if number < 0 else ''}{symbol}{abs(number):,.{decimals}f}"
 
 
-def _signed_money(value: Any, decimals: int = 2) -> str:
+def _signed_money(value: Any, decimals: int = 2, symbol: str = "$") -> str:
     number = _num(value)
     if number is None:
         return DASH
-    return f"{'+' if number >= 0 else '-'}${abs(number):,.{decimals}f}"
+    return f"{'+' if number >= 0 else '-'}{symbol}{abs(number):,.{decimals}f}"
+
+
+def _symbol(code: str) -> str:
+    """e.g. 'C$' for CAD, or 'CHF ' for a currency without a symbol here."""
+    return CURRENCY_SYMBOLS.get(code, f"{code} ")
+
+
+def _money_in(value: Any, code: str, decimals: int = 2, signed: bool = False) -> str:
+    """Claude-authored (2026-10-21): an amount in `code`, e.g. 'C$1,234.50' or 'COP$4,120,000' (no cents for COP)."""
+    decimals = 0 if code in WHOLE_UNIT_CURRENCIES else decimals
+    return (_signed_money if signed else _money)(value, decimals, symbol=_symbol(code))
+
+
+def _narrow_money_in(value: Any, code: str, max_chars: int = 7) -> str:
+    """
+    Claude-authored (2026-10-21): a signed whole amount for a narrow figure box, which fits about 7 characters at a
+    280 px phone width: '-A$626', else compact ('+$12.3K', '+A$123K', '+C$1.2K'), else compact without the symbol
+    ('-1.98M', for pesos), which the box's card label names.
+    """
+    full = _money_in(value, code, 0, signed=True)
+    number = _num(value)
+    if number is None or len(full) <= max_chars or abs(number) < 1000:
+        return full
+    size = abs(number)
+    divisor, suffix = next(((d, s) for limit, d, s in ((999_500_000, 1e9, "B"), (999_500, 1e6, "M"))
+                            if size >= limit), (1e3, "K"))
+    scaled, sign, symbol = size / divisor, "+" if number >= 0 else "-", _symbol(code).strip()
+
+    def digits(decimals_under_10: int) -> str:  # e.g. 1.19 / 12.3 / 123 (3 significant), or 1.2 / 12 (2)
+        decimals = decimals_under_10 if scaled < 10 else max(0, decimals_under_10 - 1) if scaled < 100 else 0
+        return f"{scaled:.{decimals}f}".rstrip("0").rstrip(".") if decimals else f"{scaled:.0f}"
+
+    for text in (f"{sign}{symbol}{digits(2)}{suffix}", f"{sign}{symbol}{digits(1)}{suffix}"):
+        if len(text) <= max_chars:
+            return text
+    return f"{sign}{digits(2)}{suffix}"
+
+
+def _rate_text(code: str, usd_per_unit: float) -> str:
+    """
+    Claude-authored (2026-10-21): '1 CAD = 0.7111 USD', or per dollar when one unit is worth under a cent
+    ('1 USD = 3,167 COP'), so the rate never shows as 0.0003.
+    """
+    if usd_per_unit < 0.01:
+        return f"1 USD = {1 / usd_per_unit:,.0f} {code}"
+    return f"1 {code} = {usd_per_unit:.4f} USD"
 
 
 def _signed_pct(value: Any, decimals: int = 1) -> str:
@@ -253,17 +301,18 @@ def _quote_links(symbol: str) -> dict:
 # Holdings in USD
 # ---------------------------------------------------------------------------
 
-# Claude-authored (2026-10-17): holdings in these currencies are shown in US dollars at the current rate. GBX is a
-# London price in pence (fx_rates turns it into GBP / 100). Any other currency is left as it is, i.e. treated as USD.
-CONVERT_TO_USD = ("CAD", "AUD", "GBP", "GBX")
+# Claude-authored (2026-10-17): holdings in other currencies are shown in US dollars at the current rate. GBX is a
+# London price in pence (fx_rates turns it into GBP / 100). 2026-10-21: every currency, EUR and COP included; it
+# used to be only CAD, AUD, and GBP, and an EUR holding's price stayed in euros beside values in dollars.
 PER_SHARE_FIELDS = ("current_price", "valuation_price", "avg_cost_basis", "last_close")
 MONEY_FIELDS = ("market_value", "total_cost_basis", "unrealized_pnl", "daily_pnl")  # pull_holdings_data's USD_MONEY_COLUMNS
 
 
 def holdings_in_usd(holdings: list[dict]) -> tuple[list[dict], list[str], list[str]]:
     """
-    Claude-authored (2026-10-17): the holdings with every CAD, AUD, and GBP (or pence) amount in US dollars at the
-    current rate (fx_rates.usd_rates: live from Yahoo, else the last cached rate, else the payload's own rate).
+    Claude-authored (2026-10-17): the holdings with every amount in another currency (CAD, EUR, GBP or pence, AUD,
+    COP, ...) in US dollars at the current rate (fx_rates.usd_rates: live from Yahoo, else the last cached rate, else
+    the payload's own rate).
     - Per-share prices (in the listing's currency in the payload) are converted, and the original price and rate are
       kept as listed_price, listed_currency, and fx_rate_to_usd for the card.
     - Money amounts are already in USD at the payload's rate when it had one (PortfolioFetcher.convert_to_usd), so
@@ -276,14 +325,14 @@ def holdings_in_usd(holdings: list[dict]) -> tuple[list[dict], list[str], list[s
     def code_of(holding: dict) -> str:
         return (_text(holding.get("currency")) or "").upper()
 
-    codes = sorted({code_of(h) for h in holdings if code_of(h) in CONVERT_TO_USD})
+    codes = sorted({code_of(h) for h in holdings if code_of(h) not in ("", MONEY_CURRENCY)})
     if not codes:
         return holdings, [], []
     current = usd_rates(codes)
     converted, unconverted, used = [], [], {}
     for holding in holdings:
         code = code_of(holding)
-        if code not in CONVERT_TO_USD:
+        if code in ("", MONEY_CURRENCY):
             converted.append(holding)
             continue
         payload_rate = _num(holding.get("fx_rate_to_usd"))
@@ -312,10 +361,25 @@ def holdings_in_usd(holdings: list[dict]) -> tuple[list[dict], list[str], list[s
     if total > 0:
         for holding in converted:
             holding["portfolio_weight_pct"] = round(values[holding.get("symbol")] / total * 100, 2)
-    notes = [f"converted {code} holdings to USD at 1 {code} = {rate:.4f} USD" for code, rate in used.items()]
+    notes = [f"converted {code} holdings to USD at {_rate_text(code, rate)}" for code, rate in used.items()]
     if unconverted:
         notes.append(f"no exchange rate, left in their own currency: {', '.join(unconverted)}")
     return converted, notes, unconverted
+
+
+def home_currency(payload: dict) -> tuple[str, float, list[str]]:
+    """
+    Claude-authored (2026-10-21): (the user's home currency, USD per unit of it at the current rate, log lines).
+    The overview shows the portfolio in it (<NAME>_HOME_CURRENCY), and also in USD when it isn't USD. Payloads from
+    before 2026-10-21, and a currency without any rate (fx_rates: live, else the last cached rate), stay in USD.
+    """
+    code = (_text(payload.get("home_currency")) or MONEY_CURRENCY).upper()
+    if code == MONEY_CURRENCY:
+        return MONEY_CURRENCY, 1.0, []
+    rate = usd_rates([code]).get(code)
+    if not rate:
+        return MONEY_CURRENCY, 1.0, [f"no {code} exchange rate, so the overview is in USD instead of {code}"]
+    return code, rate, []
 
 
 # ---------------------------------------------------------------------------
@@ -433,10 +497,10 @@ def _listing_note(holding: dict) -> list[str]:
     if not code or rate is None:
         return []
     shown = "GBP pence" if code == "GBX" else code
-    at = f" at {_money(price, symbol=CURRENCY_SYMBOLS.get(code, f'{code} '))}" if price is not None and code != "GBX" else (
+    at = f" at {_money_in(price, code)}" if price is not None and code != "GBX" else (
         f" at {price:,.1f}p" if price is not None else "")
-    return [f"Listed in {shown}{at} (1 {'GBP' if code == 'GBX' else code} = "
-            f"{rate * (100 if code == 'GBX' else 1):.4f} USD)"]
+    rate_text = _rate_text("GBP", rate * 100) if code == "GBX" else _rate_text(code, rate)
+    return [f"Listed in {shown}{at} ({rate_text})"]
 
 
 def _price(holding: dict) -> Optional[float]:
@@ -463,7 +527,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     rsi = _num(first.get("rsi"))
 
     stats = [
-        _stat(f"Price · {currency}", _money(_price(first), symbol=CURRENCY_SYMBOLS.get(currency, f"{currency} ")),
+        _stat(f"Price · {currency}", _money_in(_price(first), currency),
               sub=f"{_signed_pct(daily_pct, 2)} {day}" if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
         _stat(f"Unrealized · {MONEY_CURRENCY}", _signed_money(gain), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
         _stat("RSI 14", _fixed(rsi, 0),
@@ -585,11 +649,13 @@ ATTENTION_SIGNALS = FLAGGED_SIGNALS + ("buy_more",)  # The "Needs attention" chi
 
 
 def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: tuple[int, int],
-               day: str) -> Optional[dict]:
+               day: str, home: tuple[str, float] = (MONEY_CURRENCY, 1.0)) -> Optional[dict]:
     """
     The overview card. 2026-10-17 (UI pass): built to answer "do I need to do anything?" at a glance: the day's
     change as a pill, flagged positions and their share of the portfolio, chips for each flagged stock (most urgent
     first), and holdings reporting earnings soon.
+    2026-10-21: its money (value, the day's change, unrealized P/L) is in the user's home currency (`home`: code and
+    USD per unit), with the value in USD and the rate on the line below when that isn't USD.
     """
     if not holdings:
         return None
@@ -608,17 +674,28 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
          if card["catalyst_days"] is not None),
     )
     daily_pct = _num(totals["daily_pnl_pct"])
+    code, usd_per_unit = home
+    total = _num(totals["total_market_value"])
+    value = _money_in(total / usd_per_unit if total is not None else None, code)
     return {
-        "label": f"Your portfolio · {MONEY_CURRENCY}",
-        "value": _money(totals["total_market_value"]),
+        "label": f"Your portfolio · {code}",
+        "currency": code,
+        "value": value,
+        # Claude-authored (2026-10-21): a long total (a million dollars, or pesos) gets a smaller font, so it fits a
+        # 280 px phone: at 34 px about 11 characters fit (measured in a browser)
+        "value_size": 34 if len(value) <= 11 else 28 if len(value) <= 12 else 24 if len(value) <= 15 else 20,
+        # e.g. "$102,345.67 USD · 1 CAD = 0.7111 USD", when the home currency isn't USD
+        "usd_value": (f"{_money(total)} {MONEY_CURRENCY} · {_rate_text(code, usd_per_unit)}"
+                      if code != MONEY_CURRENCY else ""),
         # e.g. "▼ $17.29 · 0.20%" in a red pill
-        "change": (f"{'▲' if daily_pnl >= 0 else '▼'} {_money(abs(daily_pnl))}"
+        "change": (f"{'▲' if daily_pnl >= 0 else '▼'} {_money_in(abs(daily_pnl) / usd_per_unit, code)}"
                    + (f" · {abs(daily_pct):.2f}%" if daily_pct is not None else "")),
         "change_pct": _signed_pct(totals["daily_pnl_pct"], 2),
         "change_tone": _tone(daily_pnl),
         "session": f"{day.capitalize()} · {session}" if session else day.capitalize(),
         "stats": [
-            _stat("Unrealized", _signed_money(gain, 0), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
+            _stat("Unrealized", _narrow_money_in(gain / usd_per_unit if gain is not None else None, code),
+                  _tone(gain), _signed_pct(gain_pct), _tone(gain)),
             _stat("Flagged", f"{len(flagged)} of {len(cards)}", flagged_tone,
                   f"{flagged_share:.0f}% of value" if flagged else "none flagged"),
             _stat("New ideas", str(long_n + swing_n), sub=f"{long_n} long · {swing_n} swing"),
@@ -702,7 +779,8 @@ def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
     }
 
 
-def _account(company: Any, holdings: list[dict]) -> Optional[dict]:
+def _account(company: Any, holdings: list[dict], home: tuple[str, float] = (MONEY_CURRENCY, 1.0)) -> Optional[dict]:
+    """The overview's connected-account dropdown; 2026-10-21: each account's value in the home currency (`home`)."""
     if not holdings and not _text(company):
         return None
     accounts: dict[str, dict] = {}
@@ -713,7 +791,7 @@ def _account(company: Any, holdings: list[dict]) -> Optional[dict]:
         entry["value"] += _num(holding.get("market_value")) or 0.0
     rows = [
         {"name": name, "positions": f"{len(entry['symbols'])} position{'s' if len(entry['symbols']) != 1 else ''}",
-         "value": _money(entry["value"])}
+         "value": _money_in(entry["value"] / home[1], home[0])}
         for name, entry in sorted(accounts.items(), key=lambda item: -item[1]["value"])
     ]
     company = _text(company) or "Brokerage"
@@ -995,11 +1073,23 @@ def _screening(screening: Any) -> list[tuple[str, str]]:
     return rows
 
 
+def _glossary(with_holdings: bool) -> list[dict]:
+    """
+    The glossary card's categories. Claude-authored (2026-10-21): a digest without holdings (an ideas-only user)
+    leaves out the terms only the holdings parts use.
+    """
+    if with_holdings:
+        return [{"category": category, "terms": terms} for category, terms in GLOSSARY]
+    kept = [(IDEAS_ONLY_CATEGORY_NAMES.get(category, category), [t for t in terms if t[0] not in HOLDINGS_ONLY_TERMS])
+            for category, terms in GLOSSARY]
+    return [{"category": category, "terms": terms} for category, terms in kept if terms]
+
+
 def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market: Optional[dict], day: str) -> str:
     """The inbox preview line under the subject."""
     parts = []
     if portfolio:
-        parts.append(f"Portfolio {portfolio['value']} {MONEY_CURRENCY} ({portfolio['change_pct']} {day})")
+        parts.append(f"Portfolio {portfolio['value']} {portfolio['currency']} ({portfolio['change_pct']} {day})")
     flagged = Counter(card["signal"]["text"] for card in cards if card["signal_key"] in ATTENTION_SIGNALS)
     parts += [_signal_count(count, label) for label, count in flagged.items()]
     parts.append(f"{ideas} new idea{'s' if ideas != 1 else ''}")
@@ -1012,7 +1102,9 @@ def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market:
 def build_view(payload: dict) -> dict:
     """Everything the template shows, formatted, from one user's digest payload."""
     holdings = [h for h in payload.get("holdings") or [] if isinstance(h, dict)]
-    holdings, fx_notes, unconverted = holdings_in_usd(holdings)  # CAD, AUD, and GBP holdings, in USD from here on
+    holdings, fx_notes, unconverted = holdings_in_usd(holdings)  # Holdings in other currencies, in USD from here on
+    home_code, home_rate, home_notes = home_currency(payload) if holdings else (MONEY_CURRENCY, 1.0, [])
+    home = (home_code, home_rate)
     recommendations = payload.get("recommendations") or {}
     today = _day(payload.get("date"))
     user_name = str(payload.get("user_name") or "there")
@@ -1024,7 +1116,7 @@ def build_view(payload: dict) -> dict:
     cards = _holding_cards(holdings, day)
     swing = [_swing_card(pick, today) for pick in recommendations.get("top_swing") or []]
     long_term = [_long_term_card(pick, today) for pick in recommendations.get("top_long_term") or []]
-    portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)), day)
+    portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)), day, home)
     market = _market(payload.get("market_data"), day)
     stories = _stories(payload.get("headline_news"))
     # Claude-authored (2026-10-17): the collapsed Markets & macro section, e.g. "S&P 500 +0.3% · VIX 16.13 · 5 stories"
@@ -1072,10 +1164,10 @@ def build_view(payload: dict) -> dict:
                                    "in their own currency and not added to the USD totals correctly.", "",
                                    _text(payload.get("user_name"))),
         }] if unconverted else []),
-        "fx_notes": fx_notes,
+        "fx_notes": fx_notes + home_notes,
         "portfolio": portfolio,
         "risk": _risk(cards, payload.get("portfolio_beta"), payload.get("portfolio_review") or []),
-        "account": _account(payload.get("account_company"), holdings),
+        "account": _account(payload.get("account_company"), holdings, home),
         "market": market,
         "stories": stories,
         "markets_summary": markets_summary,
@@ -1098,7 +1190,7 @@ def build_view(payload: dict) -> dict:
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
         # Claude-authored (2026-10-17): the static glossary card at the bottom (src/digest/glossary.py); emptied by
         # fit_for_gmail, before anything else, when the digest would pass Gmail's clipping limit
-        "glossary": [{"category": category, "terms": terms} for category, terms in GLOSSARY],
+        "glossary": _glossary(bool(cards)),
         "glossary_summary": [_part("Terms, abbreviations, and indicators explained")],
         "ideas_currency": IDEAS_CURRENCY,
         "currency_notes": currency_notes,
@@ -1213,7 +1305,9 @@ def render_text(view: dict) -> str:
         lines.append(f"! {issue['title']}: {issue['message']}")
     portfolio, risk, account = view["portfolio"], view["risk"], view["account"]
     if portfolio:
-        lines += [f"PORTFOLIO ({MONEY_CURRENCY}) {portfolio['value']}  {portfolio['change']} ({portfolio['session']})"]
+        lines += [f"PORTFOLIO ({portfolio['currency']}) {portfolio['value']}  {portfolio['change']} ({portfolio['session']})"]
+        if portfolio["usd_value"]:
+            lines.append(f"  In USD: {portfolio['usd_value']}")
         lines += [f"  {s['label']}: {s['value']} {s['sub']}".rstrip() for s in portfolio["stats"]]
     if risk:
         lines += ["", "PORTFOLIO RISK"]

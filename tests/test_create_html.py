@@ -9,6 +9,8 @@ from email import message_from_bytes
 from email.policy import default as default_policy
 from pathlib import Path
 
+import pytest
+
 import src.digest.create_html as ch
 import src.digest.digest_payload as dp
 import src.digest.send_gmail as sg
@@ -527,13 +529,15 @@ def test_the_glossary_is_static_and_left_out_first():
     assert ch.TRIM_STEPS[0].__name__ == "_drop_glossary"  # The least important content goes first
 
 
-def test_currencies_come_from_the_payload_or_default_to_usd():
+def test_currencies_come_from_the_payload_or_default_to_usd(monkeypatch):
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "EUR": 1.10})
     view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.DE", currency="EUR"), holding("NOC", currency=None)]))
     cards = {card["symbol"]: card for card in view["holdings"]}
-    # A holding's Price box is in its listing currency; position values and P/L are converted to USD
+    # Prices and position values are in USD, with a converted holding's own price and rate under its name
     assert (cards["AAA"]["stats"][0]["label"], cards["AAA"]["stats"][0]["value"]) == ("Price · USD", "$100.00")
-    # Currencies other than CAD, AUD, and GBP are shown as the payload gives them
-    assert (cards["XYZ.DE"]["stats"][0]["label"], cards["XYZ.DE"]["stats"][0]["value"]) == ("Price · EUR", "€100.00")
+    # 2026-10-21: every currency is converted, EUR included (it used to stay in euros)
+    assert (cards["XYZ.DE"]["stats"][0]["label"], cards["XYZ.DE"]["stats"][0]["value"]) == ("Price · USD", "$110.00")
+    assert cards["XYZ.DE"]["meta"].endswith("Listed in EUR at €100.00 (1 EUR = 1.1000 USD)")
     assert cards["NOC"]["stats"][0]["label"] == "Price · USD" and cards["NOC"]["currency_assumed"] is True
     assert all(card["stats"][1]["label"] == "Unrealized · USD" for card in view["holdings"])
     assert view["portfolio"]["label"] == "Your portfolio · USD" and "Values in USD" in view["holdings_note"]
@@ -550,8 +554,9 @@ def test_currencies_come_from_the_payload_or_default_to_usd():
     assert ch.build_view(with_currency)["currency_notes"] == []
 
 
-def test_cad_aud_and_gbp_holdings_are_converted_to_usd_at_the_current_rate(monkeypatch):
-    monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "CAD": 0.70, "AUD": 0.65, "GBX": 0.0125})
+def test_holdings_in_other_currencies_are_converted_to_usd_at_the_current_rate(monkeypatch):
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "CAD": 0.70, "AUD": 0.65, "GBX": 0.0125,
+                                                        "EUR": 1.10, "COP": 0.00025})
     view = ch.build_view(payload(holdings=[
         holding("AAA", value=1000.0),
         # CAD the payload already converted at 0.72: money amounts in USD at that rate, prices still in CAD
@@ -560,20 +565,30 @@ def test_cad_aud_and_gbp_holdings_are_converted_to_usd_at_the_current_rate(monke
         # AUD the payload couldn't convert (no rate): money amounts and prices still in AUD
         holding("BHP.AX", value=100.0, currency="AUD", current_price=40.0, total_cost_basis=90.0),
         holding("VOD.L", value=100.0, currency="GBX", fx_rate_to_usd=0.0125, current_price=80.0, total_cost_basis=90.0),
-        holding("SAP.DE", value=100.0, currency="EUR"),  # Not converted: other currencies are taken as they come
+        # 2026-10-21: EUR and COP too. COP the payload converted at 0.00024: a 2,800-peso share, $100 of them
+        holding("SAP.DE", value=110.0, currency="EUR", fx_rate_to_usd=1.10, current_price=200.0, total_cost_basis=99.0),
+        holding("ECOPETROL.CL", value=96.0, currency="COP", fx_rate_to_usd=0.00024, current_price=2800.0,
+                total_cost_basis=72.0),
     ]))
     cards = {card["symbol"]: card for card in view["holdings"]}
     enb, bhp, vod, sap = cards["ENB.TO"], cards["BHP.AX"], cards["VOD.L"], cards["SAP.DE"]
+    eco = cards["ECOPETROL.CL"]
     assert (enb["value"], enb["stats"][0]["label"], enb["stats"][0]["value"]) == ("$700.00", "Price · USD", "$35.00")
     assert enb["meta"].endswith("Listed in CAD at C$50.00 (1 CAD = 0.7000 USD)") and enb["chart"] is None
     assert (bhp["value"], bhp["stats"][0]["value"]) == ("$65.00", "$26.00")  # 100 and 40 AUD at 0.65
     assert vod["stats"][0]["value"] == "$1.00" and vod["meta"].endswith("Listed in GBP pence at 80.0p (1 GBP = 1.2500 USD)")
-    assert (sap["value"], sap["stats"][0]["label"]) == ("$100.00", "Price · EUR")
+    assert (sap["value"], sap["stats"][0]["label"], sap["stats"][0]["value"]) == ("$110.00", "Price · USD", "$220.00")
+    assert sap["meta"].endswith("Listed in EUR at €200.00 (1 EUR = 1.1000 USD)")
+    # COP: restated from 0.00024 to 0.00025, in whole pesos, and the rate per dollar (not 1 COP = 0.0003 USD)
+    assert (eco["value"], eco["stats"][0]["value"]) == ("$100.00", "$0.70")
+    assert eco["meta"].endswith("Listed in COP at COP$2,800 (1 USD = 4,000 COP)")
+    assert eco["stats"][1]["value"] == "+$25.00"  # (96 - 72) at 0.00024, restated at 0.00025
     # Unrealized P/L follows the converted values, and the weights are recomputed from them
     assert enb["stats"][1]["value"] == "+$70.00"  # (720 - 648) CAD-in-USD at 0.72, restated at 0.70
     assert round(sum(card["weight_pct"] for card in view["holdings"]), 1) == 100.0
-    assert enb["weight_pct"] == round(700 / (1000 + 700 + 65 + 100 + 100) * 100, 2)
+    assert enb["weight_pct"] == round(700 / (1000 + 700 + 65 + 100 + 110 + 100) * 100, 2)
     assert "converted CAD holdings to USD at 1 CAD = 0.7000 USD" in view["fx_notes"]
+    assert "converted COP holdings to USD at 1 USD = 4,000 COP" in view["fx_notes"]
     assert view["issues"] == []
 
 
@@ -584,6 +599,102 @@ def test_a_holding_without_any_exchange_rate_stays_in_its_currency_and_says_so(m
     assert enb["stats"][0]["label"] == "Price · CAD"
     assert [issue["title"] for issue in view["issues"]] == ["Exchange rate"]
     assert "ENB.TO" in view["issues"][0]["message"]
+
+
+def mixed_currency_payload(**overrides):
+    """
+    Holdings as PortfolioFetcher.convert_to_usd leaves them: money amounts in USD at the payload's rate, per-share
+    prices in the listing's currency. Each moved from last_close to valuation_price over the session.
+    """
+    rows = []
+    for symbol, code, rate, shares, price, last_close, cost in (
+            ("AAPL", "USD", 1.0, 10.0, 250.0, 245.0, 2000.0), ("SHOP.TO", "CAD", 0.72, 20.0, 150.0, 155.0, 2500.0),
+            ("SAP.DE", "EUR", 1.08, 5.0, 200.0, 198.0, 900.0), ("ECOPETROL.CL", "COP", 0.00024, 4000.0, 2800.0, 2750.0, 2.4e3),
+            ("BHP.AX", "AUD", 0.66, 30.0, 45.0, 44.0, 800.0), ("VOD.L", "GBX", 0.0133, 1000.0, 120.0, 121.0, 1500.0)):
+        rows.append(holding(
+            symbol, shares=shares, currency=code, fx_rate_to_usd=rate, current_price=price, valuation_price=price,
+            last_close=last_close, last_close_usd=last_close * rate, market_value=shares * price * rate,
+            daily_pnl=(price - last_close) * shares * rate, daily_pnl_pct=(price / last_close - 1) * 100,
+            total_cost_basis=cost, unrealized_pnl=shares * price * rate - cost))
+    return payload(holdings=rows, **overrides)
+
+
+RATES_NOW = {"USD": 1.0, "CAD": 0.70, "EUR": 1.10, "COP": 0.00025, "AUD": 0.65, "GBX": 0.0130, "GBP": 1.30}
+
+
+def test_pnl_adds_up_across_currencies_after_restating_at_the_current_rate(monkeypatch):
+    # Claude-authored (2026-10-21): the P/L check for converted holdings. At today's rates the value minus the
+    # day's change is the previous close's value, and each figure is shares x price x the current rate.
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: RATES_NOW[code] for code in [*codes, "USD"]})
+    source = mixed_currency_payload()["holdings"]
+    holdings, _, unconverted = ch.holdings_in_usd([dict(h) for h in source])
+    assert unconverted == []
+    value = sum(h["market_value"] for h in holdings)
+    daily = sum(h["daily_pnl"] for h in holdings)
+    previous = sum(h["last_close_usd"] * h["shares"] for h in holdings)
+    assert value == pytest.approx(sum(h["shares"] * h["valuation_price"] * RATES_NOW[h["currency"]] for h in source))
+    assert value - daily == pytest.approx(previous)
+    # Cost is restated at the same rate, so unrealized P/L excludes currency moves since purchase, as documented
+    assert sum(h["market_value"] - h["total_cost_basis"] for h in holdings) == pytest.approx(
+        sum(h["unrealized_pnl"] for h in holdings))
+    view = ch.build_view(mixed_currency_payload())
+    assert view["portfolio"]["value"] == f"${value:,.2f}"
+    assert view["portfolio"]["change_pct"] == f"{daily / previous * 100:+.2f}%"
+
+
+def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
+    # Claude-authored (2026-10-21): <NAME>_HOME_CURRENCY; the holdings themselves stay in USD
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: RATES_NOW[code] for code in [*codes, "USD"]})
+    usd = ch.build_view(mixed_currency_payload())["portfolio"]
+    total = float(usd["value"].lstrip("$").replace(",", ""))
+    view = ch.build_view(mixed_currency_payload(home_currency="CAD"))
+    cad = view["portfolio"]
+    assert cad["label"] == "Your portfolio · CAD" and cad["value"] == f"C${total / 0.70:,.2f}"
+    assert cad["usd_value"] == f"{usd['value']} USD · 1 CAD = 0.7000 USD"
+    assert cad["change"].split(" · ")[0][2:].startswith("C$") and cad["change_pct"] == usd["change_pct"]
+    assert cad["stats"][0]["value"].startswith(("+C$", "-C$")) and cad["stats"][0]["sub"] == usd["stats"][0]["sub"]
+    assert view["account"]["accounts"][0]["value"].startswith("C$")
+    assert "Values in USD" in view["holdings_note"] and view["holdings"][0]["value"].startswith("$")
+    assert view["preheader"].startswith(f"Portfolio C${total / 0.70:,.2f} CAD")
+    html, text = ch.render_html(view, TEMPLATE_DIR), ch.render_text(view)
+    assert cad["value"] in html and cad["usd_value"] in html
+    assert f"PORTFOLIO (CAD) {cad['value']}" in text and f"In USD: {cad['usd_value']}" in text
+    # Pesos: no cents, the rate per dollar, and a smaller font for the long number
+    cop = ch.build_view(mixed_currency_payload(home_currency="COP"))["portfolio"]
+    assert cop["value"] == f"COP${total / 0.00025:,.0f}" and cop["value_size"] < 34
+    assert cop["usd_value"].endswith("1 USD = 4,000 COP")
+    # USD at home (and payloads from before 2026-10-21): one figure, no USD line
+    assert usd["label"] == "Your portfolio · USD" and usd["usd_value"] == "" and usd["value_size"] == 34
+
+
+def test_a_home_currency_without_a_rate_shows_the_overview_in_usd(monkeypatch):
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: None if code == "EUR" else 1.0 for code in codes})
+    view = ch.build_view(payload(home_currency="EUR"))
+    assert view["portfolio"]["label"] == "Your portfolio · USD" and view["portfolio"]["usd_value"] == ""
+    assert "no EUR exchange rate, so the overview is in USD instead of EUR" in view["fx_notes"]
+
+
+def test_an_ideas_only_digest_has_no_holdings_parts(monkeypatch):
+    # Claude-authored (2026-10-21): <NAME>_HOLDINGS_SOURCE=NO_HOLDINGS (get_ideas_only_content)
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: pytest.fail("an ideas-only digest needs no exchange rate"))
+    ideas_only = payload(user_name="Koby", holdings=[], holdings_source="NO_HOLDINGS", home_currency="COP")
+    for key in ("account_company", "portfolio_beta", "portfolio_review", "api_usage"):
+        ideas_only.pop(key)
+    view, html = render(ideas_only)
+    assert view["portfolio"] is None and view["risk"] is None and view["account"] is None and view["holdings"] == []
+    assert view["greeting"] == "Good morning, Koby" and view["swing"] and view["long_term"] and view["market"]
+    for absent in ("Your portfolio", "Your holdings", "Portfolio risk", "Needs attention"):
+        assert absent not in html
+    positions = [html.index(marker) for marker in ("Good morning, Koby", "Markets &amp; macro", "Swing ideas",
+                                                    "Long-term ideas")]
+    assert positions == sorted(positions)
+    assert view["preheader"].startswith("2 new ideas")
+    assert "YOUR HOLDINGS" not in ch.render_text(view) and "PORTFOLIO" not in ch.render_text(view)
+    # The glossary leaves out the holdings' terms, keeping the ones the markets table and ideas use
+    glossary = {group["category"]: [term for term, _ in group["terms"]] for group in view["glossary"]}
+    assert glossary["Price moves & risk"] == ["Prev. day / Day", "Beta", "ATR"]
+    assert glossary["Signals & ideas"] == ["Sentiment", "Score", "Swing idea", "Long-term idea"]
+    assert len(ch.build_view(payload())["glossary"][1]["terms"]) == 8  # Unchanged with holdings
 
 
 def test_about_section_ends_with_the_stocks_left_after_each_screening_stage():

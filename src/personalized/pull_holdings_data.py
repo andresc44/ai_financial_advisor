@@ -374,7 +374,8 @@ class PortfolioFetcher:
         Fetches daily closes from yfinance and calculates daily profit/loss.
 
         Claude-authored (2026-10-15): daily P/L is the move over each stock's most recent regular session on its
-        own exchange (XNYS, or XTSE for Canadian listings), and `daily_pnl_session` holds that session's date:
+        own exchange (XNYS, or the one its Yahoo suffix names, market_session.LISTING_SUFFIXES, e.g. XTSE for .TO
+        and XETR for .DE), and `daily_pnl_session` holds that session's date:
         - from the open until the close: today's session, live current_price vs the previous session's close;
         - after the close, overnight, pre-market, weekends, and holidays: the last completed session, measured at
           its official close vs the close before it, so after-hours or pre-market broker prices never leak in

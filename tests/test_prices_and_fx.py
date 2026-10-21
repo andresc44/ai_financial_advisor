@@ -22,6 +22,13 @@ ET = ZoneInfo("America/New_York")
     ("2026-10-12T10:00", "AAPL", "2026-10-12", True),      # ... NYSE open
     ("2026-11-26T10:00", "AAPL", "2026-11-25", False),     # US Thanksgiving
     ("2026-11-27T13:30", "AAPL", "2026-11-27", False),     # US half day, closed at 13:00
+    # 2026-10-21: each listing's own exchange. A 07:30 ET pre-market digest is mid-session in Europe, after the
+    # close in Sydney, and before the open in Bogota
+    ("2026-10-15T07:30", "SAP.DE", "2026-10-15", True),
+    ("2026-10-15T07:30", "VOD.L", "2026-10-15", True),
+    ("2026-10-15T07:30", "BHP.AX", "2026-10-15", False),
+    ("2026-10-15T07:30", "ECOPETROL.CL", "2026-10-14", False),
+    ("2026-12-28T10:00", "VOD.L", "2026-12-24", False),    # London's Boxing Day (observed); the NYSE trades
 ])
 def test_latest_regular_session(when, symbol, session, in_progress):
     now = datetime.fromisoformat(when).replace(tzinfo=ET)
@@ -107,6 +114,10 @@ def test_single_ticker_download_shape_works(monkeypatch):
 def test_normalize_currency():
     assert fx_rates.normalize_currency({"code": "cad", "name": "Canadian Dollar"}) == "CAD"
     assert fx_rates.normalize_currency(None, "SHOP.TO") == "CAD"
+    # 2026-10-21: without a currency, the listing's suffix decides
+    assert [fx_rates.normalize_currency(None, symbol) for symbol in ("SAP.DE", "MC.PA", "VOD.L", "BHP.AX", "ECOPETROL.CL",
+                                                                     "BRK.B")] == ["EUR", "EUR", "GBX", "AUD", "COP", "USD"]
+    assert fx_rates.normalize_currency("COP", "EC") == "COP"  # What the broker or sheet says wins
     assert fx_rates.normalize_currency("", "AAPL") == "USD"
     assert fx_rates.normalize_currency("GBp") == "GBX"
 

@@ -25,6 +25,7 @@ PROFILE_ENV_SUFFIXES = {
     "destination_email": "EMAIL",                              # Where the digest is sent
     "account_company": "INSTITUTION",                          # Brokerage name shown in the digest, e.g. Questrade
     "home_timezone": "TIMEZONE",                               # IANA timezone, e.g. America/Toronto
+    "home_currency": "HOME_CURRENCY",                          # Claude-authored (2026-10-21): one of HOLDINGS.HOME_CURRENCIES
     "telegram_chat_id": "TELEGRAM_CHAT_ID",                    # Needed for watchdog alerts and notices
     "snaptrade_client_id": "SNAPTRADE_CLIENT_ID",              # SNAPTRADE only
     "snaptrade_consumer_key": "SNAPTRADE_CONSUMER_KEY",        # SNAPTRADE only

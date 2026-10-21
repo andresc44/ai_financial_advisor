@@ -87,8 +87,19 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 | `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic key (required when their model is Claude) |
 | `deepseek_api_key` | `ANDRES_DEEPSEEK_API_KEY=sk-...` | the user's own DeepSeek key (required when their model is DeepSeek) |
 | `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news and the portfolio review |
+| `home_currency` (added 2026-10-21) | `ANDRES_HOME_CURRENCY=CAD` | `HOLDINGS.HOME_CURRENCIES`: `USD` (the default, `HOLDINGS.DEFAULT_HOME_CURRENCY`), `CAD`, `EUR`, `GBP`, `AUD`, `COP`. The email's overview shows the portfolio in it, and also in USD |
+| `holdings_source` | `KOBY_HOLDINGS_SOURCE=NO_HOLDINGS` | `SNAPTRADE`, `SHEETS`, or `NO_HOLDINGS` (an ideas-only user, below) |
 
 If the model doesn't accept the effort, the effort falls back to `LLM["HOLDINGS"]`'s effort when that's the same model, and otherwise to the provider's default (`CLAUDE_CONFIG` / `DEEPSEEK_CONFIG` `"effort"`). The model and effort apply wherever holdings are evaluated: watchdog runs and the digest.
+
+#### Ideas-only users (added 2026-10-21)
+
+A user with `<NAME>_HOLDINGS_SOURCE=NO_HOLDINGS` has no holdings connected and gets the rest of the digest: the markets, the macro news, and the swing and long-term ideas.
+- **What they need in `.env`:** `<NAME>_EMAIL` and the two `<NAME>_RECEIVE_*_DIGEST` flags. `<NAME>_TIMEZONE` is optional and sets the greeting's time of day (US Eastern without it). No API keys: nothing is fetched or evaluated for them, so they add no cost.
+- **Their email:** no overview card, portfolio risk, or holdings. The glossary leaves out the holdings-only terms (the five signals, unrealized P/L, weight, flagged, volatility, leveraged ETFs).
+- **The watchdog** skips them, as it skips anyone without a holdings source.
+- **Koby** is the first one (`ACTIVE_USERS`).
+- **Code:** `personalized_consolidated.get_ideas_only_content`, called from `DigestPayload.personal_content`.
 
 The API keys are the only settings with no default: they never fall back to the shared `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` used for the universal content. If a user's LLM key is unset, their holdings get no recommendation; if their Gemini key is unset, their holding cards get no news bullets. Either way an `[ERROR]` line is printed and other users are unaffected.
 
@@ -312,7 +323,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 1. **Header:** the period (☀️ pre-market or 🌙 post-market), the date, a greeting by the time of day in the user's home timezone, and when it was prepared.
 2. **Notices** about anything missing.
 3. **Overview card** (always open):
-   - the portfolio's value, with the day's change in a coloured pill;
+   - the portfolio's value, with the day's change in a coloured pill. Since 2026-10-21 these are in the user's home currency (`<NAME>_HOME_CURRENCY`), and when that isn't USD, a line under the value gives it in USD with the rate, e.g. "$102,345.67 USD · 1 CAD = 0.7111 USD";
    - three figure boxes: unrealized gain, flagged positions and their share of the value, and new ideas;
    - "Needs attention" chips for each flagged stock, most urgent first;
    - "Earnings soon" for holdings reporting within the catalyst window;
@@ -334,14 +345,30 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 
 | Amounts | Shown in | Source |
 |---|---|---|
-| Portfolio total, position values, P/L, account values | USD ("Your portfolio · USD", "Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
-| A CAD, AUD or GBP (incl. pence) holding | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 (1 CAD = 0.7074 USD)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so |
-| Any other holding's share price | Its listing currency, as the payload gives it (e.g. "Price · EUR") | The holding's `currency` field |
+| The overview: portfolio total, the day's change, unrealized P/L, account values | The user's home currency (2026-10-21), plus the total in USD when that isn't USD | `home_currency` in `create_html.py`: `<NAME>_HOME_CURRENCY` from the payload, at the current rate |
+| Holdings: position values, P/L | USD ("Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
+| A holding in another currency (CAD, EUR, GBP or pence, AUD, COP, ...) | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 (1 CAD = 0.7074 USD)", or for pesos "Listed in COP at COP$2,800 (1 USD = 3,167 COP)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so. Until 2026-10-21 only CAD, AUD and GBP were converted, and an EUR holding's price stayed in euros |
 | Ideas: prices, trade levels, targets | "Prices in USD" | Always USD: the ideas come from the US screener (`IDEAS_CURRENCY`) |
 | Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Always USD: US ETFs and WTI |
 | API costs | Their `currency` | `api_usage.currency` |
 
 Where USD is assumed for a holding without a currency, or for API costs in a payload without `api_usage.currency`, the run log gets a `[NOTE] ... (not in the payload)` line.
+
+**Holdings listed outside North America (added 2026-10-21).** Each Yahoo suffix names its exchange and currency (`market_session.LISTING_SUFFIXES`):
+
+| Suffix | Exchange calendar | Currency |
+|---|---|---|
+| `.TO` `.V` `.NE` `.CN` | XTSE | CAD |
+| `.DE` `.F` `.PA` `.AS` `.MI` `.MC` `.BR` `.LS` `.VI` `.HE` `.IR` | XETR, XFRA, XPAR, XAMS, XMIL, XMAD, XBRU, XLIS, XWBO, XHEL, XDUB | EUR |
+| `.L` | XLON | GBX (pence) |
+| `.AX` | XASX | AUD |
+| `.CL` | XBOG | COP |
+
+- **The calendar:** each holding's daily P/L covers its own exchange's last session. A 07:10 ET pre-market digest is mid-session in Europe (live price), after the close in Sydney (that day's close), and before the open in Bogota (the previous day's close).
+- **The currency:** used only when SnapTrade or the sheet doesn't give one. What they give, or Yahoo's own currency for a sheet's symbol, wins.
+- **What these holdings may lack:** Finnhub's free plan is mainly for US listings, so their Finnhub sections can be empty (the Yahoo data is there), and Finviz has no chart for them.
+- **Ideas:** the idea pipeline stays US-only.
+- **The P/L check (2026-10-21):** at today's rates, a mixed portfolio's value minus the day's change equals the previous close's value, and unrealized P/L excludes currency moves since purchase (`tests/test_create_html.py`).
 
 **"Prev. day" and "Day" labels (added 2026-10-17).** Every daily change covers one full trading session, close to close: the previous session in a Pre-Market digest, today's in a Post-Market one. To make that clear, every daily change is labelled "Prev. day" in Pre-Market digests and "Day" in Post-Market ones:
 - the overview's change pill;
@@ -451,6 +478,13 @@ It prints, per recommendation (buy_more / hold / risky / profit_sell / urgent_se
 Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py`): one line per message with a timestamp and the user it belongs to, rotating at `OPS.LOG_MAX_MB` (5 MB) and keeping `OPS.LOG_BACKUPS` (5) old files. Under cron the output no longer also goes to `digest.log` / `watchdog.log` in the project root, which now only catch crashes before logging starts; set `FINNBOT_LOG_ECHO=1` to see the output when piping it. Each run ends with a summary line (who was sent or checked, who failed, how long it took).
 
 `OPS.ALERT_USERS` (default `["Andres"]`) get a Telegram alert when the digest's universal content fails, a user's digest or watchdog check fails, or a run crashes, at most once per `OPS.ALERT_COOLDOWN_HOURS` (6) for each kind of failure. The traceback is in the log.
+
+**US market holidays (added 2026-10-21).** On a weekday the NYSE is closed, `OPS.ALERT_USERS` get one Telegram notice from the first digest run at or after `DIGEST.PRE_MARKET_TIME_ET` (07:10 ET under cron). It says:
+- the holiday, from the exchange calendar (e.g. "Thanksgiving"; "a special closure" for one-off closures);
+- when trading resumes, and whether that day closes early;
+- whether the digests still go out. They do when another exchange in `WATCHDOG.EXCHANGE_CALENDARS` trades: the TSX is open on US Thanksgiving.
+
+The alert log's key includes the date, so later runs that day don't repeat it. `OPS.HOLIDAY_NOTICE: False` turns it off. Code: `src/telegram_alert/holiday_notice.py`, called by `run_daily_digests` (not with `--check` or `--payload-only`).
 
 To test without spending anything:
 

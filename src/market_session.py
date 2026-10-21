@@ -204,12 +204,31 @@ def last_refresh_boundary(
 
 
 # Claude-authored (2026-10-15): which regular session a price belongs to, for daily P/L.
-CANADIAN_SUFFIXES = (".TO", ".V", ".NE", ".CN")  # Yahoo suffixes for TSX, TSX Venture, NEO, and CSE listings
+# 2026-10-21: holdings can also be listed in Europe, London, Australia, and Colombia (EUR, GBP, AUD, and COP holdings).
+# Yahoo suffix -> (exchange_calendars code, the currency Yahoo quotes it in). A symbol without one of these suffixes is
+# a US listing. Only holdings use this; the ideas stay US-only.
+LISTING_SUFFIXES = {
+    ".TO": ("XTSE", "CAD"), ".V": ("XTSE", "CAD"), ".NE": ("XTSE", "CAD"), ".CN": ("XTSE", "CAD"),  # TSX, Venture, NEO, CSE
+    ".L": ("XLON", "GBX"),   # London, quoted in pence
+    ".AX": ("XASX", "AUD"),  # Australia
+    ".CL": ("XBOG", "COP"),  # Colombia
+    # Xetra, Frankfurt, Paris, Amsterdam, Milan, Madrid, Brussels, Lisbon, Vienna, Helsinki, Dublin
+    ".DE": ("XETR", "EUR"), ".F": ("XFRA", "EUR"), ".PA": ("XPAR", "EUR"), ".AS": ("XAMS", "EUR"),
+    ".MI": ("XMIL", "EUR"), ".MC": ("XMAD", "EUR"), ".BR": ("XBRU", "EUR"), ".LS": ("XLIS", "EUR"),
+    ".VI": ("XWBO", "EUR"), ".HE": ("XHEL", "EUR"), ".IR": ("XDUB", "EUR"),
+}
+US_LISTING = ("XNYS", "USD")
+
+
+def listing(symbol: str) -> tuple[str, str]:
+    """2026-10-21: (exchange calendar, currency) of a symbol's listing, judged by its Yahoo suffix."""
+    upper = str(symbol).upper()
+    return next((found for suffix, found in LISTING_SUFFIXES.items() if upper.endswith(suffix)), US_LISTING)
 
 
 def exchange_calendar_code(symbol: str) -> str:
-    """Calendar for a symbol's listing, judged by its Yahoo suffix: XTSE for Canadian listings, otherwise XNYS."""
-    return "XTSE" if str(symbol).upper().endswith(CANADIAN_SUFFIXES) else "XNYS"
+    """Calendar for a symbol's listing, judged by its Yahoo suffix (LISTING_SUFFIXES), otherwise XNYS."""
+    return listing(symbol)[0]
 
 
 def latest_regular_session(now: datetime, code: str) -> tuple[date, bool]:

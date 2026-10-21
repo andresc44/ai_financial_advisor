@@ -9,6 +9,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   pullbacks likely to bounce.
 - 2026-10-20: every entry tightened to one short sentence (about a quarter fewer words), keeping each term and how
   to read it, so the glossary still fits on a day with 10 holdings and 5 swing ideas.
+- 2026-10-21: a digest without holdings (an ideas-only user) leaves out HOLDINGS_ONLY_TERMS, and a swing idea is
+  either setup the swing screen finds: a dip in an uptrend or a fresh turn up.
 """
 
 # (category, [(term, explanation), ...]), in the order the email shows them
@@ -21,8 +23,8 @@ GLOSSARY = [
         ("Urgent sell", "Serious and time-sensitive: consider selling at the next chance. Also sends a phone alert."),
         ("Sentiment", "The model's overall read: Bullish (likely up), Neutral, or Bearish (likely down)."),
         ("Score", "0-100: how well a new idea fits the model's checklist; 90+ shows in green."),
-        ("Swing idea", "A pulled-back stock likely to bounce within days to weeks, with a planned entry, stop, and "
-                       "target."),
+        ("Swing idea", "A stock that dipped in an uptrend or just turned up, likely to rise within days to weeks, with "
+                       "a planned entry, stop, and target."),
         ("Long-term idea", "A business worth owning for years, judged on valuation, financial health, growth, and "
                            "moat."),
     ]),
@@ -90,3 +92,9 @@ GLOSSARY = [
         ("bps", "Basis points: hundredths of a percent, so 100 bps = 1%."),
     ]),
 ]
+
+# Claude-authored (2026-10-21): terms only the holdings parts use (their signals, the portfolio's figures). A digest
+# without holdings leaves them out, and names what's left of "Your portfolio" IDEAS_ONLY_CATEGORY_NAMES' way.
+HOLDINGS_ONLY_TERMS = {"Buy more", "Hold", "Risky", "Profit sell", "Urgent sell", "Unrealized P/L", "Weight",
+                       "Flagged", "Volatility", "Leveraged ETF (2x, 3x)"}
+IDEAS_ONLY_CATEGORY_NAMES = {"Your portfolio": "Price moves & risk"}

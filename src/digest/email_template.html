@@ -350,7 +350,8 @@ u + .body .cv{display:none;}
 {% if portfolio %}
 {% call card("18px") %}
 {{ label(portfolio.label, MUTED) }}
-<div style="font-size:34px;line-height:40px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
+<div style="font-size:{{ portfolio.value_size }}px;line-height:40px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
+{% if portfolio.usd_value %}<div class="xs mu">{{ portfolio.usd_value }}</div>{% endif %}
 <div style="padding-top:6px;"><span class="bd" style="font-size:13px;line-height:18px;padding:3px 10px;background-color:{{ '#DCFCE7' if portfolio.change_tone == 'pos' else '#FEE2E2' if portfolio.change_tone == 'neg' else '#F1F5F9' }};color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</span><span class="xs mu">&nbsp; {{ portfolio.session }}</span></div>
 <div class="t16">{{ stats(portfolio.stats) }}</div>
 {% if portfolio.attention %}

@@ -20,7 +20,7 @@ import src.personalized.symbol_specific_news as news
 import src.track_record as track_record
 from src.check_config import check_user, env_template
 from src.personalized.portfolio_review import build_portfolio_summary
-from src.personalized.user_profiles import build_profile, env_prefix
+from src.personalized.user_profiles import USER_PROFILES, build_profile, env_prefix
 
 ET = ZoneInfo("America/New_York")
 
@@ -185,6 +185,41 @@ def test_missing_env_value_fails_before_any_api_work(personal_env):
     assert personal_env.constructed == []
 
 
+def test_a_user_with_no_holdings_gets_an_ideas_only_digest(personal_env, monkeypatch):
+    # Claude-authored (2026-10-21): <NAME>_HOLDINGS_SOURCE=NO_HOLDINGS, e.g. Koby. Nothing is fetched and no key used.
+    monkeypatch.setitem(USER_PROFILES, "Ideas", build_profile("Ideas"))
+    for key in list(os.environ):
+        if key.startswith("IDEAS_"):
+            monkeypatch.delenv(key)
+    monkeypatch.setenv("IDEAS_HOLDINGS_SOURCE", "NO_HOLDINGS")
+    monkeypatch.setenv("IDEAS_EMAIL", "ideas@example.com")
+    monkeypatch.setattr(pc, "get_gemini_api_key", lambda user: pytest.fail("an ideas-only user needs no key"))
+    content = dp.DigestPayload(period="Pre-Market").personal_content("Ideas")
+    assert personal_env.constructed == []  # No holdings fetched
+    assert content["holdings"] == [] and content["holdings_source"] == "NO_HOLDINGS"
+    started = content["personal_started_at"]
+    assert started["home_timezone"] == "America/New_York" and started["us_eastern"]  # No timezone set: US Eastern
+    monkeypatch.setenv("IDEAS_TIMEZONE", "America/Bogota")
+    assert dp.DigestPayload().personal_content("Ideas")["personal_started_at"]["home_timezone"] == "America/Bogota"
+    # The template's required keys for this kind of user: no holdings or LLM keys, but an email address
+    rows = {env_key: status for status, env_key, _ in check_user("Ideas")}
+    assert rows["IDEAS_GEMINI_API_KEY"] == "unset" and rows["IDEAS_ANTHROPIC_API_KEY"] == "unset"
+    assert rows["IDEAS_RECEIVE_PREMARKET_DIGEST"] == "MISSING"
+    monkeypatch.delenv("IDEAS_EMAIL")
+    with pytest.raises(ValueError):  # Fails before the universal content finishes, like a user with holdings
+        dp.DigestPayload().personal_content("Ideas")
+
+
+def test_the_hourly_run_sends_the_holiday_notice(digest_run, telegram):
+    # Claude-authored (2026-10-21): US Thanksgiving; the TSX trades, so the Pre-Market digest still goes out
+    thanksgiving = datetime(2026, 11, 26, 7, 10, tzinfo=ET)
+    dp.run_daily_digests(["U0"], now=thanksgiving, check_only=True)
+    assert telegram.messages == []  # --check sends nothing
+    dp.run_daily_digests(["U0"], now=thanksgiving)
+    assert [user for user, _, _ in digest_run.sent] == ["U0"]
+    assert [(user, "Thanksgiving" in body) for user, body in telegram.messages] == [("Andres", True)]
+
+
 # --------------------------------------------------------------------------------------------- news links + review
 def test_only_links_google_search_returned_are_kept(monkeypatch):
     redirect = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/"
@@ -244,9 +279,26 @@ def test_generated_profiles_keep_the_existing_env_names():
     profile = build_profile("Andres")
     assert profile["account_company"] == "ANDRES_INSTITUTION" and profile["google_sheets_id"] == "ANDRES_SHEETS_ID"
     assert profile["Receive_Premarket_Digest"] == "ANDRES_RECEIVE_PREMARKET_DIGEST"
-    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 21
+    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 22
     assert profile["deepseek_api_key"] == "ANDRES_DEEPSEEK_API_KEY" and profile["holdings_llm_model"] == "ANDRES_HOLDINGS_LLM_MODEL"
+    assert profile["home_currency"] == "ANDRES_HOME_CURRENCY"  # 2026-10-21
     assert env_prefix("Mary-Jo") == "MARY_JO"
+
+
+def test_home_currency_is_one_of_the_allowed_ones_or_usd(monkeypatch):
+    # Claude-authored (2026-10-21): <NAME>_HOME_CURRENCY, read case-insensitively; anything else falls back to USD
+    from src.personalized.user_settings import get_home_currency
+
+    monkeypatch.setitem(USER_PROFILES, "Newbie", build_profile("Newbie"))
+    for value, expected in (("cop", "COP"), (" EUR ", "EUR"), ("JPY", "USD"), (None, "USD")):
+        if value is None:
+            monkeypatch.delenv("NEWBIE_HOME_CURRENCY", raising=False)
+        else:
+            monkeypatch.setenv("NEWBIE_HOME_CURRENCY", value)
+        assert get_home_currency("Newbie") == expected
+    monkeypatch.setenv("NEWBIE_HOME_CURRENCY", "JPY")
+    rows = {env_key: (status, note) for status, env_key, note in check_user("Newbie")}
+    assert rows["NEWBIE_HOME_CURRENCY"][0] == "INVALID"
 
 
 def test_check_config_rows_never_show_secrets(monkeypatch):

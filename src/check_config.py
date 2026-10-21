@@ -65,6 +65,9 @@ USER_KEYS = {
     "Receive_Postmarket_Digest": ("always", "True or False: send the after-close digest"),
     "account_company": ("holdings", "Brokerage name shown in the digest, e.g. Questrade"),
     "home_timezone": ("holdings", "IANA timezone, e.g. America/Toronto"),
+    # Claude-authored (2026-10-21)
+    "home_currency": ("optional", f"{', '.join(params_dict['HOLDINGS']['HOME_CURRENCIES'])}: the overview shows the "
+                                  f"portfolio in it and in USD (default {params_dict['HOLDINGS']['DEFAULT_HOME_CURRENCY']})"),
     "anthropic_api_key": ("holdings_anthropic", "The user's own Anthropic key (holdings evaluation on a Claude model)"),
     "deepseek_api_key": ("holdings_deepseek", "The user's own DeepSeek key (holdings evaluation on a DeepSeek model)"),
     "gemini_api_key": ("holdings", "The user's own Gemini key (holding news and portfolio review)"),
@@ -104,6 +107,8 @@ VALUE_CHECKS: dict[str, tuple[Callable[[str], bool], str]] = {
     "Receive_Premarket_Digest": (lambda v: v in ("True", "False"), "exactly True or False"),
     "Receive_Postmarket_Digest": (lambda v: v in ("True", "False"), "exactly True or False"),
     "home_timezone": (_valid_timezone, "an IANA timezone like America/Toronto"),
+    "home_currency": (lambda v: v.upper() in params_dict["HOLDINGS"]["HOME_CURRENCIES"],
+                      "one of " + ", ".join(params_dict["HOLDINGS"]["HOME_CURRENCIES"])),
     "watchdog_interval_hours": (
         lambda v: _valid_int(v, 0, params_dict["WATCHDOG"]["MAX_INTERVAL_HOURS"]),
         f"a whole number from 0 to {params_dict['WATCHDOG']['MAX_INTERVAL_HOURS']}",
@@ -184,7 +189,8 @@ def run_check() -> bool:
     for user_name in users:
         source = _env(build_profile(user_name)["holdings_source"]) or "no holdings source"
         settings = get_llm_settings(user_name)
-        print(f"\n{user_name} ({source}; holdings LLM {settings['model']}, effort {settings['effort']})")
+        llm = f"; holdings LLM {settings['model']}, effort {settings['effort']}" if source in WITH_HOLDINGS else ""
+        print(f"\n{user_name} ({source}{llm})")  # 2026-10-21: no holdings LLM for an ideas-only user
         for status, env_key, note in check_user(user_name):
             ok &= status not in ("MISSING", "INVALID")
             print(f"  {status:8} {env_key:34} {note}")

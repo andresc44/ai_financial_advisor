@@ -7,6 +7,7 @@ params_dict = {
     "ACTIVE_USERS": ["Andres", 
                     # "Mauricio", 
                     # "Steven"
+                    "Koby",  # Claude-authored (2026-10-21): ideas only (KOBY_HOLDINGS_SOURCE=NO_HOLDINGS)
                     ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
@@ -494,6 +495,12 @@ params_dict = {
     # Claude-authored (2026-10-15): holdings source health (src/personalized/pull_holdings_data.py)
     "HOLDINGS": {
         "STALE_SYNC_HOURS": 96,  # Notify the user when SnapTrade hasn't synced an account's holdings for this long
+        # Claude-authored (2026-10-21): the currencies a user can set as their home currency (<NAME>_HOME_CURRENCY).
+        # The digest's overview shows the portfolio in it, and also in USD when it isn't USD; the holdings stay in USD.
+        # Holdings themselves can be in these currencies too (a .DE, .L, .AX, or .CL listing, or one SnapTrade or the
+        # sheet says is in EUR, GBP, AUD, or COP); src/fx_rates.py converts them to USD.
+        "HOME_CURRENCIES": ["USD", "CAD", "EUR", "GBP", "AUD", "COP"],
+        "DEFAULT_HOME_CURRENCY": "USD",  # For a user without a valid <NAME>_HOME_CURRENCY
     },
 
     # Claude-authored (2026-10-16): the universal content alerts the admins when a data source is missing for more
@@ -559,6 +566,9 @@ params_dict = {
     "OPS": {
         "ALERT_USERS": ["Andres"],     # Users (with a Telegram chat ID) told when a digest or watchdog run fails
         "ALERT_COOLDOWN_HOURS": 6,     # The same failure is reported at most once per this many hours
+        # Claude-authored (2026-10-21): on a weekday the NYSE is closed (a US market holiday), tell the ALERT_USERS on
+        # Telegram, once, from the first digest run after DIGEST.PRE_MARKET_TIME_ET (src/telegram_alert/holiday_notice.py)
+        "HOLIDAY_NOTICE": True,
         "LOG_MAX_MB": 5,               # logs/<run>.log rotates at this size ...
         "LOG_BACKUPS": 5,              # ... keeping this many old files
     },

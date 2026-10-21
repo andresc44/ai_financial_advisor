@@ -149,6 +149,16 @@ def get_llm_settings(user_name: str) -> dict[str, str]:
     return {"provider": llm_models.provider_of(model), "model": model, "effort": effort}
 
 
+def get_home_currency(user_name: str) -> str:
+    """
+    Claude-authored (2026-10-21): <NAME>_HOME_CURRENCY when it's in HOLDINGS.HOME_CURRENCIES, otherwise
+    HOLDINGS.DEFAULT_HOME_CURRENCY (USD). The digest's overview shows the portfolio's value in it, and in USD.
+    """
+    holdings = params_dict["HOLDINGS"]
+    return _resolve(user_name, "home_currency", holdings.get("DEFAULT_HOME_CURRENCY", "USD"), parse=str.upper,
+                    is_valid=lambda v: v in holdings.get("HOME_CURRENCIES", ["USD"]))
+
+
 def wants_holding_news(user_name: str) -> bool:
     """Claude-authored (2026-10-16): <NAME>_RECEIVE_HOLDING_NEWS (default True): Gemini news bullets per holding."""
     return _resolve(user_name, "receive_holding_news", True, parse=_parse_bool, is_valid=lambda v: True)

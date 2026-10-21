@@ -19,7 +19,7 @@ from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.portfolio_review import review_portfolio
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
-from src.personalized.user_settings import get_gemini_api_key, wants_holding_news
+from src.personalized.user_settings import get_gemini_api_key, get_home_currency, wants_holding_news
 from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
 from src.usage_tracking import usage_summary
 
@@ -134,6 +134,33 @@ def _key_issue_notices(holdings_dict: dict, *key_errors: Optional[ApiKeyUnusable
     notices += [error.as_notice() for error in key_errors if error is not None]
     return list({(n["provider"], n["reason"]): n for n in notices}.values())
 
+def _profile_value(user_name: str, profile_key: str) -> Optional[str]:
+    """The stripped .env value behind USER_PROFILES[user][profile_key], or None when it isn't set."""
+    env_key = USER_PROFILES.get(user_name, {}).get(profile_key)
+    value = os.environ.get(env_key) if env_key else None
+    return value.strip() if value and value.strip() else None
+
+def get_ideas_only_content(user_name: str) -> dict:
+    """
+    Claude-authored (2026-10-21): the personal part of the digest for a user with no holdings connected
+    (<NAME>_HOLDINGS_SOURCE=NO_HOLDINGS). Their digest is everything else: the markets, the macro news, and the swing
+    and long-term ideas. Nothing is fetched and no API key of theirs is used; this only gives the email's header
+    its greeting and time, in their <NAME>_TIMEZONE when it's set (US Eastern otherwise). The email address is
+    checked first, so a missing one fails before the universal content finishes, as for a user with holdings.
+    """
+    started_at = datetime.now(timezone.utc)
+    destination_email = _profile_value(user_name, "destination_email")
+    if destination_email is None:
+        raise ValueError(f"Destination email for '{user_name}' not found.")
+    home_timezone = _profile_value(user_name, "home_timezone")
+    return {
+        "holdings_source": "NO_HOLDINGS",
+        "destination_email": destination_email,
+        "home_timezone": home_timezone,
+        "personal_started_at": section_started_at(started_at, home_timezone or US_EASTERN.key, user_name),
+        "holdings": [],
+    }
+
 def get_personal_content(user_name: str = "Andres"):
     """
     Returns a dictionary containing personalized content for the daily digest.
@@ -194,6 +221,7 @@ def get_personal_content(user_name: str = "Andres"):
         "account_company": account_company,
         "destination_email": destination_email,
         "home_timezone": home_timezone,
+        "home_currency": get_home_currency(user_name),  # Claude-authored (2026-10-21): the overview's currency
         # Claude-authored (2026-10-16): when this section started, in the user's home timezone and US Eastern
         "personal_started_at": section_started_at(started_at, home_timezone, user_name),
         "holdings": holdings,
