@@ -10,6 +10,7 @@ if str(project_root) not in sys.path:
 
 from src.parameters import params_dict
 from src.universal.recommendations.LLM_recommendation import daily_atr, run_llm_evaluation
+from src.universal.recommendations.sanitizer import horizon_payload
 
 logger = logging.getLogger("Finnbot.CandidateSelector")
 
@@ -148,12 +149,17 @@ def swing_reasoning(ticker: str, scores: Dict[str, Any]) -> Dict[str, Any]:
         "stop_loss": stop if levels_ok else None,
         "price_target": target if levels_ok else None,
         "risk_reward": round((target - entry) / (entry - stop), 1) if levels_ok else None,
+        # Claude-authored (2026-10-20): the swing screen's setup ("pullback" / "new_uptrend") and what its plan's stop
+        # and target sit at
+        "setup": section.get("setup"),
+        "stop_basis": section.get("stop_basis"),
+        "target_basis": section.get("target_basis"),
         "sub_scores": {name: section.get(name) for name in SWING_SCORES},
     }
 
 
 def select_top_candidates(
-    sanitized_inputs: Dict[str, Dict[str, Any]], 
+    sanitized_inputs: Dict[str, Dict[str, Any]],
     long_n: int = 2,
     swing_n: int = 5,
     min_long_score: Optional[float] = None,
@@ -161,31 +167,44 @@ def select_top_candidates(
     config: Optional[Dict[str, Any]] = None,
     issues: Optional[List[Dict[str, Any]]] = None,
     stats: Optional[Dict[str, int]] = None,
+    long_tickers: Optional[List[str]] = None,
+    swing_setups: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Evaluates candidate tickers and selects:
     1. Top long_n tickers with longScore >= min_long_score.
-    2. Top swing_n remaining tickers with swingScore >= min_swing_score (excluding longScore picks).
+    2. Top swing_n tickers with swingScore >= min_swing_score.
     2026-10-17: within each list, the sectors follow params_dict["PICK_SECTOR_RULES"] (pick_with_sector_rule).
+    2026-10-20 (Claude-authored, at Andres's request): the two lists come from two pipelines side by side. The
+    long-term candidates (`long_tickers`, by default every input) get the long-term call only, and the swing
+    candidates (the keys of `swing_setups`, from swing_screen.screen: {"setup", "facts", "plan"}) the swing call
+    only, each with just the data its rubric uses (sanitizer.horizon_payload). A stock can be in both lists: the
+    long-term picks are no longer left out of the swing picks. A pick shows its other score only when it was scored
+    on both.
 
     Args:
-        sanitized_inputs: Dict mapping ticker symbols to their sanitized market payloads.
+        sanitized_inputs: Dict mapping ticker symbols to their full sanitized market payloads (every candidate).
         long_n: Maximum number of top candidates to select for long-term holding.
         swing_n: Maximum number of top candidates to select for swing trading.
         min_long_score: Minimum longScore cutoff. Defaults to params_dict['MIN_LONG_SCORE'].
         min_swing_score: Minimum swingScore cutoff. Defaults to params_dict['MIN_SWING_SCORE'].
         config: Optional custom configuration dictionary for the LLM call.
-        stats: Claude-authored (2026-10-17), filled in when given: "sent" (candidates sent to the LLM), "scored"
-            (evaluations that came back valid), "swing_early" (2026-10-18: swing-qualified and not too_far_along), and
-            "long_qualified" / "swing_qualified" (scored tickers at or above
-            each minimum score, before the picks are capped at long_n / swing_n; a ticker can clear both).
+        stats: Claude-authored (2026-10-17), filled in when given: "sent" / "scored" (long-term candidates sent to the
+            LLM / valid evaluations), "swing_sent" / "swing_scored" (2026-10-20: the same for swing), "long_qualified" /
+            "swing_qualified" (at or above each minimum score, before the picks are capped), and "swing_early"
+            (2026-10-18: swing-qualified and not too_far_along).
+        long_tickers / swing_setups: Claude-authored (2026-10-20), as above.
 
     Returns:
         Dict with keys 'top_long_term' and 'top_swing', containing lists of selected ticker objects.
     """
     stats = stats if stats is not None else {}
-    stats.update(sent=len(sanitized_inputs or {}), scored=0, long_qualified=0, swing_qualified=0, swing_early=0)
-    if not sanitized_inputs:
+    sanitized_inputs = sanitized_inputs or {}
+    long_tickers = [t for t in (long_tickers if long_tickers is not None else sanitized_inputs) if t in sanitized_inputs]
+    swing_setups = {t: setup for t, setup in (swing_setups or {}).items() if t in sanitized_inputs}
+    stats.update(sent=len(long_tickers), scored=0, long_qualified=0, swing_sent=len(swing_setups), swing_scored=0,
+                 swing_qualified=0, swing_early=0)
+    if not long_tickers and not swing_setups:
         logger.warning("No sanitized inputs provided for selection.")
         return {"top_long_term": [], "top_swing": []}
 
@@ -199,22 +218,32 @@ def select_top_candidates(
     long_n = max(0, long_n)
     swing_n = max(0, swing_n)
 
-    # 1. Run LLM evaluation pipeline across all tickers
-    scores_map: Dict[str, Dict[str, float]] = run_llm_evaluation(
-        sanitized_inputs=sanitized_inputs, 
+    # 1. Run each horizon's LLM evaluation over its own candidates
+    issues_before = len(issues) if issues is not None else 0
+    long_scores: Dict[str, Dict[str, Any]] = run_llm_evaluation(
+        sanitized_inputs={t: horizon_payload(sanitized_inputs[t], "long_term") for t in long_tickers},
         config=config,
         issues=issues,  # Claude-authored (2026-10-16): collects a shared Anthropic key failure
-    )
+        horizon="long_term",
+    ) if long_tickers else {}
+    key_failed = issues is not None and len(issues) > issues_before  # The same key would fail the swing calls too
+    swing_scores: Dict[str, Dict[str, Any]] = run_llm_evaluation(
+        sanitized_inputs={t: horizon_payload(sanitized_inputs[t], "swing", setup) for t, setup in swing_setups.items()},
+        config=config,
+        issues=issues,
+        horizon="swing",
+    ) if swing_setups and not key_failed else {}
 
-    stats["scored"] = len(scores_map)
-    if not scores_map:
+    stats["scored"] = len(long_scores)
+    stats["swing_scored"] = len(swing_scores)
+    if not long_scores and not swing_scores:
         logger.error("LLM evaluation returned empty results.")
         return {"top_long_term": [], "top_swing": []}
 
     # 2. Filter candidates meeting the min_long_score threshold
     eligible_long = []
 
-    for ticker, scores in scores_map.items():
+    for ticker, scores in long_scores.items():
         long_score = scores.get("longScore", 0.0)
         if long_score >= min_long_score:
             eligible_long.append((ticker, scores))
@@ -229,11 +258,11 @@ def select_top_candidates(
         key=lambda item: item[1].get("longScore", 0.0),
         reverse=True
     )
-    
+
     stats["long_qualified"] = len(eligible_long)
-    stats["swing_qualified"] = sum(1 for s in scores_map.values() if s.get("swingScore", 0.0) >= min_swing_score)
+    stats["swing_qualified"] = sum(1 for s in swing_scores.values() if s.get("swingScore", 0.0) >= min_swing_score)
     # Claude-authored (2026-10-18): a swing pick must still be early in its move (too_far_along)
-    too_far = {ticker: too_far_along(sanitized_inputs.get(ticker)) for ticker, s in scores_map.items()
+    too_far = {ticker: too_far_along(sanitized_inputs.get(ticker)) for ticker, s in swing_scores.items()
                if s.get("swingScore", 0.0) >= min_swing_score}
     stats["swing_early"] = sum(1 for reason in too_far.values() if reason is None)
     # Claude-authored (2026-10-17): the sector rule decides among the stocks that cleared the bar
@@ -241,29 +270,25 @@ def select_top_candidates(
     sector_of = lambda ticker: candidate_sector(ticker, sanitized_inputs)  # noqa: E731
     top_long_tuples = pick_with_sector_rule(
         sorted_by_long, long_n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term")
-    selected_long_tickers = {ticker for ticker, _ in top_long_tuples}
+
+    def other_score(scores_map: Dict[str, Dict[str, Any]], ticker: str, key: str) -> Optional[float]:
+        return (scores_map.get(ticker) or {}).get(key)
 
     top_long_term = [
         {
             "ticker": ticker,
             "longScore": scores.get("longScore", 0.0),
-            "swingScore": scores.get("swingScore", 0.0),
+            "swingScore": other_score(swing_scores, ticker, "swingScore"),  # 2026-10-20: None unless swing-scored
             "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
             **long_term_reasoning(scores),  # Claude-authored (2026-10-16)
         }
         for ticker, scores in top_long_tuples
     ]
 
-    # 3. Filter remaining candidates meeting the min_swing_score threshold
+    # 3. Filter the swing candidates meeting the min_swing_score threshold
     eligible_swing = []
 
-    for ticker, scores in scores_map.items():
-        if ticker in selected_long_tickers:
-            logger.info(
-                f"[{ticker}] Excluded from Swing evaluation: Already selected in Long-Term portfolio."
-            )
-            continue
-
+    for ticker, scores in swing_scores.items():
         swing_score = scores.get("swingScore", 0.0)
         if swing_score >= min_swing_score and too_far.get(ticker):
             logger.info(f"[{ticker}] Swing score {swing_score:.1f}, but left out: already too far along its run "
@@ -281,14 +306,14 @@ def select_top_candidates(
         key=lambda item: item[1].get("swingScore", 0.0),
         reverse=True
     )
-    
+
     top_swing_tuples = pick_with_sector_rule(sorted_by_swing, swing_n, sector_of, sector_rules.get("SWING", "any"), "swing")
 
     top_swing = [
         {
             "ticker": ticker,
             "swingScore": scores.get("swingScore", 0.0),
-            "longScore": scores.get("longScore", 0.0),
+            "longScore": other_score(long_scores, ticker, "longScore"),  # 2026-10-20: None unless long-term-scored
             "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
             **swing_reasoning(ticker, scores),  # Claude-authored (2026-10-16)
         }

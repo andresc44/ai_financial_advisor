@@ -497,13 +497,43 @@ The universal picks use the shared `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, and T
 
 Each problem is added to the universal payload's `universal_issues` (`{"source", "reason", "message"}`), so the email can say why picks are missing or based on partial data. Each is also sent to `OPS.ALERT_USERS` by Telegram, once per cooldown. The macro news (`src/universal/market_news.get_macro_stories`, still disabled) works the same way with the shared `GEMINI_API_KEY`: on failure it returns no stories plus the issue, and never raises.
 
+### Swing screen (added 2026-10-20)
+
+Swing ideas have their own pipeline (`src/universal/recommendations/swing_screen.py`), run beside the long-term screens on the same stage-1 list (the NASDAQ screener: market cap, volume, and price minimums, so no penny stocks). Before, swing ideas came from the long-term candidates, which are great businesses at fair prices; on most days only a handful were in a swing setup, and none scored 80.
+
+All its settings are `SWING_SCREEN` in `parameters.py`:
+
+| Stage | Setting | What it keeps (default) |
+|---|---|---|
+| 1. Fundamentals | `YAHOO_FILTERS` | A decent business, looser than the long-term screen: average volume 1M+, 3+ analysts, consensus Hold or better (3.0), forward P/E between 0 and 60, net margin 1%+, revenue at most 5% below a year ago. Uses the Yahoo info the long-term screen already fetched. |
+| 2. Setup | `SETUP` | Price $10+, $20M+ traded a day, RSI 20-65, still early in its move (`SWING_EARLY_ENTRY`), and either a **pullback** (at most 5% under its 200-day average, or the 50-day above the 200-day, and down 1+ ATR but at most 30% from its 20-day high close) or a **new uptrend** (the 9-day average crossed above the 21-day within 7 sessions). Each setup can be switched off. One batch of Yahoo daily bars. |
+| 3. Plan | `LEVELS`, `MIN_PLAN_RR` | Entry at the latest close; stop 0.5 ATR below the nearest support (EMA 21, 50- or 200-day average, lower Bollinger Band, 10-day low), and at least 1.5 ATRs below the entry; target at the nearest level at least 1.5 ATRs up (20- or 60-day high close, 50- or 200-day average from below, upper band), at most 8 ATRs up. Plans under 1.5:1 are dropped. |
+| To the LLM | `MAX_CANDIDATES` | The best 40 plans: the most risk/reward points (full marks from 4.5:1), then the earliest in its move |
+
+- **Calibrated** on 2026-10-19's data. First settings: 613 -> 395 fundamentals -> 118 in a setup (85 pullbacks, 32 new uptrends) -> 67 plans of 1.5:1+ -> 20 to the LLM, of which 6 were also long-term candidates. Loosened the same day at Andres's request, for a larger pool to pick the best from (the values above; the old ones are noted in `parameters.py`): 596 -> 468 -> 187 -> 108 -> 40 to the LLM (22 pullbacks, 18 new uptrends). The plan minimum stays 1.5:1: a plan under it earns at most ~8 of the 30 risk/reward points, so it can't reach 80.
+- **Both lists are fetched together:** a stock on both is fetched once. The swing screen's daily bars are the same download the long-term technicals use.
+- **Long-term picks can be swing picks too** (the old rule left them out).
+
+**One LLM call per horizon** (2026-10-20). Long-term candidates get `LLM_rec_instr.LONG_TERM_SYSTEM_PROMPT` (the same rubric as before) and swing candidates `SWING_SYSTEM_PROMPT`, each with only the data its rubric uses (`LLM_PAYLOAD`, `sanitizer.horizon_payload`): long-term calls skip the technicals and daily bars, swing calls the full fundamentals (keeping a few as `key_fundamentals`) and get the screen's setup, facts, and plan as `swing_setup`. A pick shows its other score only when it was scored on both.
+
+| First run (2026-10-19 post-market data) | Before (one combined call) | After |
+|---|---|---|
+| Calls | 93-96 | 93 long-term + 20 swing |
+| Tokens per call | 8.8K in, 2.2K out | long-term 3.9K in, 0.8K out; swing 9.2K in, 1.1K out |
+| Cost at off-peak prices | $0.24-0.26 | $0.14 |
+| Whole run | ~27 min | 23 min |
+
+The run is faster because the long-term Finnhub filter now fetches only the section its rules read (`basic_financials`, 1 call per Yahoo survivor instead of 4), and the quarterly series that comes with it is reused instead of fetched again.
+
+**Swing rubric, from the screen's facts** (`SWING_SYSTEM_PROMPT`). The model scores three parts (70 points) from `swing_setup.facts` and the usual data; the fourth, risk / reward (30), is `plan_risk_reward_score` of the screen's plan, so the model no longer picks levels. Each band names the facts it rests on: e.g. rebound signals count four signs of a turn (RSI rising, more volume on up days, a higher low, a close above EMA 9 or the SAR flipped below). Earnings within 5 trading days cap the catalyst score at 10: a report days away is a coin flip, not a catalyst. On the same 20 candidates scored three times, the swing score moved 3.6 points on average (median 3.0, max 13.5), against 7.1 (max 11.7) for the old call.
+
 ### Universal picks and macro content in the payload
 
 Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reasoning (added 2026-10-16) plus the data set in `RECOMMENDATION_FIELDS`:
 
 | From | Long-term picks | Swing picks |
 |---|---|---|
-| Claude's evaluation | `longScore`, `swingScore`, `sentiment` (1–3+ years), `thesis`, `key_risk`, `sub_scores` | `swingScore`, `longScore`, `sentiment` (2–8 weeks), `thesis`, `entry_price`, `stop_loss`, `price_target`, `risk_reward`, `sub_scores` |
+| Claude's evaluation | `longScore`, `swingScore` (null unless also a swing candidate), `sentiment` (1–3+ years), `thesis`, `key_risk`, `sub_scores` | `swingScore`, `longScore` (null unless also a long-term candidate), `sentiment` (2–8 weeks), `thesis`, `entry_price`, `stop_loss`, `price_target`, `risk_reward`, `setup`, `stop_basis`, `target_basis`, `sub_scores` |
 | `RECOMMENDATION_FIELDS["all"]` | name, sector, industry, price, market cap, 52-week range and change, analyst rating, target, and count, next earnings date | same |
 | The list's own fields | P/E (trailing, forward), PEG, revenue and earnings growth, profit margin, ROE, debt-to-equity, free cash flow | latest RSI, EMA 9/21, Bollinger bands, Parabolic SAR, 50/200-day averages, beta, volume |
 
@@ -511,7 +541,7 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
 - **Thresholds:** a stock needs a total of at least `MIN_LONG_SCORE` / `MIN_SWING_SCORE` (80 out of 100) to be picked, so some days have fewer picks than `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT`, or none.
 - **Swing rubric** (rewritten 2026-10-18, `src/universal/recommendations/LLM_rec_instr.py`): a good swing trade buys a stock while it is temporarily cheap and likely to go back up within 2-8 weeks, i.e. a pullback to support in an intact trend where the selling is running out, not one that has already risen for weeks. The four parts:
   - **Pullback setup** (`technical_setup_score`, 30): high at support in an intact longer trend; low when stretched after a run or breaking down with no support.
-  - **Risk / reward** (`risk_reward_ratio_score`, 30): scored from the model's own entry, stop, and target. The stop goes just below the support the trade relies on, and the target is where the rebound should reach. Bands: below 1.5:1 scores 0-11, 1.5:1 to 2.5:1 scores 12-24, 2.5:1 and up 25-30 (top band from 2.5:1 since 2026-10-18; it was 3:1). A stop closer than a normal day's range (the 14-day average true range from the daily bars, and at least 1% of the price) is counted as that far, so a tight stop on a falling stock can't inflate the score.
+  - **Risk / reward** (`risk_reward_ratio_score`, 30): since 2026-10-20 scored from the swing screen's plan (above); until then from the model's own entry, stop, and target. The stop goes just below the support the trade relies on, and the target is where the rebound should reach. Bands: below 1.5:1 scores 0-11, 1.5:1 to 2.5:1 scores 12-24, 2.5:1 and up 25-30 (top band from 2.5:1 since 2026-10-18; it was 3:1). A stop closer than a normal day's range (the 14-day average true range from the daily bars, and at least 1% of the price) is counted as that far, so a tight stop on a falling stock can't inflate the score.
   - **Rebound signals** (`momentum_volume_score`, 20): RSI turning up from 30-45, the price holding or reclaiming support, the Parabolic SAR flipping below the price, and volume on up days. RSI above ~70 after a run scores low.
   - **Catalysts & sentiment** (`catalyst_sentiment_score`, 20): whether the drop looks temporary and something can lift the price soon.
 
@@ -532,10 +562,14 @@ A section that can't be fetched holds `{"Error": ...}` and adds a `universal_iss
 |---|---|---|
 | `listings` | US-listed stocks | Everything NASDAQ's screener lists (NASDAQ, NYSE, and AMEX), before any filter. Saved as `<file>_listings.json` next to the half-day's screener CSV, so it's missing for a CSV made before this was added |
 | `screener` | Size, volume & price | Kept by stage 1: `MKTCAP_*`, `VOLUME_*`, `LASTSALE_*`, region, sector |
-| `yahoo` | Analyst & fundamentals screen | Kept by `YAHOO_FILTERS` |
-| `finnhub` | Growth & debt screen | Kept by `FINNHUB_FILTERS` |
-| `technical` | Technical screen | Kept by `TWELVEDATA_FILTERS` |
-| `scored` | Scored by AI | Valid evaluations from the LLM. `of` is how many were sent; the email shows "36 of 37" when some failed |
+| `yahoo` | Long-term: analysts & fundamentals | Kept by `YAHOO_FILTERS` |
+| `finnhub` | Long-term: growth & debt | Kept by `FINNHUB_FILTERS` |
+| `technical` | Long-term: technical screen | Kept by `TWELVEDATA_FILTERS` |
+| `scored` | Long-term: scored by AI | Valid long-term evaluations from the LLM. `of` is how many were sent; the email shows "36 of 37" when some failed |
+| `swing_fundamentals` | Swing: fundamentals | Kept by `SWING_SCREEN["YAHOO_FILTERS"]` (added 2026-10-20, like the next three) |
+| `swing_setup` | Swing: dip or fresh turn up | In a pullback or new-uptrend setup (`SWING_SCREEN["SETUP"]`) |
+| `swing_plan` | Swing: reward : risk 1.5+ | With a plan of at least `MIN_PLAN_RR` (`min_score`) |
+| `swing_scored` | Swing: best setups scored by AI | The best `MAX_CANDIDATES` plans, scored; `of` is how many were sent |
 | `long_term_score` / `swing_score` | Long-term / Swing score 80+ | Scored at least `min_score` (`MIN_LONG_SCORE` / `MIN_SWING_SCORE`). A stock can clear both |
 | `picked` | Picked | `long_term` + `swing`, capped at `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT` |
 

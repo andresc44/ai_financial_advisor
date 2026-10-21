@@ -11,6 +11,9 @@ Claude-authored changes (Claude Opus 5.5 via Claude Code), at Andres's request:
   off). They run in background threads while the screener, filters, and Claude scoring run, are included even when
   no picks can be produced, and their failures become universal_issues like the rest.
 - 2026-10-17: `screening`, how many stocks got through each stage, from NASDAQ's listings to the picks.
+- 2026-10-20: the swing ideas have their own screen (swing_screen.py), run beside the long-term screens on the same
+  stage-1 list. Both candidate lists are fetched together (a stock in both is fetched once), each is scored by its
+  own LLM call, and the screening counts show both paths.
 """
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -31,6 +34,7 @@ from src.universal.recommendations.scorer import select_top_candidates
 from src.universal.recommendations.enriched_rec import enrich_recommendations
 from src.universal.recommendations.filter_tickers import DataFetcher
 from src.universal.recommendations.data_source_guard import missing_data_issues
+from src.universal.recommendations import swing_screen
 from src.universal.market_news import get_macro_stories
 from src.universal.macro_indicators import get_market_dashboard
 from src.shared_locks import MARKET_DATA_LOCK
@@ -67,7 +71,7 @@ def stage1_rules() -> list[str]:
     return [_rule(field, op, params_dict[key]) for field, op, key in settings if params_dict.get(key) is not None]
 
 
-def screening_counts(fetcher, stats: dict, recommendations: dict) -> dict:
+def screening_counts(fetcher, stats: dict, recommendations: dict, swing_counts: dict | None = None) -> dict:
     """
     Claude-authored (2026-10-17): how many stocks got through each stage this run, for the digest's "About this
     digest" section: {"stages": [{"stage", "count", ...}], "model"}. In order:
@@ -79,6 +83,9 @@ def screening_counts(fetcher, stats: dict, recommendations: dict) -> dict:
     - long_term_score / swing_score: scored at or above MIN_LONG_SCORE / MIN_SWING_SCORE (`min_score`)
     - picked: `long_term` + `swing`, capped at LONG_TERM_N_AMOUNT / SWING_TERM_N_AMOUNT
     A filter stage without rules lets everything through, so it is left out.
+    2026-10-20: the swing screen's own stages (swing_screen.screen's `swing_counts`) after the long-term ones:
+    swing_fundamentals (with its rules), swing_setup, swing_plan (`min_score` = MIN_PLAN_RR), and swing_scored
+    (the best MAX_CANDIDATES plans; `of` = how many were sent), then swing_score and swing_early as before.
     """
     kept = getattr(fetcher, "stage_counts", {}) or {}
     stages = []
@@ -98,6 +105,15 @@ def screening_counts(fetcher, stats: dict, recommendations: dict) -> dict:
         stages.append({"stage": "scored", "count": stats["scored"], "of": stats["sent"]})
         stages.append({"stage": "long_term_score", "count": stats["long_qualified"],
                        "min_score": params_dict["MIN_LONG_SCORE"]})
+    if swing_counts:
+        swing = params_dict.get("SWING_SCREEN") or {}
+        stages.append({"stage": "swing_fundamentals", "count": swing_counts.get("fundamentals", 0),
+                       "rules": [_rule(*rule) for rule in swing.get("YAHOO_FILTERS") or []]})
+        stages.append({"stage": "swing_setup", "count": swing_counts.get("setup", 0)})
+        stages.append({"stage": "swing_plan", "count": swing_counts.get("plan", 0), "min_score": swing.get("MIN_PLAN_RR")})
+        stages.append({"stage": "swing_scored", "count": stats.get("swing_scored", 0),
+                       "of": stats.get("swing_sent", swing_counts.get("candidates", 0))})
+    if "scored" in stats:
         stages.append({"stage": "swing_score", "count": stats["swing_qualified"],
                        "min_score": params_dict["MIN_SWING_SCORE"]})
         if stats["swing_qualified"]:  # 2026-10-18: of those, the ones not already too far along their run
@@ -185,7 +201,11 @@ def _get_recommendations() -> dict:
         #Fetching all tickers and testing pipeline
         print(f"Testing filter_all() for {fetcher.all_tickers} ---")
         filtered_tickers = fetcher.filter_all()
-        llm_packets = fetcher.congregate_LLM_input_data(filtered_tickers,as_dict_records=True)
+        # Claude-authored (2026-10-20): the swing screen, beside the long-term screens on the same stage-1 list. It
+        # reuses the Yahoo info the long-term screen just fetched and one batch of daily bars.
+        swing_tickers, swing_setups, swing_counts = swing_screen.screen(fetcher, fetcher.all_tickers)
+        candidates = filtered_tickers + [t for t in swing_tickers if t not in filtered_tickers]
+        llm_packets = fetcher.congregate_LLM_input_data(candidates, as_dict_records=True)
         sanitized_LLM_inputs = {}
 
         for ticker in llm_packets.keys():
@@ -212,6 +232,8 @@ def _get_recommendations() -> dict:
         swing_n=params_dict["SWING_TERM_N_AMOUNT"],
         issues=issues,  # Claude-authored (2026-10-16): a shared Anthropic key failure during scoring
         stats=stats,  # Claude-authored (2026-10-17): how many were scored and cleared each bar
+        long_tickers=filtered_tickers,  # Claude-authored (2026-10-20): each list gets its own LLM call
+        swing_setups=swing_setups,
     )
     print(f"Generated_recommendations:\n{generated_recommendations}")
     log_universal(generated_recommendations, sanitized_LLM_inputs)  # Claude-authored (2026-10-15): track record
@@ -219,7 +241,7 @@ def _get_recommendations() -> dict:
 
     _report_issues(issues)
     return {"recommendations": recs_w_data, "universal_issues": issues,
-            "screening": screening_counts(fetcher, stats, generated_recommendations)}
+            "screening": screening_counts(fetcher, stats, generated_recommendations, swing_counts)}
 
 if __name__ == "__main__":
     universal_content = get_universal_content()

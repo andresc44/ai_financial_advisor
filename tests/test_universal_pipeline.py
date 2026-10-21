@@ -23,66 +23,99 @@ from src.universal.recommendations.yahoo_filter_helper import filter_yahoo_ticke
 
 
 # --------------------------------------------------------------------------------------------- reasoning on picks
-def evaluation(long_scores, swing_scores, levels):
-    entry, stop, target = levels
-    return {
-        "long_term": dict(zip(("valuation_score", "financial_health_score", "growth_momentum_score",
-                               "competitive_moat_score"), long_scores),
-                          sentiment="Bullish", thesis="Forward P/E of 22 against 15% revenue growth.",
-                          key_risk="Debt-to-equity of 45% limits room for buybacks."),
-        "swing": dict(zip(("technical_setup_score", "risk_reward_ratio_score", "momentum_volume_score",
-                           "catalyst_sentiment_score"), swing_scores),
-                      sentiment="Neutral", thesis="Holding the 21-day EMA at 196 with RSI 48.",
-                      entry_price=entry, stop_loss=stop, price_target=target),
-    }
+def long_term(scores):
+    return dict(zip(("valuation_score", "financial_health_score", "growth_momentum_score", "competitive_moat_score"),
+                    scores), sentiment="Bullish", thesis="Cheap for how fast it's growing.",
+                key_risk="Rising debt could limit buybacks.")
 
 
-# The swing risk/reward sub-score (second) is recomputed from each plan (plan_risk_reward_score, 2026-10-18)
-EVALUATIONS = {
-    "AAA": evaluation((22, 21, 20, 20), (20, 20, 15, 15), (200, 190, 220)),   # Long 83: the long-term pick
-    "BBB": evaluation((10, 10, 15, 15), (26, 25, 17, 17), (100, 104, 120)),   # Stop above entry: risk/reward 0, swing 60
-    "CCC": evaluation((12, 12, 12, 12), (25, 24, 16, 16), (100, 96, 116)),    # 4:1 plan: risk/reward 28.8, swing 85.8
-    "DDD": evaluation((10, 10, 10, 10), (24, 24, 16, 16), (50, 48, 58)),      # 4:1 plan: swing 84.8
-}
+def swing(scores):
+    return dict(zip(("technical_setup_score", "momentum_volume_score", "catalyst_sentiment_score"), scores),
+                sentiment="Neutral", thesis="Pulled back to its 21-day average with the selling fading.")
+
+
+def setup(entry, stop, target, kind="pullback"):
+    """A swing screen result whose plan has these levels (swing_screen.trade_plan)."""
+    return {"setup": kind, "facts": {"atr": None},
+            "plan": {"entry_price": entry, "stop_loss": stop, "price_target": target,
+                     "risk_reward": round((target - entry) / (entry - stop), 2) if entry != stop else None,
+                     "stop_basis": "0.5 ATR below the EMA 21", "target_basis": "highest close of the last 20 days"}}
+
+
+# 2026-10-20: each horizon has its own call; the swing risk/reward sub-score comes from the screen's plan
+LONG = {"AAA": long_term((22, 21, 20, 20)), "BBB": long_term((10, 10, 15, 15)),    # AAA long 83: the long-term pick
+        "CCC": long_term((12, 12, 12, 12))}
+SWING = {"AAA": swing((26, 17, 17)),     # 4:1 plan: 26 + 28.8 + 17 + 17 = 88.8, a swing pick too
+         "BBB": swing((26, 17, 17)),     # Stop above the entry: risk/reward 0, swing 60
+         "CCC": swing((25, 16, 16)),     # 4:1 plan: 85.8
+         "DDD": swing((24, 16, 16))}     # 4:1 plan: 84.8 (a swing candidate only)
+SETUPS = {"AAA": setup(200, 190, 240), "BBB": setup(100, 104, 120), "CCC": setup(100, 96, 116), "DDD": setup(50, 48, 58)}
+INPUTS = {symbol: {"symbol": symbol} for symbol in ("AAA", "BBB", "CCC", "DDD")}
 
 
 @pytest.fixture
 def claude_scores(monkeypatch):
+    requests_seen = []
+
     async def handler(request):
-        prompt = json.loads(request.content)["messages"][0]["content"]
-        symbol = prompt.split()[1]  # "Evaluate <symbol> against ..."
+        body = json.loads(request.content)
+        prompt = body["messages"][0]["content"]
+        symbol = prompt.split()[1]  # "Evaluate <symbol> as ..."
+        tool = body["tools"][0]["name"]
+        requests_seen.append((symbol, tool, json.loads(prompt.split("\n\n", 1)[1])))
+        answer = LONG[symbol] if tool == universal_llm.LONG_TERM_TOOL_NAME else SWING[symbol]
         return httpx2.Response(200, json={
             "id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5", "stop_reason": "tool_use",
             "stop_sequence": None, "usage": {"input_tokens": 10, "output_tokens": 5},
-            "content": [{"type": "tool_use", "id": "toolu_1", "name": universal_llm.EVALUATION_TOOL_NAME,
-                         "input": EVALUATIONS[symbol]}]})
+            "content": [{"type": "tool_use", "id": "toolu_1", "name": tool, "input": answer}]})
 
     real = universal_llm.AsyncAnthropic
     monkeypatch.setattr(universal_llm, "AsyncAnthropic", lambda **kw: real(
         http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)), **kw))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-shared")
+    return requests_seen
 
 
 def test_picks_carry_claudes_reasoning_and_sane_levels(claude_scores):
-    picks = select_top_candidates({symbol: {"symbol": symbol} for symbol in EVALUATIONS}, long_n=2, swing_n=5)
+    picks = select_top_candidates(INPUTS, long_n=2, swing_n=5, long_tickers=["AAA", "BBB", "CCC"], swing_setups=SETUPS)
 
     [long_pick] = picks["top_long_term"]
-    assert long_pick["ticker"] == "AAA" and long_pick["longScore"] == 83
-    assert long_pick["sentiment"] == "Bullish" and long_pick["thesis"].startswith("Forward P/E")
-    assert long_pick["key_risk"].startswith("Debt-to-equity")
+    assert long_pick["ticker"] == "AAA" and long_pick["longScore"] == 83 and long_pick["swingScore"] == 88.8
+    assert long_pick["sentiment"] == "Bullish" and long_pick["thesis"].startswith("Cheap")
+    assert long_pick["key_risk"].startswith("Rising debt")
     assert long_pick["sub_scores"] == {"valuation_score": 22, "financial_health_score": 21,
                                        "growth_momentum_score": 20, "competitive_moat_score": 20}
 
-    # AAA is already the long-term pick; BBB's model scores added up to 85, but its plan has the stop above the entry
-    assert [p["ticker"] for p in picks["top_swing"]] == ["CCC", "DDD"]
-    good = picks["top_swing"][0]
-    assert good["sentiment"] == "Neutral" and good["thesis"]
-    assert good["swingScore"] == 85.8 and good["sub_scores"]["risk_reward_ratio_score"] == 28.8  # Not the model's 24
+    # 2026-10-20: the long-term pick can be a swing pick too; BBB's plan has the stop above the entry, so it scores 0
+    # for risk/reward; DDD was only a swing candidate, so it has no long-term score
+    assert [p["ticker"] for p in picks["top_swing"]] == ["AAA", "CCC", "DDD"]
+    good = picks["top_swing"][1]
+    assert good["sentiment"] == "Neutral" and good["thesis"] and good["setup"] == "pullback"
+    assert good["swingScore"] == 85.8 and good["sub_scores"]["risk_reward_ratio_score"] == 28.8
     assert (good["entry_price"], good["stop_loss"], good["price_target"], good["risk_reward"]) == (100, 96, 116, 4.0)
+    assert good["stop_basis"] == "0.5 ATR below the EMA 21" and picks["top_swing"][2]["longScore"] is None
     from src.universal.recommendations.scorer import swing_reasoning
 
-    bad = swing_reasoning("BBB", {"sub_scores": EVALUATIONS["BBB"]})
+    bad = swing_reasoning("BBB", {"sub_scores": {"swing": {**SWING["BBB"], **SETUPS["BBB"]["plan"]}}})
     assert (bad["entry_price"], bad["stop_loss"], bad["price_target"], bad["risk_reward"]) == (None,) * 4
+
+
+def test_each_horizon_gets_its_own_call_and_data(claude_scores):
+    # 2026-10-20: a long-term candidate gets the long-term call without the technicals; a swing candidate the swing
+    # call with its setup and only the key fundamentals; a stock on both lists gets both
+    full = {"symbol": "AAA", "profile": {"sector": "Tech"}, "valuation_and_fundamentals": {"pe_forward": 20, "peg_ratio": 1},
+            "technical_indicators": {"rsi_14_1day": []}, "daily_bars": [{"close": 1}], "quarterly_financial_trends": {}}
+    select_top_candidates({"AAA": full, "DDD": {**full, "symbol": "DDD"}}, long_tickers=["AAA"], swing_setups={
+        "AAA": SETUPS["AAA"], "DDD": SETUPS["DDD"]})
+    calls = {(symbol, tool): payload for symbol, tool, payload in claude_scores}
+    assert set(calls) == {("AAA", universal_llm.LONG_TERM_TOOL_NAME), ("AAA", universal_llm.SWING_TOOL_NAME),
+                          ("DDD", universal_llm.SWING_TOOL_NAME)}
+    long_payload = calls[("AAA", universal_llm.LONG_TERM_TOOL_NAME)]
+    assert "technical_indicators" not in long_payload and "daily_bars" not in long_payload
+    assert long_payload["valuation_and_fundamentals"]["peg_ratio"] == 1
+    swing_payload = calls[("DDD", universal_llm.SWING_TOOL_NAME)]
+    assert "valuation_and_fundamentals" not in swing_payload and swing_payload["key_fundamentals"]["pe_forward"] == 20
+    assert swing_payload["swing_setup"]["plan"]["entry_price"] == 50 and swing_payload["daily_bars"] == [{"close": 1}]
 
 
 def test_risk_reward_is_scored_from_the_plan_by_the_rubric_bands():
@@ -110,11 +143,15 @@ def test_daily_atr_is_a_normal_days_range():
 
 
 def test_tool_schema_asks_for_the_written_fields():
-    properties = universal_llm.EVALUATION_TOOL_SPEC["input_schema"]["$defs"]
-    long_term, swing = properties["LongTermSubScores"]["properties"], properties["SwingSubScores"]["properties"]
-    assert long_term["sentiment"]["enum"] == swing["sentiment"]["enum"] == ["Bullish", "Neutral", "Bearish"]
-    assert {"thesis", "key_risk"} <= set(long_term) and {"thesis", "entry_price", "stop_loss", "price_target"} <= set(swing)
-    assert set(properties["SwingSubScores"]["required"]) == set(swing)  # Strict tool use needs every field required
+    long_term = universal_llm.LONG_TERM_TOOL_SPEC["input_schema"]
+    swing = universal_llm.SWING_TOOL_SPEC["input_schema"]
+    assert long_term["properties"]["sentiment"]["enum"] == swing["properties"]["sentiment"]["enum"] == [
+        "Bullish", "Neutral", "Bearish"]
+    assert {"thesis", "key_risk"} <= set(long_term["properties"]) and "thesis" in swing["properties"]
+    # 2026-10-20: the swing plan's levels and risk/reward come from the swing screen, not the model
+    assert not {"entry_price", "stop_loss", "price_target", "risk_reward_ratio_score"} & set(swing["properties"])
+    for schema in (long_term, swing):  # Strict tool use needs every field required
+        assert set(schema["required"]) == set(schema["properties"])
 
 
 def test_track_record_keeps_sentiment_and_levels():
@@ -227,7 +264,12 @@ def test_filter_stage_data_is_reused_for_the_survivors(monkeypatch):
     fetcher.finnhub_client.quote = endpoint("quote", fail=True)
     fetcher.fetch_finnhub_data("BBB")
     fetcher.fetch_finnhub_data("BBB")
-    assert len(calls) == 12  # A failed call isn't cached, so it's tried again
+    assert len(calls) == 9  # 2026-10-20: only the failed section is tried again
+    # The filter stage asks only for the section its rules read; the rest is fetched once, for the survivors
+    assert fetcher.fetch_finnhub_data("CCC", sections=("basic_financials",)) == {"basic_financials": {"peTTM": 20}}
+    assert len(calls) == 10
+    fetcher.fetch_finnhub_data("CCC")
+    assert len(calls) == 13 and calls[-3:] == ["profile", "quote", "calendar"]
 
 
 # --------------------------------------------------------------------------------------------- macro content
@@ -342,13 +384,15 @@ def test_configured_filters_are_well_formed():
 # --------------------------------------------------------------------------------------------- screening counts
 def test_scorer_reports_how_many_were_scored_and_cleared_each_bar(claude_scores):
     stats = {}
-    select_top_candidates({symbol: {"symbol": symbol} for symbol in EVALUATIONS}, long_n=2, swing_n=1,
-                          min_long_score=80, min_swing_score=80, stats=stats)
-    # AAA is long 83, CCC and DDD swing 85.8 and 84.8 (BBB 60): both swing setups count, though only one is picked
-    assert stats == {"sent": 4, "scored": 4, "long_qualified": 1, "swing_qualified": 2, "swing_early": 2}
+    select_top_candidates(INPUTS, long_n=2, swing_n=1, min_long_score=80, min_swing_score=80, stats=stats,
+                          long_tickers=["AAA", "BBB", "CCC"], swing_setups=SETUPS)
+    # AAA is long 83; AAA, CCC, and DDD swing 88.8, 85.8, and 84.8 (BBB 60): all three count, though only one is picked
+    assert stats == {"sent": 3, "scored": 3, "long_qualified": 1, "swing_sent": 4, "swing_scored": 4,
+                     "swing_qualified": 3, "swing_early": 3}
     empty = {}
     select_top_candidates({}, stats=empty)
-    assert empty == {"sent": 0, "scored": 0, "long_qualified": 0, "swing_qualified": 0, "swing_early": 0}
+    assert empty == {"sent": 0, "scored": 0, "long_qualified": 0, "swing_sent": 0, "swing_scored": 0,
+                     "swing_qualified": 0, "swing_early": 0}
 
 
 def test_filter_all_records_how_many_each_stage_kept():
@@ -402,6 +446,17 @@ def test_screening_counts_cover_every_stage(tmp_path, monkeypatch):
     fetcher.ticker_file = tmp_path / "missing_ticker_data.csv"
     stages = [s["stage"] for s in universal.screening_counts(fetcher, stats, picks)["stages"]]
     assert stages[:4] == ["screener", "yahoo", "finnhub", "scored"]
+    # 2026-10-20: the swing screen's own stages follow the long-term ones
+    stats.update(swing_sent=20, swing_scored=19)
+    swing_counts = {"fundamentals": 390, "setup": 117, "plan": 95, "candidates": 20}
+    stages = universal.screening_counts(fetcher, stats, picks, swing_counts)["stages"]
+    assert [(s["stage"], s["count"]) for s in stages][4:] == [
+        ("long_term_score", 16), ("swing_fundamentals", 390), ("swing_setup", 117), ("swing_plan", 95),
+        ("swing_scored", 19), ("swing_score", 0), ("picked", 2)]
+    by_stage = {s["stage"]: s for s in stages}
+    assert by_stage["swing_scored"]["of"] == 20 and by_stage["swing_plan"]["min_score"] == 1.5
+    assert by_stage["swing_fundamentals"]["rules"] == [universal._rule(*rule) for rule in
+                                                       universal.params_dict["SWING_SCREEN"]["YAHOO_FILTERS"]]
 
 
 # --------------------------------------------------------------------------------------------- sector rules
@@ -453,17 +508,27 @@ def test_selection_applies_the_configured_sector_rules(monkeypatch):
               "ADBE": (60, 82), "NEM": (60, 81)}
     sectors = {"NVDA": "Technology", "TSM": "Technology", "NBIX": "Healthcare", "ROST": "Consumer Cyclical",
                "TJX": "Consumer Cyclical", "BSY": "Technology", "ADBE": "Technology", "NEM": "Basic Materials"}
-    monkeypatch.setattr(scorer, "run_llm_evaluation", lambda sanitized_inputs, config=None, issues=None: {
-        t: {"longScore": long, "swingScore": swing, "sub_scores": {}} for t, (long, swing) in scores.items()})
+    monkeypatch.setattr(scorer, "run_llm_evaluation", fake_scores(scores))
     monkeypatch.setitem(scorer.params_dict, "PICK_SECTOR_RULES", {"LONG_TERM": "all_different", "SWING": "majority_different"})
     inputs = {t: {"profile": {"sector": sector}} for t, sector in sectors.items()}
-    picks = scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80, min_swing_score=80)
+    every = {t: {} for t in inputs}  # Every stock is a swing candidate here
+    picks = scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80, min_swing_score=80,
+                                         swing_setups=every)
     assert [p["ticker"] for p in picks["top_long_term"]] == ["NVDA", "NBIX"]
     # TSM, left out of long-term, isn't a swing setup; 5 swing picks need 3 sectors: ROST, TJX, BSY, ADBE, NEM has 3
     assert [p["ticker"] for p in picks["top_swing"]] == ["ROST", "TJX", "BSY", "ADBE", "NEM"]
     monkeypatch.setitem(scorer.params_dict, "PICK_SECTOR_RULES", {"LONG_TERM": "any", "SWING": "any"})
     assert [p["ticker"] for p in scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80,
-                                                                min_swing_score=80)["top_long_term"]] == ["NVDA", "TSM"]
+                                                                min_swing_score=80, swing_setups=every)[
+        "top_long_term"]] == ["NVDA", "TSM"]
+
+
+def fake_scores(scores):
+    """A run_llm_evaluation stand-in: {ticker: (long-term score, swing score)}, per horizon, for the tickers sent."""
+    def run(sanitized_inputs, config=None, issues=None, horizon="long_term"):
+        key, index = ("longScore", 0) if horizon == "long_term" else ("swingScore", 1)
+        return {t: {key: scores[t][index], "sub_scores": {}} for t in sanitized_inputs if t in scores}
+    return run
 
 
 def test_configured_sector_rules_are_known():
@@ -553,12 +618,12 @@ def test_swing_picks_already_far_along_are_left_out(monkeypatch):
     import src.universal.recommendations.scorer as scorer
 
     scores = {"EARLY": (60, 85), "JUMPED": (60, 90), "HOT": (60, 88)}
-    monkeypatch.setattr(scorer, "run_llm_evaluation", lambda sanitized_inputs, config=None, issues=None: {
-        t: {"longScore": long, "swingScore": swing, "sub_scores": {}} for t, (long, swing) in scores.items()})
+    monkeypatch.setattr(scorer, "run_llm_evaluation", fake_scores(scores))
     flat = [100.0] * 12
     inputs = {"EARLY": run_context(flat, 101.5), "JUMPED": run_context(flat, 106.0), "HOT": run_context(flat, 101.0, rsi=78)}
     stats = {}
-    picks = scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80, min_swing_score=80, stats=stats)
+    picks = scorer.select_top_candidates(inputs, long_n=2, swing_n=5, min_long_score=80, min_swing_score=80, stats=stats,
+                                         swing_setups={t: {} for t in inputs})
     assert [p["ticker"] for p in picks["top_swing"]] == ["EARLY"]  # The two higher scores had already run
     assert (stats["swing_qualified"], stats["swing_early"]) == (3, 1)
     fetcher = SimpleNamespace(stage_counts={}, ticker_file=None)

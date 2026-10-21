@@ -71,9 +71,12 @@ def filter_finnhub_tickers(
         getattr(fetcher, "_get_metric_with_alert", None) or getattr(fetcher, "get_metric_with_alert", None)
     )
 
+    # Claude-authored (2026-10-20): only the sections the rules read (just "basic_financials" by default), one call
+    # each; the survivors' other sections are fetched later, when their full data is gathered
+    sections = tuple(sorted({rule[0] for rule in filter_rules})) or None
     for symbol in input_tickers:
         print(f"Fetching Finnhub data for {symbol}...")
-        finnhub_data = fetcher.fetch_finnhub_data(symbol, fetch_news=False)
+        finnhub_data = fetcher.fetch_finnhub_data(symbol, fetch_news=False, sections=sections)
         
         if not isinstance(finnhub_data, dict):
             print(f"Alert: Finnhub data for '{symbol}' is not a dictionary. Skipping.")

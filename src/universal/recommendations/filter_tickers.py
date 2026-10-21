@@ -188,8 +188,20 @@ class DataFetcher:
 
         return info_res if isinstance(info_res, dict) else {"error": str(info_res)}
 
-    def fetch_finnhub_data(self, symbol: str, fetch_news: bool = False) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-        """Fetches news (list of dicts) or profile/quote/financials (dict) from Finnhub."""
+    FINNHUB_SECTIONS = ("profile", "quote", "basic_financials", "earnings_calendar")
+
+    def fetch_finnhub_data(
+        self, symbol: str, fetch_news: bool = False, sections: Optional[tuple] = None
+    ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Fetches news (list of dicts) or profile/quote/financials (dict) from Finnhub.
+
+        Claude-authored (2026-10-20): `sections` (default: all of FINNHUB_SECTIONS) fetches only those, one call each.
+        The filter stage asks only for "basic_financials", the one its rules read: it used to fetch all four for every
+        Yahoo survivor (~180), though only the ~95 that pass need the rest. Each section is cached on its own, so the
+        rest is fetched once for the survivors, and a failed call is retried on its own. The quarterly series that
+        comes with the basic financials is kept for fetch_series_data, which used to call the same endpoint again.
+        """
         def _safe_api_call(call_name: str, func, *args, **kwargs):
             try:
                 res = func(*args, **kwargs)
@@ -214,49 +226,43 @@ class DataFetcher:
             )
             return news_res if isinstance(news_res, list) else [news_res]
 
-        # Claude-authored (2026-10-16): reuse what the Finnhub filter stage fetched this run (4 calls per ticker, under
-        # the free plan's 60 calls/minute) when the survivors' full data is gathered
-        finnhub_cache = self.__dict__.setdefault("_finnhub_cache", {})
-        if symbol in finnhub_cache:
-            return copy.deepcopy(finnhub_cache[symbol])
+        # Claude-authored (2026-10-16): reuse what the Finnhub filter stage fetched this run (under the free plan's 60
+        # calls/minute) when the survivors' full data is gathered
+        finnhub_cache = self.__dict__.setdefault("_finnhub_cache", {}).setdefault(symbol, {})
+        series_cache = self.__dict__.setdefault("_basic_series_cache", {})
+        wanted = tuple(sections) if sections else self.FINNHUB_SECTIONS
+
+        def fetch(section: str) -> Any:
+            if section == "profile":
+                return _safe_api_call("company_profile2", self.finnhub_client.company_profile2, symbol=symbol)
+            if section == "quote":
+                return _safe_api_call("quote", self.finnhub_client.quote, symbol)
+            if section == "basic_financials":
+                full_financials = _safe_api_call(
+                    "company_basic_financials", self.finnhub_client.company_basic_financials, symbol=symbol, metric="all",
+                )
+                if isinstance(full_financials, dict) and "metric" in full_financials:
+                    series_cache[symbol] = full_financials.get("series") or {}
+                    return full_financials.get("metric")
+                return full_financials
+            # Upcoming corporate events, EARNINGS_FUTURE_LOOKAHEAD_DAYS ahead
+            today = datetime.now()
+            return _safe_api_call(
+                "earnings_calendar",
+                self.finnhub_client.earnings_calendar,
+                _from=today.strftime("%Y-%m-%d"),
+                to=(today + timedelta(days=params_dict["EARNINGS_FUTURE_LOOKAHEAD_DAYS"])).strftime("%Y-%m-%d"),
+                symbol=symbol,
+            )
 
         finnhub_data: Dict[str, Any] = {}
-
-        finnhub_data["profile"] = _safe_api_call(
-            "company_profile2", self.finnhub_client.company_profile2, symbol=symbol
-        )
-        finnhub_data["quote"] = _safe_api_call(
-            "quote", self.finnhub_client.quote, symbol
-        )
-
-        full_financials = _safe_api_call(
-            "company_basic_financials",
-            self.finnhub_client.company_basic_financials,
-            symbol=symbol,
-            metric="all",
-        )
-        finnhub_data["basic_financials"] = (
-            full_financials.get("metric")
-            if isinstance(full_financials, dict) and "metric" in full_financials
-            else full_financials
-        )
-        
-        # Define dynamic date range for future corporate events 
-        today = datetime.now()
-        from_date = today.strftime("%Y-%m-%d")
-        to_date = (today + timedelta(days=params_dict["EARNINGS_FUTURE_LOOKAHEAD_DAYS"])).strftime("%Y-%m-%d")
-
-        # Fetch upcoming earnings calendar data
-        finnhub_data["earnings_calendar"] = _safe_api_call(
-            "earnings_calendar",
-            self.finnhub_client.earnings_calendar,
-            _from=from_date,
-            to=to_date,
-            symbol=symbol,
-        )
-
-        if not any(isinstance(section, dict) and "error" in section for section in finnhub_data.values()):
-            finnhub_cache[symbol] = copy.deepcopy(finnhub_data)  # A failed call is retried if the ticker comes back
+        for section in wanted:
+            if section in finnhub_cache:
+                finnhub_data[section] = copy.deepcopy(finnhub_cache[section])
+                continue
+            finnhub_data[section] = fetch(section)
+            if not (isinstance(finnhub_data[section], dict) and "error" in finnhub_data[section]):
+                finnhub_cache[section] = copy.deepcopy(finnhub_data[section])  # A failed call is retried next time
         return finnhub_data
     
 
@@ -599,10 +605,16 @@ class DataFetcher:
                 if "METRIC" in basic_fin_cfg:
                     kwargs["metric"] = basic_fin_cfg["METRIC"]
 
-                # Fetch the raw data; Finnhub does not support date filtering kwargs for this endpoint
-                raw_basic = self.finnhub_client.company_basic_financials(
-                    symbol=symbol, **kwargs
-                )
+                # Fetch the raw data; Finnhub does not support date filtering kwargs for this endpoint.
+                # Claude-authored (2026-10-20): the series already came with fetch_finnhub_data's basic financials
+                # (metric="all"), so that call isn't repeated
+                cached_series = self.__dict__.get("_basic_series_cache", {}).get(symbol)
+                if cached_series is not None and kwargs.get("metric", "all") == "all":
+                    raw_basic = {"series": cached_series}
+                else:
+                    raw_basic = self.finnhub_client.company_basic_financials(
+                        symbol=symbol, **kwargs
+                    )
                     
                 if isinstance(raw_basic, dict) and "series" in raw_basic:
                     series = raw_basic.get("series", {})

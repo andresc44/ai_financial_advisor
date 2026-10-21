@@ -57,12 +57,12 @@ def test_request_without_thinking_forces_the_tool():
 
 
 def test_request_with_thinking_lets_the_model_choose():
-    body = ds.build_request("deepseek-v4-pro", "high", "system", "user", universal_llm.EVALUATION_TOOL_SPEC)
+    body = ds.build_request("deepseek-v4-pro", "high", "system", "user", universal_llm.LONG_TERM_TOOL_SPEC)
     assert body["thinking"] == {"type": "enabled"} and body["reasoning_effort"] == "high"
     assert body["tool_choice"] == "auto"  # A forced tool choice returns 400 in thinking mode
     text = json.dumps(body["tools"])
     assert "$ref" not in text and "$defs" not in text  # Nested schemas are inlined
-    assert "thesis" in body["tools"][0]["function"]["parameters"]["properties"]["long_term"]["properties"]
+    assert "thesis" in body["tools"][0]["function"]["parameters"]["properties"]
 
 
 def test_tool_arguments_from_a_call_or_from_json_text():
@@ -123,51 +123,58 @@ def test_a_cut_off_answer_is_not_asked_again(deepseek_server):
 
 
 # --------------------------------------------------------------------------------------------- universal on DeepSeek
+LONG = {"valuation_score": 22, "financial_health_score": 22, "growth_momentum_score": 20, "competitive_moat_score": 20,
+        "sentiment": "Bullish", "thesis": "t", "key_risk": "r"}
+SWING = {"technical_setup_score": 26, "momentum_volume_score": 17, "catalyst_sentiment_score": 17,
+         "sentiment": "Neutral", "thesis": "s"}
+SETUP = {"setup": "pullback", "facts": {"atr": 2.0},
+         "plan": {"entry_price": 100, "stop_loss": 96, "price_target": 116, "risk_reward": 4.0}}
+
+
+def answer_by_tool(answers):
+    """A deepseek_server plan answering each request with the arguments for the tool it offers."""
+    return lambda n, body: (200, completion(answers[body["tools"][0]["function"]["name"]],
+                                            name=body["tools"][0]["function"]["name"]))
+
+
 def test_universal_scoring_on_deepseek(deepseek_server, monkeypatch):
     monkeypatch.setitem(universal_llm.params_dict, "LLM", {"UNIVERSAL": {"model": "deepseek-v4-pro", "effort": "high"},
                                                            "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-shared")
-    scores = {"long_term": {"valuation_score": 22, "financial_health_score": 22, "growth_momentum_score": 20,
-                            "competitive_moat_score": 20, "sentiment": "Bullish", "thesis": "t", "key_risk": "r"},
-              "swing": {"technical_setup_score": 10, "risk_reward_ratio_score": 10, "momentum_volume_score": 10,
-                        "catalyst_sentiment_score": 10, "sentiment": "Neutral", "thesis": "s",
-                        "entry_price": 100, "stop_loss": 95, "price_target": 110}}
-    deepseek_server["plan"] = lambda n, body: (200, completion(scores, name=universal_llm.EVALUATION_TOOL_NAME))
-    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5)
+    deepseek_server["plan"] = answer_by_tool({universal_llm.LONG_TERM_TOOL_NAME: LONG, universal_llm.SWING_TOOL_NAME: SWING})
+    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5, swing_setups={"AAA": SETUP})
     assert [(p["ticker"], p["model"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", "deepseek-v4-pro", 84)]
-    assert deepseek_server["requests"][0]["reasoning_effort"] == "high"
-
-
-LONG = {"valuation_score": 22, "financial_health_score": 22, "growth_momentum_score": 20, "competitive_moat_score": 20,
-        "sentiment": "Bullish", "thesis": "t", "key_risk": "r"}
-SWING = {"technical_setup_score": 10, "risk_reward_ratio_score": 10, "momentum_volume_score": 10,
-         "catalyst_sentiment_score": 10, "sentiment": "Neutral", "thesis": "s", "entry_price": 100, "stop_loss": 95,
-         "price_target": 110}
+    # 2026-10-20: the swing call adds the plan's risk/reward (4:1, 28.8) to the model's three sub-scores
+    assert [(p["ticker"], p["swingScore"]) for p in picks["top_swing"]] == [("AAA", 88.8)]
+    assert all(request["reasoning_effort"] == "high" for request in deepseek_server["requests"])
+    assert len(deepseek_server["requests"]) == 2  # One call per horizon
 
 
 def test_misshapen_answers_are_repaired_from_the_schema():
-    schema = universal_llm.EVALUATION_TOOL_SPEC["input_schema"]
-    # Seen live from deepseek-flash: the swing section inside long_term (ABNB, AVGO, INTU, GOOGL) ...
+    # Seen live from deepseek-flash with the combined schema used until 2026-10-20: a section nested inside its sibling
+    # (the swing section inside long_term: ABNB, AVGO, INTU, GOOGL) ...
+    schema = {"type": "object", "additionalProperties": False, "required": ["long_term", "swing"],
+              "properties": {"long_term": universal_llm.LONG_TERM_TOOL_SPEC["input_schema"],
+                             "swing": universal_llm.SWING_TOOL_SPEC["input_schema"]}}
     fixed, changes = ds.repair_arguments({"long_term": {**LONG, "swing": SWING}}, schema)
     assert fixed == {"long_term": LONG, "swing": SWING} and changes == ["moved long_term.swing to swing"]
-    # ... and keys the schema doesn't have (V, WDC)
-    fixed, changes = ds.repair_arguments({"long_term": {**LONG, "valuation_score_note": ""}, "swing": SWING, "x": 1}, schema)
-    assert fixed == {"long_term": LONG, "swing": SWING}
-    assert changes == ["dropped x", "dropped long_term.valuation_score_note"]
+    # ... and keys the schema doesn't have (V, WDC; still seen on 2026-10-19, e.g. "growth_momentum_score_note")
+    long_schema = universal_llm.LONG_TERM_TOOL_SPEC["input_schema"]
+    fixed, changes = ds.repair_arguments({**LONG, "valuation_score_note": "", "x": 1}, long_schema)
+    assert fixed == LONG and changes == ["dropped valuation_score_note", "dropped x"]
     # A valid answer is left alone, and the original is never changed
-    original = {"long_term": LONG, "swing": SWING}
-    assert ds.repair_arguments(original, schema) == (original, []) and original["long_term"] is LONG
+    original = dict(LONG)
+    assert ds.repair_arguments(original, long_schema) == (original, []) and original == LONG
     # Values aren't touched: an out-of-range score still fails validation
-    fixed, _ = ds.repair_arguments({"long_term": {**LONG, "valuation_score": 99}, "swing": SWING}, schema)
-    assert fixed["long_term"]["valuation_score"] == 99
+    fixed, _ = ds.repair_arguments({**LONG, "valuation_score": 99}, long_schema)
+    assert fixed["valuation_score"] == 99
 
 
-def test_universal_scoring_repairs_a_nested_swing_section_without_asking_again(deepseek_server, monkeypatch):
+def test_universal_scoring_repairs_extra_keys_without_asking_again(deepseek_server, monkeypatch):
     monkeypatch.setitem(universal_llm.params_dict, "LLM", {"UNIVERSAL": {"model": "deepseek-flash", "effort": "none"},
                                                            "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-shared")
-    nested = {"long_term": {**LONG, "swing": SWING}}
-    deepseek_server["plan"] = lambda n, body: (200, completion(nested, name=universal_llm.EVALUATION_TOOL_NAME))
+    deepseek_server["plan"] = answer_by_tool({universal_llm.LONG_TERM_TOOL_NAME: {**LONG, "growth_momentum_score_note": ""}})
     picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5)
     assert [(p["ticker"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", 84)]
     assert len(deepseek_server["requests"]) == 1

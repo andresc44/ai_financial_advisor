@@ -111,6 +111,8 @@ SWING_SCORES = (
     ("momentum_volume_score", "Rebound signals", 20), ("catalyst_sentiment_score", "Catalysts & sentiment", 20),
 )
 SWING_EARNINGS_WARNING_DAYS = 14  # A swing pick reporting earnings this soon gets a visible warning
+# Claude-authored (2026-10-20): swing_screen.setup_kind's setups, as the swing card names them
+SWING_SETUPS = {"pullback": "Dip in an uptrend", "new_uptrend": "Fresh turn up"}
 
 
 # ---------------------------------------------------------------------------
@@ -881,6 +883,10 @@ def _swing_card(pick: dict, today: Optional[date]) -> dict:
     )
     volume, average = _num(pick.get("volume")), _num(pick.get("average_volume_3m"))
     rows = [
+        # Claude-authored (2026-10-20): the swing screen's setup, and what the plan's stop and target sit at
+        ("Setup", SWING_SETUPS.get(_text(pick.get("setup")) or "", DASH)),
+        ("Stop at", _text(pick.get("stop_basis")) or DASH),
+        ("Target at", _text(pick.get("target_basis")) or DASH),
         ("RSI 14", _fixed(pick.get("rsi_14"), 0)),
         ("EMA 9 / 21", f"{_fixed(pick.get('ema_9'))} / {_fixed(pick.get('ema_21'))}"),
         ("Bollinger bands (20)", f"{_fixed(pick.get('bollinger_lower'))} – {_fixed(pick.get('bollinger_upper'))}"),
@@ -946,14 +952,20 @@ def _usage(api_usage: Any) -> list[tuple[str, str]]:
 
 # Claude-authored (2026-10-17): what each stage of the universal content's screening checks
 # (universal_consolidated.screening_counts), in plain words for the email
+# 2026-10-20: the long-term and swing screens run side by side on the size, volume & price list, so their stages
+# are named for their path
 SCREENING_LABELS = {
     "listings": "US-listed stocks",
     "screener": "Size, volume & price",
-    "yahoo": "Analyst & fundamentals screen",
-    "finnhub": "Growth & debt screen",
-    "technical": "Technical screen",
-    "scored": "Scored by AI",
+    "yahoo": "Long-term: analysts & fundamentals",
+    "finnhub": "Long-term: growth & debt",
+    "technical": "Long-term: technical screen",
+    "scored": "Long-term: scored by AI",
     "long_term_score": "Long-term score {min_score}+",
+    "swing_fundamentals": "Swing: fundamentals",
+    "swing_setup": "Swing: dip or fresh turn up",
+    "swing_plan": "Swing: reward : risk {min_score}+",
+    "swing_scored": "Swing: best setups scored by AI",
     "swing_score": "Swing score {min_score}+",
     "swing_early": "Still early in their run",
     "picked": "Picked",
@@ -975,7 +987,7 @@ def _screening(screening: Any) -> list[tuple[str, str]]:
         label = SCREENING_LABELS[stage["stage"]].format(min_score=f"{min_score:g}" if min_score is not None else "")
         value = f"{count:,.0f}"
         sent = _num(stage.get("of"))
-        if stage["stage"] == "scored" and sent is not None and sent > count:
+        if stage["stage"] in ("scored", "swing_scored") and sent is not None and sent > count:
             value += f" of {sent:,.0f}"
         elif stage["stage"] == "picked":
             value = f"{_num(stage.get('long_term')) or 0:.0f} long-term · {_num(stage.get('swing')) or 0:.0f} swing"

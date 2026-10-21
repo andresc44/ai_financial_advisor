@@ -347,6 +347,77 @@ params_dict = {
     # 2026-10-16's 97 candidates: the ones just turning up near support were 0.9-1.9 ranges above their 10-day low;
     # 26 of 97 were more than 3, e.g. TRU, up 20% in 10 days and then the best swing score.
     "SWING_EARLY_ENTRY": {"LOOKBACK_DAYS": 10, "MAX_RUN_ATR": 3.0, "MAX_RSI": 70},
+    # Claude-authored (2026-10-20): the swing screen (src/universal/recommendations/swing_screen.py), run beside the
+    # long-term screens on the same stage-1 list (the NASDAQ screener above: market cap, volume, and price minimums,
+    # so no penny stocks). It looks for decent businesses that are cheap right now and set up to go back up soon.
+    # Its stages, each counted in the digest's "About this digest". First settings, on 2026-10-19's data: 613 -> 395
+    # fundamentals -> 118 in a setup -> 67 with a plan of 1.5:1 or better -> the best 20 to the LLM. Each swing call
+    # costs about a third more than a long-term one, but both are much smaller than the combined call they replaced:
+    # that run scored 93 + 20 for $0.14 off-peak, against $0.24-0.26 for 93-96.
+    # Loosened a step the same day at Andres's request, for a larger pool to pick the best from (the old value is
+    # noted on each changed rule): on the same data, 596 -> 468 -> 187 -> 108 -> the best 40 to the LLM.
+    "SWING_SCREEN": {
+        "ENABLED": True,
+        # 1. Fundamentals (Yahoo, already fetched for the long-term screen): a decent business, looser than
+        # YAHOO_FILTERS. Same (field, operator, threshold) format; a stock missing a field drops out.
+        "YAHOO_FILTERS": [
+            ("averageVolume", ">=", 1_000_000),     # Liquid (same as long-term)
+            ("numberOfAnalystOpinions", ">=", 3),   # Covered by analysts (was 5; long-term: 8)
+            ("recommendationMean", "<=", 3.0),      # Consensus Hold or better (was 2.8; long-term: 2.4)
+            ("forwardPE", ">", 0),                  # Expected to be profitable over the next 12 months
+            ("forwardPE", "<=", 60),                # Not priced for perfection (was 50; long-term: 35)
+            ("profitMargins", ">=", 0.01),          # Profitable now: net margin >= 1% (was 3%; long-term: 7%)
+            ("revenueGrowth", ">=", -0.05),         # Revenue at most 5% below a year ago (was 0; long-term: +5%)
+        ],
+        # 2. The setup, from the daily bars. Distances are in ATRs: a normal day's range (14-day average true range).
+        "SETUP": {
+            "MIN_PRICE": 10.0,             # Not a penny stock, whatever stage 1 lets through
+            "MIN_DOLLAR_VOLUME_M": 20.0,   # Trades at least $20M a day (20-day average), so orders fill near the price
+            "MIN_RSI": 20,                 # Not in free fall (was 25)...
+            "MAX_RSI": 65,                 # ...and not stretched (was 60; SWING_EARLY_ENTRY's MAX_RSI also applies)
+            # Either setup qualifies (each can be switched off):
+            "PULLBACK": {                  # A dip in a healthy longer trend
+                "ENABLED": True,
+                "MAX_BELOW_SMA200_PCT": 5.0,   # Trend intact: at most 5% below its 200-day average (was 3)...
+                "OR_SMA50_ABOVE_SMA200": True, # ...or its 50-day average still above the 200-day
+                "LOOKBACK_DAYS": 20,           # The recent high it pulled back from: the highest close of these days
+                "MIN_PULLBACK_ATR": 1.0,       # Pulled back at least this many ATRs from that high (was 1.5)
+                "MAX_PULLBACK_PCT": 30.0,      # but not collapsed (was 25)
+            },
+            "NEW_UPTREND": {               # The first days of a turn up
+                "ENABLED": True,
+                "CROSS_WITHIN_DAYS": 7,        # The 9-day average crossed above the 21-day within this many sessions (was 5)
+            },
+            # Also applied: SWING_EARLY_ENTRY above (not too far along its run).
+        },
+        # 3. The trade plan, set from the chart for every stock the same way (swing_screen.trade_plan). The
+        # risk/reward sub-score is computed from it (LLM_recommendation.plan_risk_reward_score), not chosen by the LLM.
+        "LEVELS": {
+            "SUPPORT_LOOKBACK_DAYS": 10,   # Supports: EMA 21, 50- and 200-day averages, lower Bollinger Band, this low
+            "STOP_BUFFER_ATR": 0.5,        # Stop this far below the nearest support under the price...
+            "MIN_RISK_ATR": 1.5,           # ...and at least this far below the entry (ordinary noise shouldn't hit it)
+            "TARGET_LOOKBACK_DAYS": 60,    # Targets: the recent and this-many-day high closes, the 50- and 200-day
+            "MIN_TARGET_ATR": 1.5,         # averages from below, the upper band: the nearest at least this far up,
+            "MAX_TARGET_ATR": 8.0,         # capped at this far up (reachable in 2-8 weeks)
+        },
+        # Kept at 1.5 when loosening: a plan under 1.5:1 earns at most ~8 of the 30 risk/reward points, so it can't
+        # reach MIN_SWING_SCORE even with a perfect score on the rest; sending it would only add cost
+        "MIN_PLAN_RR": 1.5,                # Plans with less reward per unit of risk can't score well; not sent to the LLM
+        # The best plans sent to the LLM (was 20): ranked by their risk/reward score, then the earliest in its move
+        "MAX_CANDIDATES": 40,
+    },
+    # Claude-authored (2026-10-20): the sanitized sections each horizon's LLM call is sent (sanitizer.horizon_payload).
+    # Each call only gets what its rubric uses, which keeps the input tokens down. Swing calls also get the swing
+    # screen's setup, facts, and plan.
+    "LLM_PAYLOAD": {
+        "LONG_TERM": ["profile", "price_action", "valuation_and_fundamentals", "sentiment_and_analysts",
+                      "catalysts_and_earnings", "quarterly_financial_trends", "recent_headlines_and_catalysts"],
+        "SWING": ["profile", "price_action", "sentiment_and_analysts", "catalysts_and_earnings",
+                  "technical_indicators", "daily_bars", "recent_headlines_and_catalysts"],
+        # The few fundamentals a swing call gets ("key_fundamentals"), to judge whether a dip changes the business
+        "SWING_FUNDAMENTALS": ["market_cap", "pe_forward", "revenue_growth_yoy", "earnings_growth_yoy",
+                               "profit_margin", "debt_to_equity"],
+    },
 
     # Claude-authored (2026-10-16): data attached to each universal pick for the digest
     # (src/universal/recommendations/enriched_rec.py), as "name in the digest": "section.field" in the sanitized data

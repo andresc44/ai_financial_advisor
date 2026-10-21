@@ -176,6 +176,20 @@ def test_swing_levels_and_earnings_warning():
     assert "No trade levels" in html
 
 
+def test_swing_card_names_its_setup_and_what_the_plan_rests_on():
+    # 2026-10-20: the swing screen's setup and the plan's bases; a pick from before then has none of these rows
+    pick = swing_pick(setup="pullback", stop_basis="0.5 ATR below the EMA 21",
+                      target_basis="highest close of the last 20 days")
+    card = ch.build_view(payload(recommendations={"top_long_term": [], "top_swing": [pick]}))["swing"][0]
+    assert card["details"][:3] == [("Setup", "Dip in an uptrend"), ("Stop at", "0.5 ATR below the EMA 21"),
+                                   ("Target at", "highest close of the last 20 days")]
+    assert not {"Setup", "Stop at", "Target at"} & {label for label, _ in ch.build_view(payload())["swing"][0]["details"]}
+    # A pick scored on one horizon only has no row for the other score
+    lone = swing_pick(longScore=None)
+    details = ch.build_view(payload(recommendations={"top_long_term": [], "top_swing": [lone]}))["swing"][0]["details"]
+    assert "Long-term score" not in {label for label, _ in details}
+
+
 def test_long_term_card_figures():
     card = ch.build_view(payload())["long_term"][0]
     assert [stat["value"] for stat in card["stats"]] == ["18.0", "0.90", "+30%", "25%"]
@@ -573,23 +587,27 @@ def test_a_holding_without_any_exchange_rate_stays_in_its_currency_and_says_so(m
 
 
 def test_about_section_ends_with_the_stocks_left_after_each_screening_stage():
+    # 2026-10-20: the long-term and swing screens run side by side, so each path's stages are named for it
     stages = [{"stage": "listings", "count": 7012}, {"stage": "screener", "count": 635, "rules": ["price >= 30.0"]},
               {"stage": "yahoo", "count": 85}, {"stage": "finnhub", "count": 37}, {"stage": "technical", "count": 37},
               {"stage": "scored", "count": 36, "of": 37}, {"stage": "long_term_score", "count": 16, "min_score": 80.0},
+              {"stage": "swing_fundamentals", "count": 390}, {"stage": "swing_setup", "count": 117},
+              {"stage": "swing_plan", "count": 95, "min_score": 1.5}, {"stage": "swing_scored", "count": 19, "of": 20},
               {"stage": "swing_score", "count": 0, "min_score": 80.0}, {"stage": "swing_early", "count": 0},
               {"stage": "picked", "count": 2, "long_term": 2, "swing": 0}, {"stage": "unknown", "count": 1}]
     view, html = render(payload(screening={"stages": stages}))
     assert view["screening"] == [
-        ("US-listed stocks", "7,012"), ("Size, volume & price", "635"), ("Analyst & fundamentals screen", "85"),
-        ("Growth & debt screen", "37"), ("Technical screen", "37"), ("Scored by AI", "36 of 37"),
-        ("Long-term score 80+", "16"), ("Swing score 80+", "0"), ("Still early in their run", "0"),
-        ("Picked", "2 long-term · 0 swing")]
+        ("US-listed stocks", "7,012"), ("Size, volume & price", "635"), ("Long-term: analysts & fundamentals", "85"),
+        ("Long-term: growth & debt", "37"), ("Long-term: technical screen", "37"), ("Long-term: scored by AI", "36 of 37"),
+        ("Long-term score 80+", "16"), ("Swing: fundamentals", "390"), ("Swing: dip or fresh turn up", "117"),
+        ("Swing: reward : risk 1.5+", "95"), ("Swing: best setups scored by AI", "19 of 20"), ("Swing score 80+", "0"),
+        ("Still early in their run", "0"), ("Picked", "2 long-term \u00b7 0 swing")]
     about = html.index("About this digest")
     assert about < html.index("Estimated.") < html.index("Stocks left after each screening stage") < html.index("7,012")
-    assert "STOCKS LEFT AFTER EACH SCREENING STAGE" in ch.render_text(view) and "  Scored by AI: 36 of 37" in ch.render_text(view)
+    assert "STOCKS LEFT AFTER EACH SCREENING STAGE" in ch.render_text(view) and "  Long-term: scored by AI: 36 of 37" in ch.render_text(view)
     # Everything scored: no "of"
     assert ch.build_view(payload(screening={"stages": [{"stage": "scored", "count": 37, "of": 37}]}))["screening"] == [
-        ("Scored by AI", "37")]
+        ("Long-term: scored by AI", "37")]
     # No counts (older payloads, or no picks could be made): no section
     view, html = render(payload())
     assert view["screening"] == [] and "screening stage" not in html

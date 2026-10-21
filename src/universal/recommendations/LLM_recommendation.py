@@ -26,7 +26,6 @@ from src.universal.recommendations.LLM_rec_instr import (
     GROWTH_MOMENTUM_SCORE_DESCRIPTION,
     COMPETITIVE_MOAT_SCORE_DESCRIPTION,
     TECHNICAL_SETUP_SCORE_DESCRIPTION,
-    RISK_REWARD_SCORE_DESCRIPTION,
     MOMENTUM_VOLUME_SCORE_DESCRIPTION,
     CATALYST_SENTIMENT_SCORE_DESCRIPTION,
     LONG_TERM_SENTIMENT_DESCRIPTION,
@@ -34,12 +33,12 @@ from src.universal.recommendations.LLM_rec_instr import (
     KEY_RISK_DESCRIPTION,
     SWING_SENTIMENT_DESCRIPTION,
     SWING_THESIS_DESCRIPTION,
-    ENTRY_PRICE_DESCRIPTION,
-    STOP_LOSS_DESCRIPTION,
-    PRICE_TARGET_DESCRIPTION,
-    EVALUATION_TOOL_NAME,
-    EVALUATION_TOOL_DESCRIPTION,
-    SYSTEM_PROMPT,
+    LONG_TERM_TOOL_NAME,
+    LONG_TERM_TOOL_DESCRIPTION,
+    SWING_TOOL_NAME,
+    SWING_TOOL_DESCRIPTION,
+    LONG_TERM_SYSTEM_PROMPT,
+    SWING_SYSTEM_PROMPT,
     format_user_prompt,
 )
 
@@ -87,13 +86,15 @@ class LongTermSubScores(BaseModel):
 
 
 class SwingSubScores(BaseModel):
+    """
+    Claude-authored (2026-10-20): the swing call's answer. The fourth sub-score, risk_reward_ratio_score, and the
+    entry, stop, and target come from the swing screen's fixed plan (swing_screen.trade_plan), scored in code by
+    plan_risk_reward_score, so the model no longer chooses levels (swing_evaluation).
+    """
     model_config = ConfigDict(extra="forbid")
 
     technical_setup_score: float = Field(
         ..., ge=0.0, le=30.0, description=TECHNICAL_SETUP_SCORE_DESCRIPTION
-    )
-    risk_reward_ratio_score: float = Field(
-        ..., ge=0.0, le=30.0, description=RISK_REWARD_SCORE_DESCRIPTION
     )
     momentum_volume_score: float = Field(
         ..., ge=0.0, le=20.0, description=MOMENTUM_VOLUME_SCORE_DESCRIPTION
@@ -101,31 +102,13 @@ class SwingSubScores(BaseModel):
     catalyst_sentiment_score: float = Field(
         ..., ge=0.0, le=20.0, description=CATALYST_SENTIMENT_SCORE_DESCRIPTION
     )
-    # Claude-authored (2026-10-16): the reasoning, sentiment, and trade levels shown with the pick in the digest.
-    # The levels have no range constraints here: an inconsistent set (e.g. a stop above the entry) is dropped by the
-    # scorer instead of discarding the whole evaluation.
+    # Claude-authored (2026-10-16): the reasoning and sentiment shown with the pick in the digest
     sentiment: Literal["Bullish", "Neutral", "Bearish"] = Field(..., description=SWING_SENTIMENT_DESCRIPTION)
     thesis: str = Field(..., description=SWING_THESIS_DESCRIPTION)
-    entry_price: float = Field(..., description=ENTRY_PRICE_DESCRIPTION)
-    stop_loss: float = Field(..., description=STOP_LOSS_DESCRIPTION)
-    price_target: float = Field(..., description=PRICE_TARGET_DESCRIPTION)
-
-    @property
-    def total_score(self) -> float:
-        return round(
-            self.technical_setup_score
-            + self.risk_reward_ratio_score
-            + self.momentum_volume_score
-            + self.catalyst_sentiment_score,
-            2,
-        )
 
 
-class StockEvaluationBreakdown(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    long_term: LongTermSubScores
-    swing: SwingSubScores
+# Claude-authored (2026-10-20): each horizon has its own call: (system prompt, tool spec name, answer schema)
+HORIZONS = ("long_term", "swing")
 
 
 MIN_RISK_FRACTION = 0.01  # A stop closer than 1% of the entry is counted as 1% away when scoring the plan
@@ -164,20 +147,31 @@ def plan_risk_reward_score(entry: Any, stop: Any, target: Any, atr: Optional[flo
     return round(min(30.0, 25 + (ratio - 2.5) / 2 * 5), 1)
 
 
-def score_own_levels(symbol: str, breakdown: StockEvaluationBreakdown, atr: Optional[float] = None) -> StockEvaluationBreakdown:
+def long_term_evaluation(answer: LongTermSubScores) -> Dict[str, Any]:
+    """{"longScore", "sub_scores": {"long_term": ...}} from the long-term call's answer."""
+    return {"longScore": answer.total_score, "sub_scores": {"long_term": answer.model_dump()}}
+
+
+def swing_evaluation(answer: SwingSubScores, swing_setup: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Replaces the model's risk/reward sub-score with plan_risk_reward_score of its own levels, with the stop at least
-    one `atr` away (logged when the score changes).
+    Claude-authored (2026-10-20): {"swingScore", "sub_scores": {"swing": ...}} from the swing call's answer and the
+    swing screen's setup: the model's three sub-scores plus risk_reward_ratio_score, plan_risk_reward_score of the
+    screen's plan (with its ATR), and the plan's levels, so the picks and the digest read them where they always have.
+    A candidate without a plan gets 0 for risk/reward and no levels.
     """
-    swing = breakdown.swing
-    scored = plan_risk_reward_score(swing.entry_price, swing.stop_loss, swing.price_target, atr)
-    if scored != swing.risk_reward_ratio_score:
-        floored = atr is not None and swing.entry_price - swing.stop_loss < atr
-        logger.info(f"[{symbol}] Risk/reward {swing.risk_reward_ratio_score} -> {scored} from its plan "
-                    f"{swing.entry_price}/{swing.stop_loss}/{swing.price_target}"
-                    + (f" (stop counted as one ATR, {atr:.2f}, away)." if floored else "."))
-        swing.risk_reward_ratio_score = scored
-    return breakdown
+    swing_setup = swing_setup or {}
+    plan = swing_setup.get("plan") or {}
+    facts = swing_setup.get("facts") or {}
+    levels = (plan.get("entry_price"), plan.get("stop_loss"), plan.get("price_target"))
+    section = answer.model_dump()
+    section.update(
+        risk_reward_ratio_score=plan_risk_reward_score(*levels, facts.get("atr")),
+        entry_price=levels[0], stop_loss=levels[1], price_target=levels[2],
+        setup=swing_setup.get("setup"), stop_basis=plan.get("stop_basis"), target_basis=plan.get("target_basis"),
+    )
+    total = round(answer.technical_setup_score + section["risk_reward_ratio_score"] + answer.momentum_volume_score
+                  + answer.catalyst_sentiment_score, 2)
+    return {"swingScore": total, "sub_scores": {"swing": section}}
 
 
 # Claude-authored (2026-10-13): strict tool use rejects numeric/string constraints in the schema it is sent,
@@ -197,11 +191,21 @@ def _strict_schema(schema: Any) -> Any:
     return schema
 
 
-EVALUATION_TOOL_SPEC = {
-    "name": EVALUATION_TOOL_NAME,
-    "description": EVALUATION_TOOL_DESCRIPTION,
-    "strict": True,  # Guarantees schema-valid tool input on models that support strict tool use
-    "input_schema": _strict_schema(StockEvaluationBreakdown.model_json_schema()),
+def _tool_spec(name: str, description: str, schema: type[BaseModel]) -> Dict[str, Any]:
+    return {
+        "name": name,
+        "description": description,
+        "strict": True,  # Guarantees schema-valid tool input on models that support strict tool use
+        "input_schema": _strict_schema(schema.model_json_schema()),
+    }
+
+
+# Claude-authored (2026-10-20): one tool per horizon (was one that recorded both)
+LONG_TERM_TOOL_SPEC = _tool_spec(LONG_TERM_TOOL_NAME, LONG_TERM_TOOL_DESCRIPTION, LongTermSubScores)
+SWING_TOOL_SPEC = _tool_spec(SWING_TOOL_NAME, SWING_TOOL_DESCRIPTION, SwingSubScores)
+HORIZON_SETTINGS = {
+    "long_term": (LONG_TERM_SYSTEM_PROMPT, LONG_TERM_TOOL_SPEC, LongTermSubScores),
+    "swing": (SWING_SYSTEM_PROMPT, SWING_TOOL_SPEC, SwingSubScores),
 }
 
 # Beta header for the server-side `fallbacks: "default"` parameter (models listed in
@@ -213,7 +217,6 @@ class ParallelStockEvaluator:
     # Only used for settings nothing else sets (the model and effort come from params_dict["LLM"]["UNIVERSAL"])
     DEFAULT_CONFIG = {
         "max_tokens": 16000,
-        "system_prompt": SYSTEM_PROMPT,
         "max_concurrency": 15,
     }
 
@@ -222,9 +225,16 @@ class ParallelStockEvaluator:
         config: Optional[Dict[str, Any]] = None,
         tool_spec: Optional[Dict[str, Any]] = None,
         tool_choice: Optional[Dict[str, Any]] = None,
+        horizon: str = "long_term",
     ):
+        # Claude-authored (2026-10-20): one horizon per evaluator ("long_term" or "swing"), each with its own system
+        # prompt, tool, and answer schema (HORIZON_SETTINGS)
+        if horizon not in HORIZON_SETTINGS:
+            raise ValueError(f"Unknown horizon {horizon!r}; expected one of {HORIZONS}")
+        self.horizon = horizon
+        system_prompt, default_tool, self.answer_model = HORIZON_SETTINGS[horizon]
         # Claude-authored (2026-10-13): CLAUDE_CONFIG supplies model settings only. Its "system_prompt" key (if
-        # present) is ignored so the rubric in LLM_rec_instr.SYSTEM_PROMPT is always what Claude receives.
+        # present) is ignored so the rubric in LLM_rec_instr (2026-10-20: its prompt for the evaluator's horizon) is always what Claude receives.
         # A caller can still pass a different system_prompt explicitly via `config`.
         # 2026-10-16: the model and effort are params_dict["LLM"]["UNIVERSAL"] (Claude or DeepSeek, src/llm_models.py);
         # the provider's request settings (CLAUDE_CONFIG / DEEPSEEK_CONFIG) fill in the rest.
@@ -236,10 +246,11 @@ class ParallelStockEvaluator:
         provider_config = params_dict.get("DEEPSEEK_CONFIG" if self.provider == llm_models.DEEPSEEK else "CLAUDE_CONFIG", {})
         self.config = {
             **self.DEFAULT_CONFIG,
+            "system_prompt": system_prompt,
             **{key: value for key, value in provider_config.items() if key in ("max_tokens", "max_concurrency", "effort")},
             **chosen,
         }
-        self.tool_spec = tool_spec or EVALUATION_TOOL_SPEC
+        self.tool_spec = tool_spec or default_tool
         # Claude-authored (2026-10-13): "auto" instead of forcing the tool ({"type": "tool", ...}), which returns a
         # 400 on Opus 5.5 / Sonnet 5.5 / Fable 5.1. SYSTEM_PROMPT instructs the model to call the tool, and the
         # strict schema keeps its input valid.
@@ -254,9 +265,18 @@ class ParallelStockEvaluator:
         self.client = AsyncAnthropic(api_key=api_key) if self.deepseek is None else None
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
 
-    async def _evaluate_with_deepseek(
-        self, symbol: str, user_prompt: str, atr: Optional[float] = None
-    ) -> Optional[StockEvaluationBreakdown]:
+    def _result(self, symbol: str, answer: BaseModel, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """The evaluation of one candidate for this horizon (long_term_evaluation / swing_evaluation), logged."""
+        if self.horizon == "swing":
+            result = swing_evaluation(answer, payload.get("swing_setup"))
+            logger.info(f"[{symbol}] Evaluated -> swingScore: {result['swingScore']:.1f} "
+                        f"(risk/reward {result['sub_scores']['swing']['risk_reward_ratio_score']} from the plan)")
+        else:
+            result = long_term_evaluation(answer)
+            logger.info(f"[{symbol}] Evaluated -> longScore: {result['longScore']:.1f}")
+        return result
+
+    async def _evaluate_with_deepseek(self, symbol: str, user_prompt: str) -> Optional[BaseModel]:
         """
         Claude-authored (2026-10-16): one candidate scored on DeepSeek, with the same tool schema and validation.
         2026-10-17: a misshapen answer is repaired, and one still invalid is asked for once more (validated_answer).
@@ -264,34 +284,26 @@ class ParallelStockEvaluator:
         request = build_request(
             self.config["model"], self.config["effort"], self.config["system_prompt"], user_prompt, self.tool_spec
         )
-        breakdown = await validated_answer(
-            self.deepseek, request, self.tool_spec, StockEvaluationBreakdown, symbol, logger,
+        return await validated_answer(
+            self.deepseek, request, self.tool_spec, self.answer_model, symbol, logger,
             on_response=lambda response: record_deepseek_response(None, "universal", self.config["model"], response),
         )
-        if breakdown is None:
-            return None
-        score_own_levels(symbol, breakdown, atr)  # Claude-authored (2026-10-18)
-        logger.info(
-            f"[{symbol}] Evaluated -> swingScore: {breakdown.swing.total_score:.1f}, "
-            f"longScore: {breakdown.long_term.total_score:.1f}"
-        )
-        return breakdown
 
     async def _evaluate_single_ticker(
         self, symbol: str, sanitized_payload: Dict[str, Any]
-    ) -> Optional[StockEvaluationBreakdown]:
+    ) -> Optional[Dict[str, Any]]:
         async with self.semaphore:
             if self.key_error is not None:  # Same key, same failure: don't send the remaining tickers
                 return None
             sanitized_prompt_data = json.dumps(
                 sanitized_payload, indent=2, default=str
             )
-            user_prompt = format_user_prompt(symbol, sanitized_prompt_data)
-            atr = daily_atr(sanitized_payload.get("daily_bars"))  # Claude-authored (2026-10-18): floors the stop
+            user_prompt = format_user_prompt(symbol, sanitized_prompt_data, self.horizon)
 
             try:
                 if self.deepseek is not None:
-                    return await self._evaluate_with_deepseek(symbol, user_prompt, atr)
+                    answer = await self._evaluate_with_deepseek(symbol, user_prompt)
+                    return self._result(symbol, answer, sanitized_payload) if answer is not None else None
                 request = {
                     "model": self.config["model"],
                     "max_tokens": self.config["max_tokens"],
@@ -338,12 +350,7 @@ class ParallelStockEvaluator:
                     )
                     return None
 
-                breakdown = score_own_levels(symbol, StockEvaluationBreakdown(**tool_block.input), atr)  # 2026-10-18
-                logger.info(
-                    f"[{symbol}] Evaluated -> swingScore: {breakdown.swing.total_score:.1f}, "
-                    f"longScore: {breakdown.long_term.total_score:.1f}"
-                )
-                return breakdown
+                return self._result(symbol, self.answer_model(**tool_block.input), sanitized_payload)
 
             except ValidationError as e:
                 # Claude-authored (2026-10-13): score ranges are no longer in the API schema (strict mode
@@ -368,7 +375,7 @@ class ParallelStockEvaluator:
     ) -> Dict[str, Dict[str, Any]]:
         symbols = list(sanitized_inputs.keys())
         logger.info(
-            f"Starting parallel evaluation for {len(symbols)} candidate payloads "
+            f"Starting parallel {self.horizon} evaluation for {len(symbols)} candidate payloads "
             f"({self.config['model']}, effort={self.config['effort']})..."
         )
 
@@ -377,7 +384,7 @@ class ParallelStockEvaluator:
             for symbol in symbols
         ]
 
-        results: List[Optional[StockEvaluationBreakdown]] = await asyncio.gather(
+        results: List[Optional[Dict[str, Any]]] = await asyncio.gather(
             *tasks
         )
         if self.deepseek is not None:
@@ -387,16 +394,11 @@ class ParallelStockEvaluator:
         for symbol, result in zip(symbols, results):
             if result is None:
                 continue
-
-            evaluations[symbol] = {
-                "swingScore": result.swing.total_score,
-                "longScore": result.long_term.total_score,
-                "sub_scores": result.model_dump(),
-                "model": self.config["model"],  # Claude-authored (2026-10-16): which LLM scored it (track record)
-            }
+            # Claude-authored (2026-10-16): which LLM scored it (track record)
+            evaluations[symbol] = {**result, "model": self.config["model"]}
 
         logger.info(
-            f"Evaluation complete. Successfully scored {len(evaluations)}/{len(symbols)} tickers."
+            f"Evaluation complete. Successfully scored {len(evaluations)}/{len(symbols)} tickers ({self.horizon})."
         )
         return evaluations
 
@@ -406,14 +408,17 @@ def run_llm_evaluation(
     config: Optional[Dict[str, Any]] = None,
     tool_spec: Optional[Dict[str, Any]] = None,
     issues: Optional[List[Dict[str, Any]]] = None,
+    horizon: str = "long_term",
 ) -> Dict[str, Dict[str, Any]]:
     """
     Synchronous entry point to run the async Claude scoring pipeline.
 
     Claude-authored (2026-10-16): a shared-key failure (invalid, expired, out of credits, spend limit) stops the
     remaining requests and is appended to `issues` (when given) as {"source", "reason", "message"}.
+    2026-10-20: scores one `horizon`: "long_term" ({ticker: {"longScore", "sub_scores": {"long_term"}, "model"}}) or
+    "swing" ({ticker: {"swingScore", "sub_scores": {"swing"}, "model"}}, each payload carrying its "swing_setup").
     """
-    evaluator = ParallelStockEvaluator(config=config, tool_spec=tool_spec)
+    evaluator = ParallelStockEvaluator(config=config, tool_spec=tool_spec, horizon=horizon)
     evaluations = asyncio.run(evaluator.evaluate_candidates(sanitized_inputs))
     if evaluator.key_error is not None and issues is not None:
         issues.append(shared_key_issue(evaluator.key_error))

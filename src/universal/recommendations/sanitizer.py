@@ -283,6 +283,37 @@ def sanitize_ticker_payload(ticker_symbol, raw_data):
     return sanitized
 
 
+
+# Claude-authored (2026-10-20): what each horizon's LLM call is sent, by params_dict["LLM_PAYLOAD"]
+DEFAULT_LLM_PAYLOAD = {
+    "LONG_TERM": ["profile", "price_action", "valuation_and_fundamentals", "sentiment_and_analysts",
+                  "catalysts_and_earnings", "quarterly_financial_trends", "recent_headlines_and_catalysts"],
+    "SWING": ["profile", "price_action", "sentiment_and_analysts", "catalysts_and_earnings", "technical_indicators",
+              "daily_bars", "recent_headlines_and_catalysts"],
+    "SWING_FUNDAMENTALS": ["market_cap", "pe_forward", "revenue_growth_yoy", "earnings_growth_yoy", "profit_margin",
+                           "debt_to_equity"],
+}
+
+
+def horizon_payload(sanitized, horizon, swing_setup=None):
+    """
+    Claude-authored (2026-10-20): the part of a sanitized payload one horizon's LLM call uses, by
+    params_dict["LLM_PAYLOAD"]: long-term calls skip the technicals and daily bars, swing calls the full fundamentals
+    and quarterly trends (keeping the SWING_FUNDAMENTALS fields as "key_fundamentals"), and get the swing screen's
+    setup, facts, and plan as "swing_setup". The full sanitized payload is still what the picks are built from.
+    """
+    config = {**DEFAULT_LLM_PAYLOAD, **(params_dict.get("LLM_PAYLOAD") or {})}
+    payload = {"symbol": sanitized.get("symbol")}
+    for section in config["SWING" if horizon == "swing" else "LONG_TERM"]:
+        if section in sanitized:
+            payload[section] = sanitized[section]
+    if horizon == "swing":
+        fundamentals = sanitized.get("valuation_and_fundamentals") or {}
+        payload["key_fundamentals"] = {field: fundamentals.get(field) for field in config["SWING_FUNDAMENTALS"]}
+        payload["swing_setup"] = swing_setup or {}
+    return payload
+
+
 def process_file(input_filename, output_filename):
     with open(input_filename, 'r') as f:
         data = json.load(f)
