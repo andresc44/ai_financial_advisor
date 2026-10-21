@@ -128,7 +128,8 @@ def _catalysts(context: Any, today: date, window_days: int) -> list[dict]:
 
 def add_digest_fields(holdings_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Adds 'ma_status', 'catalysts', and 'sector' columns derived from each holding's 'market_context', and fills
+    Adds 'ma_status', 'catalysts', 'next_earnings_date', and 'sector' columns derived from each holding's
+    'market_context', and fills
     'sentiment' (set by Claude in add_recommendations) from the analyst consensus where it is missing.
     """
     if holdings_df.empty:
@@ -151,6 +152,11 @@ def add_digest_fields(holdings_df: pd.DataFrame) -> pd.DataFrame:
     df["catalysts"] = pd.Series(
         [_catalysts(ctx, today, window_days) for ctx in contexts], index=df.index, dtype=object
     )
+    # Claude-authored (2026-10-21): the next earnings date at any distance, so the card can say when none is known
+    # (often for listings outside the US) rather than leave the reader to wonder; ISO date, or None
+    df["next_earnings_date"] = [
+        next((c["event_date"].isoformat() for c in _catalysts(ctx, today, 10_000)), None) for ctx in contexts
+    ]
     df["sector"] = [_section(ctx, "profile").get("sector") for ctx in contexts]
     # Claude-authored (2026-10-17): Yahoo's company name over the brokerage's description, which can be wrong
     # (SnapTrade has called Agilent's "A" "AgileThought, Inc."); used by the email and the portfolio review

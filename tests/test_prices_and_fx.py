@@ -42,15 +42,16 @@ def closes(*pairs):
 TUE, WED, THU = ("2026-10-13", 100.0), ("2026-10-14", 102.0), ("2026-10-15", 105.0)
 
 
-@pytest.mark.parametrize("when, yahoo, broker_price, expected_pnl, expected_session", [
-    ("2026-10-15T09:31", [TUE, WED], 104.0, 20.0, "2026-10-15"),                       # No bar for today yet
-    ("2026-10-15T12:00", [TUE, WED, ("2026-10-15", 104.0)], 104.0, 20.0, "2026-10-15"),
-    ("2026-10-15T16:10", [TUE, WED, THU], 107.5, 30.0, "2026-10-15"),                  # After-hours price ignored
-    ("2026-10-15T07:30", [TUE, WED], 104.5, 20.0, "2026-10-14"),                       # Pre-market price ignored
-    ("2026-10-15T07:30", [TUE, WED, ("2026-10-15", 104.5)], 104.5, 20.0, "2026-10-14"),  # Early bar for today
-    ("2026-10-15T12:00", [], 104.0, 0.0, "2026-10-15"),                                 # No Yahoo data
+# 2026-10-21: `live`, whether the session is still trading (daily_pnl_live), for the email's labels
+@pytest.mark.parametrize("when, yahoo, broker_price, expected_pnl, expected_session, live", [
+    ("2026-10-15T09:31", [TUE, WED], 104.0, 20.0, "2026-10-15", True),                       # No bar for today yet
+    ("2026-10-15T12:00", [TUE, WED, ("2026-10-15", 104.0)], 104.0, 20.0, "2026-10-15", True),
+    ("2026-10-15T16:10", [TUE, WED, THU], 107.5, 30.0, "2026-10-15", False),                 # After-hours price ignored
+    ("2026-10-15T07:30", [TUE, WED], 104.5, 20.0, "2026-10-14", False),                      # Pre-market price ignored
+    ("2026-10-15T07:30", [TUE, WED, ("2026-10-15", 104.5)], 104.5, 20.0, "2026-10-14", False),  # Early bar for today
+    ("2026-10-15T12:00", [], 104.0, 0.0, "2026-10-15", True),                                # No Yahoo data
 ])
-def test_daily_pnl(monkeypatch, when, yahoo, broker_price, expected_pnl, expected_session):
+def test_daily_pnl(monkeypatch, when, yahoo, broker_price, expected_pnl, expected_session, live):
     fixed = datetime.fromisoformat(when).replace(tzinfo=ET)
 
     class FakeDateTime(datetime):
@@ -65,6 +66,7 @@ def test_daily_pnl(monkeypatch, when, yahoo, broker_price, expected_pnl, expecte
     out = fetcher.calculate_daily_pnl(pd.DataFrame({"symbol": ["AAPL"], "shares": [10.0], "current_price": [broker_price]}))
     assert out["daily_pnl"].iloc[0] == pytest.approx(expected_pnl)
     assert out["daily_pnl_session"].iloc[0] == expected_session
+    assert bool(out["daily_pnl_live"].iloc[0]) is live
 
 
 

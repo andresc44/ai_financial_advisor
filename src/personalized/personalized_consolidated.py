@@ -13,6 +13,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.fx_rates import usd_rates
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import cached_company_names
 from src.personalized.pull_holdings_data import PortfolioFetcher
@@ -74,6 +75,15 @@ def attach_news_bullets(holdings: list[dict], news: dict[str, list[SymbolNewsIte
         ]
     return holdings or []
 
+def _home(user_name: str) -> tuple[str, float]:
+    """
+    Claude-authored (2026-10-21): (home currency, USD per unit) for the portfolio review, which writes its amounts
+    in the currency the digest's overview uses; USD when that currency has no rate (as the overview does).
+    """
+    code = get_home_currency(user_name)
+    rate = usd_rates([code]).get(code) if code != "USD" else 1.0
+    return (code, rate) if rate else ("USD", 1.0)
+
 def get_portfolio_review(
     user_name: str,
     holdings: list[dict],
@@ -98,7 +108,8 @@ def get_portfolio_review(
         api_key = get_gemini_api_key(user_name)
     except ApiKeyUnusable as e:  # Key not set (already reported by the news when it ran first)
         return [], e
-    notes, key_error = review_portfolio(holdings, portfolio_beta, api_key, user_name=user_name)
+    notes, key_error = review_portfolio(holdings, portfolio_beta, api_key, user_name=user_name,
+                                        home=_home(user_name))
     return [note.model_dump() for note in notes], key_error
 
 US_EASTERN = ZoneInfo("America/New_York")

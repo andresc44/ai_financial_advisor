@@ -464,13 +464,15 @@ u + .body .cv{display:none;}
 {#- 2026-10-21: no phrase kept whole here: at enlarged text that added a line -#}
 <div class="xs mu" style="padding-bottom:4px;">{{ holdings_note }}</div>
 {% for h in holdings %}
-{% set detail %}{% if h.day.text %}<div><span class="{{ TC[h.day.tone] }}">{{ h.day.text }}</span> <span class="mu">{{ day }}</span></div>{% endif %}<div class="mu">{{ h.weight_short }} weight</div>{% endset %}
+{% set detail %}{% if h.day.text %}<div><span class="{{ TC[h.day.tone] }}">{{ h.day.text }}</span> <span class="mu">{{ h.day.label }}</span></div>{% endif %}<div class="mu">{{ h.weight_short }} weight</div>{% endset %}
 {% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first, h.anchor) %}
 <div class="xs mu ml">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta|phrases }}</div>
 <div class="t8">{{ stats(h.stats) }}</div>
 {% for c in h.catalysts %}
 <div class="sm t10">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text|phrases }}</div>
 {% endfor %}
+{#- 2026-10-21: when no earnings date is known at all -#}
+{% if h.earnings_note %}<div class="xs mu t10">{{ h.earnings_note }}</div>{% endif %}
 {% if h.chart %}{{ chart(h.chart) }}{% endif %}
 {% if h.rationale %}
 {% call fold("Why " ~ h.signal.text|lower, top="t10", anchor=h.anchor ~ "-why", focus_on_open=true) %}

@@ -19,7 +19,7 @@ import src.personalized.personalized_consolidated as pc
 import src.personalized.symbol_specific_news as news
 import src.track_record as track_record
 from src.check_config import check_user, env_template
-from src.personalized.portfolio_review import build_portfolio_summary
+from src.personalized.portfolio_review import SYSTEM_PROMPT, build_portfolio_summary
 from src.personalized.user_profiles import USER_PROFILES, build_profile, env_prefix
 
 ET = ZoneInfo("America/New_York")
@@ -144,7 +144,7 @@ def personal_env(monkeypatch):
     monkeypatch.setattr(pc, "PortfolioFetcher", FakeFetcher)
     monkeypatch.setattr(pc, "fetch_symbol_news", fake_news)
     monkeypatch.setattr(pc, "get_gemini_api_key", lambda user: "g")
-    monkeypatch.setattr(pc, "review_portfolio", lambda holdings, beta, api_key, user_name=None: ([], None))
+    monkeypatch.setattr(pc, "review_portfolio", lambda holdings, beta, api_key, user_name=None, home=None: ([], None))
     yield SimpleNamespace(constructed=constructed, overlap=overlap, companies=companies_seen)
     for key in ("TESTUSER_INST", "TESTUSER_EMAIL", "TESTUSER_TZ"):
         os.environ.pop(key, None)
@@ -249,6 +249,30 @@ def test_review_summary_math_and_missing_values():
     assert portfolio["daily_pnl_pct"] == round(70 / (594 * 15 + 102 * 10) * 100, 2)
     assert stocks["BBB"]["sector"] is None and stocks["BBB"]["recommendation"] is None and stocks["BBB"]["rsi"] is None
     assert "NaN" not in json.dumps(summary, default=str)
+
+
+def test_the_review_summary_is_in_the_home_currency(monkeypatch):
+    # Claude-authored (2026-10-21): Andres asked for the portfolio risk notes in the home currency, like the
+    # overview. The holdings' amounts are USD; the summary restates them, and the prompt names the currency.
+    rows = [{"symbol": "AAA", "shares": 10.0, "market_value": 1250.0, "total_cost_basis": 1000.0, "daily_pnl": 12.5,
+             "last_close_usd": 123.75, "currency": "USD", "daily_pnl_live": False},
+            {"symbol": "VOD.L", "shares": 100.0, "market_value": 125.0, "total_cost_basis": 100.0, "daily_pnl": 1.0,
+             "last_close_usd": 1.24, "currency": "GBX", "daily_pnl_live": True}]
+    usd, gbp = build_portfolio_summary(rows, 1.0), build_portfolio_summary(rows, 1.0, ("GBP", 1.25))
+    assert (usd["portfolio"]["money_currency"], usd["portfolio"]["money_format"]) == ("USD", "$1,234")
+    assert (gbp["portfolio"]["money_currency"], gbp["portfolio"]["money_format"]) == ("GBP", "\u00a31,234")
+    assert gbp["portfolio"]["total_market_value"] == 1100.0  # $1,375 at 1.25
+    stocks = {s["symbol"]: s for s in gbp["holdings"]}
+    assert stocks["AAA"]["market_value"] == 1000.0 and stocks["AAA"]["weight_pct"] == usd["holdings"][0]["weight_pct"]
+    assert gbp["portfolio"]["daily_pnl_pct"] == usd["portfolio"]["daily_pnl_pct"]  # Percentages don't change
+    assert stocks["VOD.L"]["daily_pnl_live"] is True and stocks["AAA"]["daily_pnl_live"] is False
+    assert "money_currency" in SYSTEM_PROMPT and "daily_pnl_live" in SYSTEM_PROMPT
+    # The digest asks for the overview's currency, or USD when it has no rate (as the overview does)
+    monkeypatch.setattr(pc, "get_home_currency", lambda user: "GBP")
+    monkeypatch.setattr(pc, "usd_rates", lambda codes: {"GBP": 1.25})
+    assert pc._home("Steven") == ("GBP", 1.25)
+    monkeypatch.setattr(pc, "usd_rates", lambda codes: {"GBP": None})
+    assert pc._home("Steven") == ("USD", 1.0)
 
 
 # --------------------------------------------------------------------------------------------- track record

@@ -326,14 +326,14 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
    - the portfolio's value, with the day's change in a coloured pill. Since 2026-10-21 these are in the user's home currency (`<NAME>_HOME_CURRENCY`), and when that isn't USD, a line under the value gives it in USD with the rate, e.g. "$102,345.67 USD · 1 CAD = 0.7111 USD";
    - three figure boxes: unrealized gain, flagged positions and their share of the value, and new ideas;
    - "Needs attention" chips for each flagged stock, most urgent first;
-   - "Earnings soon" for holdings reporting within the catalyst window;
+   - "Earnings soon" for holdings reporting within the catalyst window. Since 2026-10-21, a holding card with no earnings date known at all says "No earnings date available" (often for listings outside the US, which Finnhub's free plan doesn't cover); a date past the 14-day window isn't mentioned;
    - **Jumping to a stock:** in the AMP version, tapping a stock in either list opens Your holdings and that stock's row, then scrolls to it and highlights it.
      - **How:** AMP email has no scroll action, so the row focuses its own header once it has opened (its `expand` event), and focusing scrolls it into view.
      - **Fixed 2026-10-20, unwanted jumps:** AMP hands an `expand` event to the nearest element up the page that handles it, so opening a holding's Why or News dropdown also ran the row's focus action. With the row's header scrolled off the top, the page jumped about 650 px up to it. Those dropdowns now handle their own `expand` event by focusing their own header, which is on screen because it was just tapped. In a phone-sized browser test, with the email as the page and inside a Gmail-like auto-sized frame, no tap moves the page any more, and the chips still jump.
      - **Tested:** in a browser with real taps. Whether the Gmail app lets the email scroll its own view is unconfirmed; if not, the row still opens and is highlighted.
      - **HTML version:** the chips stay plain there, because jump links don't work in the Gmail app or into closed dropdowns.
    - the connected brokerage, with each account's value in a small dropdown.
-4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes.
+4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes. Since 2026-10-21 the review writes its amounts in the home currency, like the overview: Gemini gets the portfolio summary in that currency (`money_currency`, `money_format`) and is told to write every amount in it.
 5. **Markets & macro:** since 2026-10-21, graded market signals (`create_html._signals`), followed by the top stories. Each indicator has a dot and a short grade (e.g. "Uptrend", "Calm", "Defensive") coloured like the dot, what the grade rests on, and its value and move. The four tiles and three gauges this replaced are gone.
    - **Key signals first:** when the section opens, `MARKET_SIGNALS["KEY_SIGNALS"]` show first: the S&P 500's trend, the market mood, breadth, the 10Y yield, and Nasdaq-100 vs Dow. The rest are under the "All indicators" dropdown, in their groups (Benchmarks, Sentiment, Macro), with a line above the sentiment group on how VIX and Fear & Greed differ.
    - **Links (`DIGEST.INDICATOR_LINKS`):** each indicator's name opens its chart. They replaced a table of 1-day, 5-day, and 1-month moves.
@@ -381,8 +381,9 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 |---|---|---|
 | The overview: portfolio total, the day's change, unrealized P/L, account values | The user's home currency (2026-10-21), plus the total in USD when that isn't USD | `home_currency` in `create_html.py`: `<NAME>_HOME_CURRENCY` from the payload, at the current rate |
 | The home currency's week (2026-10-21) | For a non-USD home currency: its move against the dollar over the past 5 trading days, after the rate on the overview's USD line, e.g. "$8,466.64 USD · 1 AUD = 0.703 USD · AUD +0.6% this week" | `fx_rates.usd_rate_change` (Yahoo `<CODE>USD=X` daily closes); left out when Yahoo has no history. Added because DXY (the dollar against the euro, yen, pound, Canadian dollar, krona, and franc) says how the dollar affects US stocks, not what it does to a holder whose currency is another |
-| Holdings: position values, P/L | USD ("Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
-| A holding in another currency (CAD, EUR, GBP or pence, AUD, COP, ...) | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 · 1 CAD = 0.707 USD" (rates to 3 decimals since 2026-10-21), or for pesos "Listed in COP at COP$2,800 (1 USD = 3,167 COP)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so. Until 2026-10-21 only CAD, AUD and GBP were converted, and an EUR holding's price stayed in euros |
+| Holding cards: value, price, unrealized P/L (2026-10-21) | Each stock's own currency, at Andres's request: "C$1,000.00", "€200.00", "COP$2,800". London shows its price in pence as quoted ("Price · pence", "418.5p") and its value and P/L in pounds. The line atop Your holdings says "Values in each stock's currency" (or "Values in USD" when every holding is in USD) | `_own_currency` in `create_html.py`: the card's USD amounts back at the rate they were converted at. Before 2026-10-21 cards were in USD, with a "Listed in CAD at C$64.50 · 1 CAD = 0.707 USD" note |
+| Totals behind the overview, weights, beta (any currency) | USD at the current rate, then the home currency for the overview | `pull_holdings_data` converts money amounts to USD (`USD_MONEY_COLUMNS`); `holdings_in_usd` in `create_html.py` restates them at the current rate just before the email is built (rates from `src/fx_rates.py`: live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so |
+| The portfolio review's notes (2026-10-21) | The home currency | `build_portfolio_summary(..., home)` and the review prompt |
 | Ideas: prices, trade levels, targets | "Prices in USD" | Always USD: the ideas come from the US screener (`IDEAS_CURRENCY`) |
 | Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Always USD: US ETFs and WTI |
 | API costs | Their `currency` | `api_usage.currency` |
@@ -399,7 +400,7 @@ Where USD is assumed for a holding without a currency, or for API costs in a pay
 | `.AX` | XASX | AUD |
 | `.CL` | XBOG | COP |
 
-- **The calendar:** each holding's daily P/L covers its own exchange's last session. A 07:10 ET pre-market digest is mid-session in Europe (live price), after the close in Sydney (that day's close), and before the open in Bogota (the previous day's close).
+- **The calendar:** each holding's daily P/L covers its own exchange's last session. A 07:10 ET pre-market digest is mid-session in Europe (live price), after the close in Sydney (that day's close), and before the open in Bogota (the previous day's close). Since 2026-10-21 each card is labelled by its own session (see the labels below).
 - **The currency:** used only when SnapTrade or the sheet doesn't give one. What they give, or Yahoo's own currency for a sheet's symbol, wins.
 - **What these holdings may lack:** Finnhub's free plan is mainly for US listings, so their Finnhub sections can be empty (the Yahoo data is there), and Finviz has no chart for them.
 - **Ideas:** the idea pipeline stays US-only.
@@ -412,6 +413,17 @@ Where USD is assumed for a holding without a currency, or for API costs in a pay
 - the market tiles, the table's one-day column, and the markets summary;
 - the yield-curve change;
 - the inbox preview line.
+
+**Each market's own session (added 2026-10-21).** A holding's daily change covers its own exchange's latest session: the move so far at the latest price while that exchange is trading, otherwise its latest full session. Its card is labelled to match (`create_html._day_label`, from `daily_pnl_session` and `daily_pnl_live`):
+
+| Label | When |
+|---|---|
+| "live" | The stock's exchange is trading now, e.g. London during a pre-market digest |
+| "prev. day" | Its latest full session is before the digest's market date, e.g. New York before the open |
+| "today" (Pre-Market) | Another market's session that finished today, e.g. Sydney before New York opens |
+| "day" (Post-Market) | Today's session, finished |
+
+When the cards share one label, the overview reads as before ("Prev. day · Tue, Oct 20"). When they don't, the overview says "Latest session per market", and the line atop Your holdings explains each label used, e.g. "Prev. day = the Oct 20 session · Today = the Oct 21 session · Live = still trading". Before 2026-10-21 every card said "prev. day" in a pre-market digest, London's live move included.
 
 It is built for a phone first: one column up to 600 px wide.
 
@@ -503,7 +515,7 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
 | Gemini news and portfolio review | Fresh every run (no cache). |
 | Company names | Yahoo's name (`profile.name` in the market context) replaces the brokerage's description, which can be wrong (SnapTrade has called Agilent's "A" "AgileThought, Inc."). The holding news starts before the market context is fetched, so it uses the name cached from an earlier run (`cached_company_names`). |
-| Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies for display. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. |
+| Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. The email shows each holding card back in its own currency (2026-10-21). |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list. That list is downloaded once per morning and once per afternoon, and again whenever the stage-1 settings in `parameters.py` change. |
 
 ### Track record (`src/track_record.py`)

@@ -36,7 +36,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.admins import contact_admin, is_admin, notice_text
-from src.fx_rates import usd_rate_change, usd_rates
+from src.fx_rates import CURRENCY_SYMBOLS, usd_rate_change, usd_rates
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 from src.personalized.LLM_hold_instr import current_recommendation
@@ -74,7 +74,7 @@ SIGNAL_PLURALS = {"Urgent sell": "urgent sells", "Risky": "risky", "Profit sell"
                   "Buy more": "buy more", "Hold": "holds", "Not evaluated": "not evaluated"}
 SENTIMENTS = {"Bullish": ("#166534", "#DCFCE7"), "Bearish": ("#991B1B", "#FEE2E2"), "Neutral": ("#475569", "#F1F5F9")}
 PRIORITY_DOTS = {"HIGH": "#DC2626", "MEDIUM": "#F59E0B", "LOW": "#94A3B8"}
-CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£", "COP": "COP$"}
+# CURRENCY_SYMBOLS (e.g. "C$" for CAD) is in fx_rates, which the portfolio review shares (2026-10-21)
 # Claude-authored (2026-10-21): shown without cents, since a share or a portfolio runs to thousands or millions of them
 WHOLE_UNIT_CURRENCIES = ("COP",)
 # Claude-authored (2026-10-17): the currency of the holdings' money amounts (market value, daily and unrealized
@@ -515,16 +515,65 @@ def _lots_by_symbol(holdings: list[dict]) -> dict[str, list[dict]]:
     return lots
 
 
-def _listing_note(holding: dict) -> list[str]:
-    """e.g. ['Listed in CAD at C$46.94', '1 CAD = 0.712 USD'] for a holding holdings_in_usd converted."""
-    code, price, rate = holding.get("listed_currency"), _num(holding.get("listed_price")), _num(holding.get("fx_rate_to_usd"))
-    if not code or rate is None:
-        return []
-    shown = "GBP pence" if code == "GBX" else code
-    at = f" at {_money_in(price, code)}" if price is not None and code != "GBX" else (
-        f" at {price:,.1f}p" if price is not None else "")
-    rate_text = _rate_text("GBP", rate * 100) if code == "GBX" else _rate_text(code, rate)
-    return [f"Listed in {shown}{at}", rate_text]  # 2026-10-21: two phrases, so a wrap keeps each whole
+def _own_currency(holding: dict) -> tuple[str, float]:
+    """
+    Claude-authored (2026-10-21): (the currency a holding card shows its money in, USD per unit of it). At Andres's
+    request each card stays in the stock's own currency, and only the overview converts everything to the home
+    currency. A London listing (GBX, quoted in pence) shows its value in pounds. A US listing, or a holding
+    holdings_in_usd couldn't convert (no rate; still in its own currency, with a notice), is as it is.
+    """
+    code, rate = _text(holding.get("listed_currency")), _num(holding.get("fx_rate_to_usd"))
+    if not code or not rate:
+        return _text(holding.get("currency")) or MONEY_CURRENCY, 1.0
+    return ("GBP", rate * 100) if code == "GBX" else (code, rate)
+
+
+# Claude-authored (2026-10-21): a card's amounts longer than this are shortened ('COP$3.58M'): in the stock's own
+# currency, a pesos holding's "COP$3,579,200" pushed a 375 px phone's view 19 px past its edge at the Gmail app's
+# enlarged text (1.75x); 11 characters ("C$14,196.47") fit
+CARD_MONEY_CHARS = 11
+
+
+def _card_money(value: Any, code: str, signed: bool = False) -> str:
+    """An amount on a holding card: in full, e.g. 'C$1,234.50', or compact when that's too long ('+COP$699K')."""
+    full = _money_in(value, code, signed=signed)
+    if len(full) <= CARD_MONEY_CHARS or _num(value) is None:
+        return full
+    short = _narrow_money_in(value, code, CARD_MONEY_CHARS)
+    return short if signed else short.lstrip("+")
+
+
+def _own_price(holding: dict, code: str) -> str:
+    """The card's price in the stock's own currency, as listed: e.g. 'C$280.17', or in pence for London ('418.5p')."""
+    listed = _text(holding.get("listed_currency"))
+    if not listed:
+        return _card_money(_price(holding), code)
+    price = _num(holding.get("listed_price"))
+    if listed == "GBX":
+        return DASH if price is None else f"{price:,.2f}".rstrip("0").rstrip(".") + "p"
+    return _card_money(price, code)
+
+
+def _day_label(holding: dict, today: Optional[date], period_day: str) -> str:
+    """
+    Claude-authored (2026-10-21): what a holding's daily change covers on its own exchange (pull_holdings_data
+    measures each stock over its exchange's latest session): "live" while that session is still trading (the move
+    so far, at the latest price); otherwise its latest full session, close to close: `period_day` ("prev. day"
+    before the US open, "day" after the close) for the session that label means, "today" for another market's
+    session completed today (Sydney's, before the US opens), and "prev. day" for an earlier one. Before, every card
+    said `period_day`, and a pre-market digest called London's move mid-session "prev. day".
+    """
+    if str(holding.get("daily_pnl_live")) == "True":
+        return "live"
+    session = _day(holding.get("daily_pnl_session"))
+    if session is None or today is None:
+        return period_day
+    if session >= today:
+        return "day" if period_day == "day" else "today"
+    return "prev. day"
+
+
+DAY_LABELS = ("prev. day", "today", "day", "live")  # The order the holdings note explains them in
 
 
 def _price(holding: dict) -> Optional[float]:
@@ -545,15 +594,18 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     gain, gain_pct = _unrealized(lots)
     accounts = sorted({lot["account_name"] for lot in lots if _text(lot.get("account_name"))})
     listed_currency = _text(first.get("currency"))
-    currency = listed_currency or DEFAULT_CURRENCY
+    # 2026-10-21: the card's money in the stock's own currency (the amounts here are USD, so back at the same rate)
+    currency, usd_per_unit = _own_currency(first)
     daily_pct = _num(first.get("daily_pnl_pct"))
     weight = _num(first.get("portfolio_weight_pct"))
     rsi = _num(first.get("rsi"))
+    pence = _text(first.get("listed_currency")) == "GBX"
 
     stats = [
-        _stat(f"Price · {currency}", _money_in(_price(first), currency),
+        _stat(f"Price · {'pence' if pence else currency}", _own_price(first, currency),
               sub=f"{_signed_pct(daily_pct, 2)} {day}" if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
-        _stat(f"Unrealized · {MONEY_CURRENCY}", _signed_money(gain), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
+        _stat(f"Unrealized · {currency}", _card_money(gain / usd_per_unit if gain is not None else None, currency,
+                                                      signed=True), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
         _stat("RSI 14", _fixed(rsi, 0),
               sub="Overbought" if rsi is not None and rsi >= 70 else "Oversold" if rsi is not None and rsi <= 30
               else "Neutral" if rsi is not None else "",
@@ -597,13 +649,15 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     return {
         "symbol": symbol,
         "name": _text(first.get("description")) or "",
-        "value": _money(value),
+        "value": _card_money(value / usd_per_unit, currency),
         "weight": f"{weight:.1f}% of portfolio" if weight is not None else "",
         # Claude-authored (2026-10-17): the collapsed row's right-hand line, e.g. "33.6% · +0.82%"
         "weight_short": f"{weight:.1f}%" if weight is not None else "",
-        "day": {"text": _signed_pct(daily_pct, 2) if daily_pct is not None else "", "tone": _tone(daily_pct)},
+        # 2026-10-21: `label` says which session the move covers on the stock's own exchange (_day_label)
+        "day": {"text": _signed_pct(daily_pct, 2) if daily_pct is not None else "", "tone": _tone(daily_pct),
+                "label": day, "session": _text(first.get("daily_pnl_session"))},
         "weight_pct": weight or 0.0,
-        "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts + _listing_note(first)),
+        "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts),
         "signal": _badge(label, fg, bg),
         "signal_key": recommendation if recommendation in SIGNALS else None,
         "signal_bar": bar,
@@ -616,11 +670,16 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
                                if isinstance(event.get("days_until"), int)), None),
         "catalyst_date": next((_short_date(event.get("event_date")) for event in first.get("catalysts") or []
                                if isinstance(event.get("days_until"), int)), ""),
+        # Claude-authored (2026-10-21): said when no earnings date is known at all (often for listings outside the
+        # US); a date past the cards' CATALYST_WINDOW_DAYS isn't shown or mentioned. Payloads from before
+        # next_earnings_date existed say nothing.
+        "earnings_note": ("No earnings date available" if not catalysts and "next_earnings_date" in first
+                          and not _text(first.get("next_earnings_date")) else ""),
         "rationale": _text(first.get("recommendation_rationale")) or "",
         "volatility": volatility_line,
         "news": news,
         "links": _quote_links(symbol),
-        "currency": currency,
+        "currency": currency,  # 2026-10-21: the currency of the card's money (the stock's own), see _own_currency
         "currency_assumed": listed_currency is None,
         "us_listing": (first.get("listed_currency") or currency) == "USD",  # Finviz charts cover US listings
         "chart": None,  # Set by build_view
@@ -629,9 +688,10 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     }
 
 
-def _holding_cards(holdings: list[dict], day: str) -> list[dict]:
+def _holding_cards(holdings: list[dict], day: str, today: Optional[date] = None) -> list[dict]:
     """Most urgent signal first (urgent sell, risky, profit sell, buy more, hold), then largest position."""
-    cards = [_holding_card(symbol, lots, day) for symbol, lots in _lots_by_symbol(holdings).items()]
+    cards = [_holding_card(symbol, lots, _day_label(lots[0], today, day))
+             for symbol, lots in _lots_by_symbol(holdings).items()]
     return sorted(cards, key=lambda card: (card["order"], -card["weight_pct"]))
 
 
@@ -645,11 +705,23 @@ def _signal_count(count: int, label: str) -> str:
 
 
 def _holdings_note(cards: list[dict], holdings: list[dict], day: str) -> str:
-    """The line atop the open holdings section, which also dates the price changes on the cards."""
-    note = "Most urgent signal first"
-    session = _session_date(holdings)
-    note += f" · Values in {MONEY_CURRENCY}"
-    return f"{note} · {day.capitalize()} = the {session} session" if session else note
+    """
+    The line atop the open holdings section, which also dates the price changes on the cards. 2026-10-21: each
+    stock's money is in its own currency, and each day label in use is explained, e.g. "Prev. day = the Oct 20
+    session · Today = the Oct 21 session · Live = still trading" for a portfolio across several markets.
+    """
+    own = {card["currency"] for card in cards}
+    notes = ["Most urgent signal first", f"Values in {own.pop()}" if len(own) == 1 else "Values in each stock's currency"]
+    for label in DAY_LABELS:
+        sessions = Counter(card["day"]["session"] for card in cards
+                           if card["day"]["label"] == label and card["day"]["text"] and card["day"]["session"])
+        if label == "live" and any(card["day"]["label"] == "live" for card in cards):
+            notes.append("Live = still trading")
+        elif sessions:
+            notes.append(f"{label.capitalize()} = the {_short_date(sessions.most_common(1)[0][0])} session")
+    if len(notes) == 2 and _session_date(holdings):  # No card has a daily change: date the period's label anyway
+        notes.append(f"{day.capitalize()} = the {_session_date(holdings)} session")
+    return " · ".join(notes)
 
 
 def _part(text: str, tone: Optional[str] = None, dot: Optional[str] = None, prefix: str = "", suffix: str = "",
@@ -707,6 +779,10 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
     gain, gain_pct = _unrealized(holdings)
     long_n, swing_n = idea_counts
     session = _session_date(holdings, weekday=True)  # e.g. "Day · Fri, Oct 16"
+    # 2026-10-21: the cards' day labels (_day_label); stocks on markets in different sessions (London live beside
+    # New York's last close) share no single date, so the day's change is then over each market's latest session
+    labels = {card["day"]["label"] for card in cards if card["day"]["text"]}
+    day_label = labels.pop() if len(labels) == 1 else day if not labels else "latest sessions"
     flagged = [card for card in cards if card["signal_key"] in FLAGGED_SIGNALS]
     flagged_share = sum(card["weight_pct"] for card in flagged)
     attention = [card for card in cards if card["signal_key"] in ATTENTION_SIGNALS]  # 2026-10-18: buy more too
@@ -737,7 +813,9 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
                    + (f" · {abs(daily_pct):.2f}%" if daily_pct is not None else "")),
         "change_pct": _signed_pct(totals["daily_pnl_pct"], 2),
         "change_tone": _tone(daily_pnl),
-        "session": f"{day.capitalize()} · {session}" if session else day.capitalize(),
+        "session": ("Latest session per market" if day_label == "latest sessions"
+                    else f"{day_label.capitalize()} · {session}" if session else day_label.capitalize()),
+        "day_label": day_label,  # For the inbox preview, e.g. "(+0.42% prev. day)"
         "stats": [
             _stat("Unrealized", _narrow_money_in(gain / usd_per_unit if gain is not None else None, code),
                   _tone(gain), _signed_pct(gain_pct), _tone(gain)),
@@ -1312,7 +1390,8 @@ def _preheader(portfolio: Optional[dict], cards: list[dict], ideas: int, market:
     """The inbox preview line under the subject."""
     parts = []
     if portfolio:
-        parts.append(f"Portfolio {portfolio['value']} {portfolio['currency']} ({portfolio['change_pct']} {day})")
+        parts.append(f"Portfolio {portfolio['value']} {portfolio['currency']} ({portfolio['change_pct']} "
+                     f"{portfolio.get('day_label') or day})")
     flagged = Counter(card["signal"]["text"] for card in cards if card["signal_key"] in ATTENTION_SIGNALS)
     parts += [_signal_count(count, label) for label, count in flagged.items()]
     parts.append(f"{ideas} new idea{'s' if ideas != 1 else ''}")
@@ -1337,7 +1416,7 @@ def build_view(payload: dict) -> dict:
     # Claude-authored (2026-10-17): every daily change covers one full session, close to close. Before the open
     # that is the previous trading day, so the pre-market digest labels it "Prev. day"; the post-market one, "Day".
     day = "prev. day" if _period(payload) == "Pre-Market" else "day"
-    cards = _holding_cards(holdings, day)
+    cards = _holding_cards(holdings, day, today)  # 2026-10-21: each card's label by its own market's session
     swing = [_swing_card(pick, today) for pick in recommendations.get("top_swing") or []]
     long_term = [_long_term_card(pick, today) for pick in recommendations.get("top_long_term") or []]
     portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)), day, home,
@@ -1572,11 +1651,13 @@ def render_text(view: dict) -> str:
         for story in view["stories"]:
             lines += [f"- {story['summary']}", f"  Why it matters: {story['impact']}" if story["impact"] else ""]
     if view["holdings"]:
-        lines += ["", "YOUR HOLDINGS"]
+        lines += ["", "YOUR HOLDINGS", view["holdings_note"]]
         for card in view["holdings"]:
             lines.append(f"{card['symbol']} - {card['signal']['text']} - {card['value']} ({card['weight']})")
             lines.append("  " + " | ".join(f"{s['label']} {s['value']} {s['sub']}".strip() for s in card["stats"]))
             lines += [f"  {c['when']}: {c['text']}" for c in card["catalysts"]]
+            if card["earnings_note"]:
+                lines.append(f"  {card['earnings_note']}")
             if card["rationale"]:
                 lines.append(f"  Reasoning: {card['rationale']}")
             lines += [f"  * {n['text']}" for n in card["news"]]

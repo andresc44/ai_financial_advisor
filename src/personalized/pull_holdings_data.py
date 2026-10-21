@@ -406,10 +406,10 @@ class PortfolioFetcher:
         daily_closes = self._fetch_yfinance_daily_closes(symbols)
         now = datetime.now(timezone.utc)
 
-        session_dates, prev_closes, session_closes = {}, {}, {}
+        session_dates, prev_closes, session_closes, live = {}, {}, {}, {}
         for symbol in symbols:
             session_date, in_progress = latest_regular_session(now, exchange_calendar_code(symbol))
-            session_dates[symbol] = session_date.isoformat()
+            session_dates[symbol], live[symbol] = session_date.isoformat(), in_progress
             closes = daily_closes.get(symbol)
             if closes is None:
                 continue
@@ -420,6 +420,9 @@ class PortfolioFetcher:
                 session_closes[symbol] = float(closes[session_date])
 
         df["daily_pnl_session"] = df["symbol"].map(session_dates)
+        # Claude-authored (2026-10-21): True while that session is still trading (the move is live, to the latest
+        # price), so the email can label each stock's move: a pre-market digest finds London mid-session
+        df["daily_pnl_live"] = df["symbol"].map(live).fillna(False).astype(bool)
         df["last_close"] = pd.to_numeric(df["symbol"].map(prev_closes), errors="coerce")
         df["last_close"] = df["last_close"].fillna(df["current_price"])
         pnl_price = pd.to_numeric(df["symbol"].map(session_closes), errors="coerce").fillna(df["current_price"])
@@ -891,6 +894,8 @@ class PortfolioFetcher:
                 "daily_pnl",
                 "daily_pnl_pct",
                 "daily_pnl_session",  # Date the daily P/L covers (pre-market: the previous trading day)
+                "daily_pnl_live",  # True when that session is still trading on the stock's exchange
+                "next_earnings_date",  # The next earnings date known, at any distance (None: no date known)
                 "portfolio_weight_pct",  # Stock's share of the whole portfolio's market value
                 "last_close",  # Close before that session, in the listing's currency
                 "last_close_usd",  # Same in USD; previous portfolio value = sum(last_close_usd x shares)

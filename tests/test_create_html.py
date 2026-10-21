@@ -667,12 +667,16 @@ def test_from_payload_renders_and_emails_a_saved_payload(tmp_path, monkeypatch):
 
 def test_daily_changes_say_prev_day_before_the_open_and_day_after_the_close():
     pre = ch.build_view(payload())
-    post = ch.build_view(payload(period="Post-Market", subject="Finnbot Post-Market Digest 2026-10-16"))
+    after_close = payload(period="Post-Market", subject="Finnbot Post-Market Digest 2026-10-16")
+    for lot in after_close["holdings"]:
+        lot["daily_pnl_session"] = "2026-10-16"  # After the close, the day's own session
+    post = ch.build_view(after_close)
     assert (pre["day_label"], post["day_label"]) == ("Prev. day", "Day")
-    assert pre["portfolio"]["session"] == "Prev. day · Thu, Oct 15" and post["portfolio"]["session"] == "Day · Thu, Oct 15"
+    assert pre["portfolio"]["session"] == "Prev. day · Thu, Oct 15" and post["portfolio"]["session"] == "Day · Fri, Oct 16"
     assert pre["holdings"][0]["stats"][0]["sub"] == "+0.50% prev. day"
     assert post["holdings"][0]["stats"][0]["sub"] == "+0.50% day"
     assert pre["holdings_note"].endswith("Prev. day = the Oct 15 session")
+    assert post["holdings_note"].endswith("Day = the Oct 16 session")
     assert flat(pre["markets_summary"]).startswith("S&P 500 +0.3% prev. day")
     assert pre["market"]["signals"][0]["sub"] == "+0.3% prev. day"
     assert [s["sub"] for s in pre["market"]["signals"] if s["name"] == "10Y–2Y spread"] == ["-4 bps prev. day"]
@@ -703,14 +707,16 @@ def test_currencies_come_from_the_payload_or_default_to_usd(monkeypatch):
     monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "EUR": 1.10})
     view = ch.build_view(payload(holdings=[holding("AAA"), holding("XYZ.DE", currency="EUR"), holding("NOC", currency=None)]))
     cards = {card["symbol"]: card for card in view["holdings"]}
-    # Prices and position values are in USD, with a converted holding's own price and rate under its name
+    # 2026-10-21: each card in its stock's own currency (Andres's request); only the overview converts
     assert (cards["AAA"]["stats"][0]["label"], cards["AAA"]["stats"][0]["value"]) == ("Price · USD", "$100.00")
-    # 2026-10-21: every currency is converted, EUR included (it used to stay in euros)
-    assert (cards["XYZ.DE"]["stats"][0]["label"], cards["XYZ.DE"]["stats"][0]["value"]) == ("Price · USD", "$110.00")
-    assert cards["XYZ.DE"]["meta"].endswith("Listed in EUR at €100.00 · 1 EUR = 1.100 USD")  # 3 decimals
+    assert (cards["XYZ.DE"]["stats"][0]["label"], cards["XYZ.DE"]["stats"][0]["value"]) == ("Price · EUR", "€100.00")
+    assert cards["XYZ.DE"]["value"] == "€1,000.00" and cards["XYZ.DE"]["stats"][1]["label"] == "Unrealized · EUR"
+    assert "Listed in" not in cards["XYZ.DE"]["meta"]  # No conversion on the card, so no rate to explain
     assert cards["NOC"]["stats"][0]["label"] == "Price · USD" and cards["NOC"]["currency_assumed"] is True
-    assert all(card["stats"][1]["label"] == "Unrealized · USD" for card in view["holdings"])
-    assert view["portfolio"]["label"] == "Your portfolio · USD" and "Values in USD" in view["holdings_note"]
+    assert view["portfolio"]["label"] == "Your portfolio · USD"
+    assert "Values in each stock's currency" in view["holdings_note"]
+    usd_only = ch.build_view(payload(holdings=[holding("AAA"), holding("BBB")]))
+    assert "Values in USD" in usd_only["holdings_note"]
     # The ideas and the market dashboard are US-listed, so always USD and never noted; API usage without a
     # currency (older payloads) is assumed USD and noted
     assert view["ideas_currency"] == "USD" and "Prices in USD" in ch.render_html(view, TEMPLATE_DIR)
@@ -724,7 +730,7 @@ def test_currencies_come_from_the_payload_or_default_to_usd(monkeypatch):
     assert ch.build_view(with_currency)["currency_notes"] == []
 
 
-def test_holdings_in_other_currencies_are_converted_to_usd_at_the_current_rate(monkeypatch):
+def test_holdings_in_other_currencies_show_their_own_currency_and_add_up_in_usd(monkeypatch):
     monkeypatch.setattr(ch, "usd_rates", lambda codes: {"USD": 1.0, "CAD": 0.70, "AUD": 0.65, "GBX": 0.0125,
                                                         "EUR": 1.10, "COP": 0.00025})
     view = ch.build_view(payload(holdings=[
@@ -743,18 +749,22 @@ def test_holdings_in_other_currencies_are_converted_to_usd_at_the_current_rate(m
     cards = {card["symbol"]: card for card in view["holdings"]}
     enb, bhp, vod, sap = cards["ENB.TO"], cards["BHP.AX"], cards["VOD.L"], cards["SAP.DE"]
     eco = cards["ECOPETROL.CL"]
-    assert (enb["value"], enb["stats"][0]["label"], enb["stats"][0]["value"]) == ("$700.00", "Price · USD", "$35.00")
-    assert enb["meta"].endswith("Listed in CAD at C$50.00 · 1 CAD = 0.700 USD") and enb["chart"] is None
-    assert (bhp["value"], bhp["stats"][0]["value"]) == ("$65.00", "$26.00")  # 100 and 40 AUD at 0.65
-    assert vod["stats"][0]["value"] == "$1.00" and vod["meta"].endswith("Listed in GBP pence at 80.0p · 1 GBP = 1.250 USD")
-    assert (sap["value"], sap["stats"][0]["label"], sap["stats"][0]["value"]) == ("$110.00", "Price · USD", "$220.00")
-    assert sap["meta"].endswith("Listed in EUR at €200.00 · 1 EUR = 1.100 USD")
-    # COP: restated from 0.00024 to 0.00025, in whole pesos, and the rate per dollar (not 1 COP = 0.0003 USD)
-    assert (eco["value"], eco["stats"][0]["value"]) == ("$100.00", "$0.70")
-    assert eco["meta"].endswith("Listed in COP at COP$2,800 · 1 USD = 4,000 COP")
-    assert eco["stats"][1]["value"] == "+$25.00"  # (96 - 72) at 0.00024, restated at 0.00025
-    # Unrealized P/L follows the converted values, and the weights are recomputed from them
-    assert enb["stats"][1]["value"] == "+$70.00"  # (720 - 648) CAD-in-USD at 0.72, restated at 0.70
+    # 2026-10-21: each card in the stock's own currency, back from the USD amounts at the rate they were
+    # converted at: $700 at 0.70 is C$1,000
+    assert (enb["value"], enb["stats"][0]["label"], enb["stats"][0]["value"]) == ("C$1,000.00", "Price · CAD", "C$50.00")
+    assert "Listed in" not in enb["meta"] and enb["chart"] is None
+    assert (bhp["value"], bhp["stats"][0]["value"]) == ("A$100.00", "A$40.00")  # The payload's own AUD
+    # London: the price in pence as quoted, the value and P/L in pounds
+    assert (vod["value"], vod["stats"][0]["label"], vod["stats"][0]["value"]) == ("£80.00", "Price · pence", "80p")
+    assert vod["stats"][1]["label"] == "Unrealized · GBP"
+    assert (sap["value"], sap["stats"][0]["label"], sap["stats"][0]["value"]) == ("€100.00", "Price · EUR", "€200.00")
+    # COP in whole pesos
+    assert (eco["value"], eco["stats"][0]["value"]) == ("COP$400,000", "COP$2,800")
+    # $25 at 0.00025 is 100,000 pesos; a card's amounts past 11 characters are shortened to fit a phone
+    assert eco["stats"][1]["value"] == "+COP$100K"
+    assert (ch._card_money(3579200, "COP"), ch._card_money(14196.47, "CAD")) == ("COP$3.58M", "C$14,196.47")
+    assert enb["stats"][1]["value"] == "+C$100.00"  # (720 - 648) CAD-in-USD at 0.72 is C$100
+    # The weights are recomputed from the USD values
     assert round(sum(card["weight_pct"] for card in view["holdings"]), 1) == 100.0
     assert enb["weight_pct"] == round(700 / (1000 + 700 + 65 + 100 + 110 + 100) * 100, 2)
     assert "converted CAD holdings to USD at 1 CAD = 0.700 USD" in view["fx_notes"]
@@ -819,7 +829,7 @@ def portfolio_args(total):
 
 
 def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
-    # Claude-authored (2026-10-21): <NAME>_HOME_CURRENCY; the holdings themselves stay in USD
+    # Claude-authored (2026-10-21): <NAME>_HOME_CURRENCY; each holding stays in its own currency
     monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: RATES_NOW[code] for code in [*codes, "USD"]})
     usd = ch.build_view(mixed_currency_payload())["portfolio"]
     total = float(usd["value"].lstrip("$").replace(",", ""))
@@ -830,7 +840,8 @@ def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
     assert cad["change"].split(" · ")[0][2:].startswith("C$") and cad["change_pct"] == usd["change_pct"]
     assert cad["stats"][0]["value"].startswith(("+C$", "-C$")) and cad["stats"][0]["sub"] == usd["stats"][0]["sub"]
     assert view["account"]["accounts"][0]["value"].startswith("C$")
-    assert "Values in USD" in view["holdings_note"] and view["holdings"][0]["value"].startswith("$")
+    cards = {card["symbol"]: card for card in view["holdings"]}
+    assert cards["AAPL"]["value"].startswith("$") and cards["SHOP.TO"]["value"].startswith("C$")
     assert view["preheader"].startswith(f"Portfolio C${total / 0.70:,.2f} CAD")
     html, text = ch.render_html(view, TEMPLATE_DIR), ch.render_text(view)
     assert cad["value"] in html and '<span class="nw">1 CAD = 0.700 USD</span>' in html  # A phrase kept whole
@@ -949,3 +960,41 @@ def test_buy_more_is_a_chip_but_not_flagged_and_older_labels_are_translated():
     assert flat(many["holdings_summary"]) == "2 urgent sells \u00b7 2 risky \u00b7 2 buy more"
     calm = ch.build_view(payload(holdings=[holding("A", "buy_more"), holding("B", "hold")]))
     assert calm["portfolio"]["stats"][1]["sub"] == "none flagged"
+
+
+def test_each_card_labels_its_own_markets_session(monkeypatch):
+    # Claude-authored (2026-10-21): each stock's daily change covers its own exchange's latest session, live
+    # while it trades. A 08:10 ET pre-market digest found London mid-session and Sydney closed for the day, yet
+    # every card said "prev. day" (the Oct 20 session)
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: RATES_NOW.get(code, 0.70) for code in [*codes, "USD"]})
+    lots = [holding("AAA"), holding("VOD.L", currency="GBX", fx_rate_to_usd=0.013, daily_pnl_session="2026-10-16",
+                                     daily_pnl_live=True),
+            holding("BHP.AX", currency="AUD", fx_rate_to_usd=0.65, daily_pnl_session="2026-10-16",
+                    daily_pnl_live=False)]
+    view = ch.build_view(payload(holdings=lots))
+    cards = {card["symbol"]: card for card in view["holdings"]}
+    assert [cards[s]["day"]["label"] for s in ("AAA", "VOD.L", "BHP.AX")] == ["prev. day", "live", "today"]
+    assert cards["VOD.L"]["stats"][0]["sub"] == "+0.50% live"
+    assert view["portfolio"]["session"] == "Latest session per market"
+    assert view["holdings_note"].endswith(
+        "Prev. day = the Oct 15 session · Today = the Oct 16 session · Live = still trading")
+    assert view["preheader"].startswith("Portfolio ") and "% latest sessions)" in view["preheader"]
+    html = ch.render_html(view, TEMPLATE_DIR)
+    assert '<span class="mu">live</span>' in html and '<span class="mu">today</span>' in html
+    assert "Latest session per market" in html and "Live = still trading" in ch.render_text(view)
+    # One market, one label: as before
+    assert ch.build_view(payload())["portfolio"]["session"] == "Prev. day · Thu, Oct 15"
+
+
+def test_a_card_says_when_no_earnings_date_is_known():
+    # Claude-authored (2026-10-21): often for listings outside the US. A date past the cards' 14-day window
+    # isn't news, and payloads from before next_earnings_date existed say nothing
+    lots = [holding("AAA", catalysts=[], next_earnings_date=None),
+            holding("BBB", catalysts=[], next_earnings_date="2027-01-20"),
+            holding("CCC", catalysts=[]),
+            holding("DDD", next_earnings_date="2026-10-21")]
+    view = ch.build_view(payload(holdings=lots))
+    notes = {card["symbol"]: card["earnings_note"] for card in view["holdings"]}
+    assert notes == {"AAA": "No earnings date available", "BBB": "", "CCC": "", "DDD": ""}
+    assert ch.render_html(view, TEMPLATE_DIR).count("No earnings date available") == 1
+    assert "  No earnings date available" in ch.render_text(view).splitlines()

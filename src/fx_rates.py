@@ -33,6 +33,8 @@ from src.market_session import listing
 CACHE_PATH = project_root / "data" / "fx_rates.json"
 _LOCK = threading.Lock()  # Users' holdings load in parallel threads; one fetch and cache write at a time
 PENCE_CODES = {"GBX", "GBp"}  # Yahoo quotes London listings in pence
+# How the email and the portfolio review write each currency's amounts (moved here from create_html, 2026-10-21)
+CURRENCY_SYMBOLS = {"USD": "$", "CAD": "C$", "AUD": "A$", "EUR": "€", "GBP": "£", "COP": "COP$"}
 
 
 def normalize_currency(value: Any, symbol: Optional[str] = None) -> str:

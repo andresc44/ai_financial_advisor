@@ -28,6 +28,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.fx_rates import CURRENCY_SYMBOLS
 from src.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
 from src.personalized.holdings_state import _clean_float
@@ -62,8 +63,8 @@ GROUNDING RULES:
 - This is a review, not a hunt for problems. If the portfolio is balanced or nothing stands out, say so plainly in a 'NOTE' instead of stretching for issues.
 - Return at most the requested number of notes. Fewer, stronger notes are better than padding with weak or repetitive points.
 - null means the value was unavailable: never treat it as zero or as a problem in itself.
-- All money amounts and totals are in USD; holdings listed in other currencies (see `currencies`) were converted at today's exchange rate.
-- `daily_pnl_pct` is the move over the trading session dated `daily_pnl_session`. Before the market opens that is the previous trading day, so describe it by that date, not as "today".
+- All money amounts and totals are in `money_currency`, the client's home currency; holdings listed in other currencies (see `currencies`) were converted at today's exchange rate. Write every money amount in `money_currency`, formatted like `money_format`, never in another currency.
+- `daily_pnl_pct` is the move over the trading session dated `daily_pnl_session` on that stock's own exchange. When `daily_pnl_live` is true that session is still trading, so it is the move so far today; otherwise it is a completed session (before a market opens, its previous trading day), so describe it by that date, not as "today".
 
 FORMATTING REQUIREMENTS:
 Keep all fields extremely succinct and direct:
@@ -91,11 +92,15 @@ def _unrealized_pnl_pct(rows: list[dict]) -> Optional[float]:
     cost = _total(known, "total_cost_basis")
     return _round((_total(known, "market_value") - cost) / cost * 100) if cost > 0 else None
 
-def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float]) -> dict:
+def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float],
+                            home: tuple[str, float] = ("USD", 1.0)) -> dict:
     """
     Condenses the digest's holdings rows (one per lot/account) into portfolio totals and one entry per stock,
     largest position first. Reads only the columns present in the payload; missing ones become null.
+    2026-10-21: money amounts are in the user's home currency (`home`: its code and USD per unit), which the review
+    then writes them in; the holdings' own amounts are in USD.
     """
+    code, usd_per_unit = home
     lots_by_symbol: dict[str, list[dict]] = {}
     for holding in holdings:
         if holding.get("symbol"):
@@ -125,10 +130,11 @@ def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float
             "currency": _text(first.get("currency")),
             "accounts": sorted({lot["account_name"] for lot in lots if isinstance(lot.get("account_name"), str)}),
             "weight_pct": _round(value / total_value * 100) if total_value > 0 else None,
-            "market_value": _round(value),
+            "market_value": _round(value / usd_per_unit),
             "unrealized_pnl_pct": _unrealized_pnl_pct(lots),
             "daily_pnl_pct": _round(first.get("daily_pnl_pct")),
             "daily_pnl_session": _text(first.get("daily_pnl_session")),
+            "daily_pnl_live": str(first.get("daily_pnl_live")) == "True",  # 2026-10-21: that session still trading
             "rsi": _round(first.get("rsi")),
             "natr_pct": _round(first.get("natr")),
             "annualized_vol_pct": _round(first.get("annualized_vol")),
@@ -147,7 +153,10 @@ def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float
     return {
         "portfolio": {
             "number_of_stocks": len(stocks),
-            "total_market_value": _round(total_value),
+            "total_market_value": _round(total_value / usd_per_unit),
+            # 2026-10-21: the currency of every money amount here, and how the review writes one
+            "money_currency": code,
+            "money_format": f"{CURRENCY_SYMBOLS.get(code, code + ' ')}1,234",
             "currencies": sorted({h["currency"] for h in holdings if isinstance(h.get("currency"), str)}),
             "unrealized_pnl_pct": _unrealized_pnl_pct(holdings),
             "daily_pnl_pct": _round(daily_pnl / prior_value * 100) if prior_value > 0 else None,
@@ -191,6 +200,7 @@ def review_portfolio(
     api_key: str,
     user_name: Optional[str] = None,
     max_notes: Optional[int] = None,
+    home: tuple[str, float] = ("USD", 1.0),
 ) -> tuple[list[ReviewNote], Optional[ApiKeyUnusable]]:
     """
     Returns (notes, key_error): at most `max_notes` notes reviewing the whole portfolio, or [] when there are no
@@ -198,7 +208,7 @@ def review_portfolio(
     exhausted quota). Categories are normalized to WATCH / NOTE, and symbols are limited to tickers actually held.
     """
     max_notes = max_notes or DIGEST_PARAMS["PORTFOLIO_REVIEW_BULLETS"]
-    summary = build_portfolio_summary(holdings or [], portfolio_beta)
+    summary = build_portfolio_summary(holdings or [], portfolio_beta, home)  # 2026-10-21: in the home currency
     if not summary["holdings"]:
         return [], None
 
