@@ -29,6 +29,7 @@ from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
 from src.market_session import market_date
 from src.run_logging import name_thread, start_run_log, write_run_status
+from src.telegram_alert.earnings_reminder import send_earnings_reminders
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
 import copy
@@ -198,13 +199,15 @@ def run_daily_digests(
     `period` ("Pre-Market" / "Post-Market", payload-only) builds that digest now, even outside its send window.
 
     2026-10-21: on a weekday the NYSE is closed, a cron run from DIGEST.PRE_MARKET_TIME_ET on tells the admins on
-    Telegram, once (src/telegram_alert/holiday_notice.py).
+    Telegram, once (src/telegram_alert/holiday_notice.py). Every cron run also reminds users of held stocks
+    reporting earnings within 24 hours, once per report (src/telegram_alert/earnings_reminder.py).
     """
     now = now or datetime.now(timezone.utc)
     stamp = now.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M ET")
     print(f"[{stamp}] Starting digest {'payload build' if payload_only else 'check'}...")
     if not (check_only or payload_only):
         send_holiday_notice(now)
+        send_earnings_reminders(now)
     missed = [] if payload_only else missed_digests(recipients, now, alert=not check_only)
     missed_note = f" Missed today: {'; '.join(missed)}." if missed else ""
 

@@ -97,6 +97,27 @@ def _fetch_live(codes: list[str]) -> dict[str, float]:
     return rates
 
 
+def usd_rate_change(code: str, sessions: int = 5) -> Optional[tuple[float, float]]:
+    """
+    Claude-authored (2026-10-21): (USD per unit of `code` at the latest daily close, and `sessions` closes earlier),
+    from Yahoo's <CODE>USD=X, for the digest's line on how the home currency moved against the dollar over the past
+    week. None for USD, or when Yahoo has no such history (the line is then left out).
+    """
+    if not code or code == "USD":
+        return None
+    try:
+        data = yf.download(tickers=f"{code}USD=X", period="1mo", interval="1d", progress=False)
+        closes = data["Close"]
+        series = (closes if isinstance(closes, pd.Series) else closes.iloc[:, 0]).dropna()
+    except Exception as e:  # yfinance raises many kinds of errors; the digest just leaves the line out
+        print(f"[WARNING] {code}->USD history download failed: {e}")
+        return None
+    if len(series) <= sessions:
+        return None
+    now, then = float(series.iloc[-1]), float(series.iloc[-1 - sessions])
+    return (now, then) if now > 0 and then > 0 else None
+
+
 def usd_rates(currencies: Iterable[str]) -> dict[str, Optional[float]]:
     """USD per one unit of each currency code: live from Yahoo, else the last good cached rate, else None."""
     codes = sorted({code for code in currencies if code and code != "USD"})

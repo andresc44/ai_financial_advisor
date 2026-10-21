@@ -40,6 +40,7 @@ load_dotenv()
 SP500, TREASURY_10Y = "S&P 500 (SPY)", "10Y Treasury Yield ($TNX)"
 CBOE_DAILY_URL = "https://cdn.cboe.com/data/us/options/market_statistics/daily/{day}_daily_options"
 PUT_CALL_SESSIONS = 5  # The average's length; Cboe posts each session's file after the close
+CURVE_RECENT_DAYS = 182  # How far back an inverted 10Y-2Y spread counts as recent
 
 
 def _change_at(series: pd.Series, sessions_back: int) -> Optional[float]:
@@ -147,7 +148,8 @@ def get_market_dashboard_data() -> dict:
         fred_metrics = {"Error": "FRED_API_KEY missing from .env"}
     else:
         url_fred = "https://api.stlouisfed.org/fred/series/observations"
-        fred_params = {"series_id": "T10Y2Y", "api_key": fred_api_key, "file_type": "json", "sort_order": "desc", "limit": 10}
+        # Claude-authored (2026-10-21): about 6 months of history (was 10 days), to see a recent un-inversion
+        fred_params = {"series_id": "T10Y2Y", "api_key": fred_api_key, "file_type": "json", "sort_order": "desc", "limit": 140}
         try:
             res_fred = requests.get(url_fred, params=fred_params, timeout=15).json()
             observations = [
@@ -164,8 +166,15 @@ def get_market_dashboard_data() -> dict:
                     "Spread": f"{latest_f}%",
                     "1D Change": f"{bps_change:+.1f} bps",
                 }
-                if len(observations) > 5:  # Claude-authored (2026-10-21): the 5-day move, for a fast un-inversion
+                if len(observations) > 5:  # Claude-authored (2026-10-21): the 5-day move
                     fred_metrics["5D Change"] = f"{(latest_f - float(observations[5]['value'])) * 100:+.1f} bps"
+                # Claude-authored (2026-10-21): the last day the curve was inverted within CURVE_RECENT_DAYS, if any.
+                # A curve that turns positive after inverting has historically come closer to a recession than the
+                # inversion itself.
+                cutoff = (pd.Timestamp(observations[0]["date"])
+                          - pd.Timedelta(days=CURVE_RECENT_DAYS)).date().isoformat()
+                fred_metrics["Last inverted"] = next((obs["date"] for obs in observations
+                                                      if obs["date"] >= cutoff and float(obs["value"]) < 0), None)
             else:
                 fred_metrics = {"Error": "Insufficient Data"}
         except Exception as e:  # Claude-authored (2026-10-16): the type only; the message would include the key

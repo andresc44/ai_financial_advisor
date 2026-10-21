@@ -334,24 +334,41 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
      - **HTML version:** the chips stay plain there, because jump links don't work in the Gmail app or into closed dropdowns.
    - the connected brokerage, with each account's value in a small dropdown.
 4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes.
-5. **Markets & macro:** since 2026-10-21, Andres's "Global Macro Pulse" table: each indicator on a row in its group, with a signal dot, its value and move, and what the dot means (`create_html._signals`). The full table (1 day, 5 days, 1 month) is under "All indicators", followed by the top stories. The four tiles and three gauges this replaced are gone.
+5. **Markets & macro:** since 2026-10-21, graded market signals (`create_html._signals`), followed by the top stories. Each indicator has a dot and a short grade (e.g. "Uptrend", "Calm", "Defensive") coloured like the dot, what the grade rests on, and its value and move. The four tiles and three gauges this replaced are gone.
+   - **Key signals first:** when the section opens, `MARKET_SIGNALS["KEY_SIGNALS"]` show first: the S&P 500's trend, the market mood, breadth, the 10Y yield, and Nasdaq-100 vs Dow. The rest are under the "All indicators" dropdown, in their groups (Benchmarks, Sentiment, Macro), with a line above the sentiment group on how VIX and Fear & Greed differ.
+   - **Links (`DIGEST.INDICATOR_LINKS`):** each indicator's name opens its chart. They replaced a table of 1-day, 5-day, and 1-month moves.
+     - **Google Finance**, at its 1-month view: the S&P 500, VIX, the 10Y yield, and crude oil. Each "A vs B" opens A, since a Google link can't preset a comparison.
+     - **Yahoo:** the dollar index (opens on 1 day).
+     - **Barchart:** breadth, its `$S5FI` (opens on 3 months).
+     - **FRED:** the 10Y-2Y spread (its full recent history).
+     - **CNN:** Fear & Greed, the mood, and put/call (CNN's page has a put/call chart).
+     - **Until 2026-10-21:** StockCharts, which Andres asked to replace.
+   - **Market mood:** VIX and Fear & Greed read together from `MARKET_SIGNALS["MOOD_MATRIX"]`. VIX comes from option prices and jumps within hours of a shock; Fear & Greed blends seven gauges and moves over days. Its label replaces the VIX level on the collapsed section's line, e.g. "S&P 500 +0.3% day · Mood: Quietly cautious · 4 stories".
 
-   | Group | Indicator | Green | Yellow | Red | Grey |
-   |---|---|---|---|---|---|
-   | Benchmarks | S&P 500 vs its 50- and 200-day averages | above both | above one | below both | |
-   | | Nasdaq-100 vs Dow, over `RELATIVE_WINDOW` (5 days) | growth leads by `RELATIVE_GAP_PTS` (1) pt+: risk-on | value leads: defensive | | even |
-   | | NYSE Composite vs S&P 500 | in step: broad participation | the S&P leads: concentration | | the NYSE leads |
-   | | Russell 2000 vs S&P 500 | small caps lead: confidence | | small caps lag: tight credit | in step |
-   | Sentiment | VIX | under 18 | 18-25 | over 25 | |
-   | | Cboe total put/call ratio (and its 5-day average) | under 0.70 | between | over 1.00 | |
-   | | CNN Fear & Greed (and the prior close) | over 60 | 40-60 | under 40 | |
-   | | % of S&P 500 stocks above their 50-day average | over 60% | 40-60% | under 40% | |
-   | Macro | US Dollar Index, 5-day move | falling | | up 1%+ | rising slowly |
-   | | 10Y yield, 1-month move | down 25+ bps | | up 25+ bps | steady |
-   | | 10Y-2Y spread | positive | | inverted, or up 15+ bps in 5 days from inverted | |
-   | | WTI crude, 5-day move | | down 8%+ | up 8%+ | no sharp move |
+     | VIX \ Fear & Greed | Greed (over 55) | Neutral (45-55) | Fear (under 45) |
+     |---|---|---|---|
+     | Calm (under 20) | Confident (green) | Steady (green) | Quietly cautious (yellow) |
+     | Elevated (20-30) | Jittery rally (yellow) | Unsettled (yellow) | Stressed (red) |
+     | Panic (over 30) | Fresh shock (red) | Shock spreading (red) | Capitulation (red) |
 
-   Every level is in `params_dict["MARKET_SIGNALS"]`, and the glossary quotes them from there. The Nasdaq-100 and the Dow share a row, since one leading the other is the signal for both. Yields and the spread move in basis points ("+15bp" in the table), breadth in percentage points.
+   - **The levels (2026-10-21):** first taken from Andres's "Global Macro Pulse" table. At his request, they were then set from research and 2 years of market data, with the outperformance gap at his 2 points:
+
+   | Group | Indicator | Green | Yellow | Red | Grey | Why |
+   |---|---|---|---|---|---|---|
+   | Benchmarks | S&P 500 vs its 50- and 200-day averages | above both (uptrend) | above one (pullback, recovering) | below both (downtrend) | | The standard trend test |
+   | | Nasdaq-100 vs Dow, over 5 days | growth leads by 2+ pts (risk-on) | value leads by 2+ (defensive) | | even | A 1-pt gap flagged a lead on 36-55% of days; 2 pts is a real rotation |
+   | | NYSE Composite vs S&P 500 | in step (broad) | the S&P leads by 2+ (concentrated) | | the NYSE leads | |
+   | | Russell 2000 vs S&P 500 | small caps lead by 2+ | | small caps lag by 2+ (credit warning) | in step | |
+   | Sentiment | VIX | under 20 | 20-30 | over 30 | | Its long-run average is about 19.5-20; over 30 is stress (78% and 3% of days over 2 years) |
+   | | Cboe total put/call (and its 5-day average) | 0.70-1.00 (balanced) | under 0.70 (over-exuberance) | over 1.00 (fear) | | Very low put buying is complacency, a caution rather than a good sign |
+   | | CNN Fear & Greed (and the prior close) | 45-75 (neutral, greed) | 25-44 (fear), over 75 (extreme greed) | under 25 (extreme fear) | | CNN's own bands; both extremes are cautions |
+   | | % of S&P 500 stocks above their 50-day average | over 60% | 40-60% | under 40% | | No standard extremes; readings over 90% have been followed by gains, so high breadth isn't flagged |
+   | Macro | US Dollar Index, 5-day move | down 1%+ | | up 1.5%+ | steady | A typical week moves ~0.6%; 1.5% is the top ~10% |
+   | | 10Y yield, 1-month move | down 25+ bps | | up 25+ bps | steady | A typical month moves ~12 bps; 25 is a quarter point |
+   | | 10Y-2Y spread | positive | positive again within 6 months of an inversion | inverted | | Un-inversion has come closer to past recessions than the inversion itself |
+   | | WTI crude, 5-day move | | down 10%+ | up 10%+ | calm | A typical week moves ~3%; 10% is the top ~10% |
+
+   Every level is in `params_dict["MARKET_SIGNALS"]`, and the glossary quotes them from there. The Nasdaq-100 and the Dow share a row, since one leading the other is the signal for both.
 6. **Your holdings:** most urgent signal first, then largest position. A stock held in several accounts gets one row.
 7. **Swing ideas.**
 8. **Long-term ideas.**
@@ -363,8 +380,9 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 | Amounts | Shown in | Source |
 |---|---|---|
 | The overview: portfolio total, the day's change, unrealized P/L, account values | The user's home currency (2026-10-21), plus the total in USD when that isn't USD | `home_currency` in `create_html.py`: `<NAME>_HOME_CURRENCY` from the payload, at the current rate |
+| The home currency's week (2026-10-21) | For a non-USD home currency: its move against the dollar over the past 5 trading days, after the rate on the overview's USD line, e.g. "$8,466.64 USD · 1 AUD = 0.703 USD · AUD +0.6% this week" | `fx_rates.usd_rate_change` (Yahoo `<CODE>USD=X` daily closes); left out when Yahoo has no history. Added because DXY (the dollar against the euro, yen, pound, Canadian dollar, krona, and franc) says how the dollar affects US stocks, not what it does to a holder whose currency is another |
 | Holdings: position values, P/L | USD ("Values in USD", "Unrealized · USD") | `pull_holdings_data` converts these to USD (`USD_MONEY_COLUMNS`) |
-| A holding in another currency (CAD, EUR, GBP or pence, AUD, COP, ...) | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 (1 CAD = 0.7074 USD)", or for pesos "Listed in COP at COP$2,800 (1 USD = 3,167 COP)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so. Until 2026-10-21 only CAD, AUD and GBP were converted, and an EUR holding's price stayed in euros |
+| A holding in another currency (CAD, EUR, GBP or pence, AUD, COP, ...) | USD at the current rate. Its card notes the original, e.g. "Listed in CAD at C$64.50 · 1 CAD = 0.707 USD" (rates to 3 decimals since 2026-10-21), or for pesos "Listed in COP at COP$2,800 (1 USD = 3,167 COP)" | `holdings_in_usd` in `create_html.py`, just before the email is built: rates from `src/fx_rates.py` (live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so. Until 2026-10-21 only CAD, AUD and GBP were converted, and an EUR holding's price stayed in euros |
 | Ideas: prices, trade levels, targets | "Prices in USD" | Always USD: the ideas come from the US screener (`IDEAS_CURRENCY`) |
 | Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Always USD: US ETFs and WTI |
 | API costs | Their `currency` | `api_usage.currency` |
@@ -404,7 +422,7 @@ It is built for a phone first: one column up to 600 px wide.
 | Always open | Header, notices, overview card | – |
 | 1. Section card | A coloured icon, the title and a count, and a coloured one-line summary, e.g. "Your holdings 10 · ● 6 risky · ● 4 holds". The arrow is on the right, as in mobile apps. A section with nothing in it is a plain card saying why, e.g. "No setups scored 80+ today". | The section's key figures and its rows |
 | 2. Row | **Holdings and ideas:** ticker, signal or score (green from 90), value, weight and day change<br>**Portfolio risk:** each review note's short title<br>**Markets & macro:** each story's headline | **Stock:** figures (a 2×2 grid), catalysts, its chart, the smaller dropdowns, and Yahoo/Finviz/TradingView buttons<br>**Note:** its full text<br>**Story:** why it matters, and a source button |
-| 3. Small dropdown | "Why risky" (the reasoning, named after the signal), News, All indicators, extra figures, About this digest | The content |
+| 3. Small dropdown | "Why risky" (the reasoning, named after the signal), News, extra figures, About this digest | The content |
 
 - **Starting state:** everything starts collapsed. List any of `"risk"`, `"markets"`, `"holdings"`, `"swing"`, `"long_term"` in `DIGEST["OPEN_SECTIONS"]` to start those sections open.
 - **Note titles:** Gemini's portfolio review now writes a 3–8 word title for each note. Payloads saved before 2026-10-17 use the note's first clause instead.
@@ -419,7 +437,10 @@ It is built for a phone first: one column up to 600 px wide.
     - the full indicator table puts each name on its own line above its figures;
     - figure boxes have 6 px sides.
 
-    Tested with every font multiplied: it fits at 1.75× in 375 and 395 px views and at 1.5× in 345 px. At 2×, the idea cards' headers still run about 10 px over. Keep any text that can't wrap (big figures, no-wrap cells, rows of figures) under about 190 px at normal size.
+    Tested with every font multiplied: it fits at 1.75× in 375 and 395 px views and at 1.5× in 345 px. Since 2026-10-21 a stock row's company-name line may also break inside a long word ("Semiconductor") when nothing else fits. That changes nothing at those sizes, but brings the widest stock header at 2× from 314 to 268 px. Keep any text that can't wrap (big figures, no-wrap cells, rows of figures) under about 190 px at normal size.
+  - **Whole phrases (2026-10-21):** where a line wraps, a short phrase moves to the next line whole instead of being split. Examples: "1 AUD = 0.702 USD", "Day · Mon, Oct 19", a section summary's "MGA 85". The greeting is 21 px (was 25), so "Good afternoon," fits on one line on Andres's phone without being forced to (forced, it overflowed narrower phones).
+    - **How:** `create_html._phrases` (phrases of up to 24 characters) and `_part` (summary parts of up to 18).
+    - **Never adds a line:** measured with and without, every block's height compared at 1× and enlarged text. The two places where keeping a phrase whole added a line wrap freely instead: the risk summary's "High market risk" and the holdings note.
 
 Where they work:
 - **Collapse in the HTML version:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
@@ -463,7 +484,7 @@ Other limits:
 
 **Gmail's size limit.** Gmail hides everything past about 102 KB of the HTML version behind "[Message clipped]".
 - **Normal size:** a typical digest is about 90 KB.
-- **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order: the glossary (about 10 KB), low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions. A typical digest of about 10 holdings keeps the glossary, at about 96 KB in each version.
+- **Trimming:** when a digest is bigger, `fit_for_gmail` leaves out the least important content first, and the footer says so. Order (since 2026-10-21, Andres's choice): "About this digest" (costs, model, screening counts), then the glossary (about 10 KB), low-priority news, the picks' extra figures, then the remaining news, starting with "hold" positions. A typical digest of about 10 holdings keeps the glossary, at about 96 KB in each version.
 - **Where the bytes go** (2026-10-19, 10 holdings, 29 news bullets, 2 long-term ideas): holdings about half (news bullets 21 KB, reasoning 9 KB, figures 7 KB), long-term ideas 10 KB (about 5 KB each; a swing idea is about 3.4 KB), glossary 10 KB. Only about a quarter of the bytes were readable text; the rest was markup.
 - **Trimmed on 2026-10-19:** repeated inline colours, paddings and alignments became short classes in the `<style>` block (104.3 to 93.8 KB for the AMP version, with no visible change), holding news became one sentence per story (about 55% shorter), and the holdings reasoning became at most 2 plain sentences. With 10 holdings and 5 swing ideas, only the glossary should need to go.
 - **Trimmed on 2026-10-20:** 4 macro stories, each with a one-sentence impact (5.0 to 3.8 KB), a tighter glossary with every term kept (9.6 to 8.8 KB), and idea pitches in plain words with one-sentence key risks. The 2026-10-19 post-market AMP digest was 83.9 KB. A day with 5 swing ideas (about 3.6 KB each) would be about 102 KB, so the glossary would still be left out that day.
@@ -501,6 +522,12 @@ It prints, per recommendation (buy_more / hold / risky / profit_sell / urgent_se
 Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py`): one line per message with a timestamp and the user it belongs to, rotating at `OPS.LOG_MAX_MB` (5 MB) and keeping `OPS.LOG_BACKUPS` (5) old files. Under cron the output no longer also goes to `digest.log` / `watchdog.log` in the project root, which now only catch crashes before logging starts; set `FINNBOT_LOG_ECHO=1` to see the output when piping it. Each run ends with a summary line (who was sent or checked, who failed, how long it took).
 
 `OPS.ALERT_USERS` (default `["Andres"]`) get a Telegram alert when the digest's universal content fails, a user's digest or watchdog check fails, or a run crashes, at most once per `OPS.ALERT_COOLDOWN_HOURS` (6) for each kind of failure. The traceback is in the log.
+
+**Earnings reminders (added 2026-10-21).** Every hourly digest run also checks each user with holdings and a Telegram chat ID for held stocks reporting earnings within `WATCHDOG.EARNINGS_REMINDER_HOURS` (24), and sends one Telegram reminder per stock and report: when it reports, before the open or after the close, and Finnbot's latest call on it.
+- **No API calls:** the held stocks come from `data/watchdog_state.json` (the watchdog forgets sold positions on every check), and the report dates and times from the market-context cache (Finnhub's earnings calendar).
+- **Expected times (US Eastern):** before the open 08:00, after the close 16:05, during market hours 12:00, and 08:00 when no time is known, so the reminder is never late.
+- **Every day:** it runs at weekends too, so a Monday-morning report is caught on Sunday.
+- **Code:** `src/telegram_alert/earnings_reminder.py`, called by `run_daily_digests`.
 
 **US market holidays (added 2026-10-21).** On a weekday the NYSE is closed, `OPS.ALERT_USERS` get one Telegram notice from the first digest run at or after `DIGEST.PRE_MARKET_TIME_ET` (07:10 ET under cron). It says:
 - the holiday, from the exchange calendar (e.g. "Thanksgiving"; "a special closure" for one-off closures);

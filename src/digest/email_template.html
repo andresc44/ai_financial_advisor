@@ -67,8 +67,10 @@
 {#- A collapsed section's summary line: parts joined by dots, each optionally coloured or led by a coloured dot.
     Parts may wrap: one kept on a single line ("Terms, abbreviations, and indicators explained") pushed the
     whole email wider than a phone. -#}
+{#- 2026-10-21: a part marked whole (create_html._part: 18 characters or fewer, unless that added a line) is kept on one line, so a wrap moves it whole (longer ones still
+    wrap, as the summary line is narrow), and the dot between parts stays at the end of the line before. -#}
 {%- macro parts(items) -%}
-{% for p in items %}{% if not loop.first %}<span class="sep"> &middot; </span>{% endif %}{% if p.dot %}<span class="dot" style="background-color:{{ p.dot }};"></span>&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b class="{{ TC[p.tone] }}">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}{{ p.suffix }}{% endfor %}
+{% for p in items %}{% if not loop.first %}<span class="sep">&nbsp;&middot; </span>{% endif %}{% set whole = p.whole %}{% if whole %}<span class="nw">{% endif %}{% if p.dot %}<span class="dot" style="background-color:{{ p.dot }};"></span>&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b class="{{ TC[p.tone] }}">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}{{ p.suffix }}{% if whole %}</span>{% endif %}{% endfor %}
 {%- endmacro -%}
 
 {#- Figure boxes: up to three side by side; four as a 2x2 grid, so figures like "-$1,107.47" never push the card
@@ -140,8 +142,10 @@
 {%- endmacro -%}
 
 {#- A stock's row: ticker and badge over its name; value over a detail line on the right. -#}
+{#- 2026-10-21: the name line (.ow) may break inside a long word ("Semiconductor") only when nothing else fits,
+    so very large text can't push the row past the screen beside the no-wrap value column -#}
 {%- macro row_header(title, badge_html, subtitle, value, detail) -%}
-<td valign="top"><span class="tk">{{ title }}</span> {{ badge_html }}<div class="xs mu t2">{{ subtitle }}</div></td>
+<td valign="top"><span class="tk">{{ title }}</span> {{ badge_html }}<div class="xs mu t2 ow">{{ subtitle }}</div></td>
 <td class="rv"><div class="pv">{{ value }}</div><div class="xs">{{ detail }}</div></td>
 {%- endmacro -%}
 
@@ -285,6 +289,7 @@ a{text-decoration:none;}
 .qn{padding:5px 0;vertical-align:top;}
 .qv{padding:5px 0 5px 8px;vertical-align:top;text-align:right;white-space:nowrap;}
 .qn b,.qv b{color:#0F2A44;}
+.qa{font-weight:700;color:#0B6BCB;}
 .dp{background-color:#16A34A;}
 .dw{background-color:#F59E0B;}
 .dn{background-color:#DC2626;}
@@ -300,13 +305,6 @@ a{text-decoration:none;}
 .kl,.kv{padding:6px 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;}
 .kl{color:#64748B;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;text-align:right;}
-.mh{padding:0 0 6px 4px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
-/* 2026-10-21: the full indicator table puts each name on its own line (.mn) above its figures (.mc), so a row
-   fits the Gmail app's enlarged text */
-.mc{padding:1px 0 7px 4px;font-size:12px;line-height:17px;white-space:nowrap;}
-.mn{padding:7px 0 0 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;font-weight:700;color:#0F2A44;}
-.m0{padding-left:0;}
-.mt{font-size:11px;font-weight:400;color:#64748B;}
 .rv{vertical-align:top;text-align:right;padding-left:8px;white-space:nowrap;}
 .cd{background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;}
 .cn{background-color:#E2E8F0;color:#0F2A44;vertical-align:2px;}
@@ -315,6 +313,7 @@ a{text-decoration:none;}
 .ar{text-align:right;}
 .fb{font-weight:700;}
 .nw{white-space:nowrap;}
+.ow{overflow-wrap:anywhere;}
 .sep{color:#CBD5E1;}
 /* Tones (TC) last, so they win over the colours of the classes above */
 .pos{color:#15803D;}
@@ -342,9 +341,11 @@ u + .body .cv{display:none;}
 
 {# ---------- Header: period, greeting, when it was prepared ---------- #}
 <tr><td class="c" style="padding:22px 20px 16px 20px;">
-<div class="lb" style="letter-spacing:1.2px;color:#0B6BCB;">{{ period_icon }}&nbsp; {{ period }} &middot; {{ date_short }}</div>
-<div style="font-size:25px;line-height:31px;font-weight:800;color:#0F2A44;padding-top:6px;">{{ greeting }}</div>
-{% if prepared %}<div class="xs mu" style="padding-top:3px;">{{ prepared }}</div>{% endif %}
+<div class="lb" style="letter-spacing:1.2px;color:#0B6BCB;">{{ (period_icon ~ " " ~ period ~ " · " ~ date_short)|phrases }}</div>
+{#- 2026-10-21: 21px (was 25), so "Good afternoon," fits on one line at the Gmail app's enlarged text (~1.75x) on
+    Andres's phone. Not forced onto one line: on a narrower phone or bigger text it wraps instead of overflowing. -#}
+<div style="font-size:21px;line-height:27px;font-weight:800;color:#0F2A44;padding-top:6px;">{{ greeting }}</div>
+{% if prepared %}<div class="xs mu" style="padding-top:3px;">{{ prepared|phrases(26) }}</div>{% endif %}
 {% if heat_map %}<div class="t10"><a href="{{ heat_map.url }}" class="btn">{{ heat_map.label }}</a></div>{% endif %}
 </td></tr>
 
@@ -363,8 +364,8 @@ u + .body .cv{display:none;}
 {% call card("18px") %}
 {{ label(portfolio.label, MUTED) }}
 <div style="font-size:{{ portfolio.value_size }}px;line-height:40px;font-weight:800;color:#0F2A44;padding-top:4px;overflow-wrap:anywhere;">{{ portfolio.value }}</div>
-{% if portfolio.usd_value %}<div class="xs mu">{{ portfolio.usd_value }}</div>{% endif %}
-<div style="padding-top:6px;"><span class="bd" style="font-size:13px;line-height:18px;padding:3px 10px;background-color:{{ '#DCFCE7' if portfolio.change_tone == 'pos' else '#FEE2E2' if portfolio.change_tone == 'neg' else '#F1F5F9' }};color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</span><span class="xs mu">&nbsp; {{ portfolio.session }}</span></div>
+{% if portfolio.usd_value %}<div class="xs mu">{{ portfolio.usd_value|phrases }}</div>{% endif %}
+<div style="padding-top:6px;"><span class="bd" style="font-size:13px;line-height:18px;padding:3px 10px;background-color:{{ '#DCFCE7' if portfolio.change_tone == 'pos' else '#FEE2E2' if portfolio.change_tone == 'neg' else '#F1F5F9' }};color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</span><span class="xs mu">&nbsp; <span class="nw">{{ portfolio.session }}</span></span></div>
 <div class="t16">{{ stats(portfolio.stats) }}</div>
 {% if portfolio.attention %}
 {{ label("Needs attention", MUTED, top="16px") }}
@@ -375,14 +376,13 @@ u + .body .cv{display:none;}
 {% if portfolio.earnings %}
 {{ label("Earnings soon", MUTED, top="12px") }}
 <div style="padding-top:6px;line-height:26px;">{% for item in portfolio.earnings %}{{ jump(item) }} {% endfor %}</div>
-{% if amp %}<div class="xs mu t2">Tap a stock to open it below.</div>{% endif %}
 {% endif %}
 {% if account %}
 <div style="margin-top:14px;border-top:1px solid #EEF2F6;">
-{% call fold(account.summary, top="t6") %}
+{% call fold(account.summary|phrases, top="t6") %}
 <table {{ T }}>
 {% for a in account.accounts %}
-<tr><td class="kl">{{ a.name }} <span style="font-size:11px;">&middot; {{ a.positions }}</span></td><td align="right" class="kv">{{ a.value }}</td></tr>
+<tr><td class="kl">{{ a.name }} <span class="nw" style="font-size:11px;">&middot; {{ a.positions }}</span></td><td align="right" class="kv">{{ a.value }}</td></tr>
 {% endfor %}
 </table>
 {% endcall %}
@@ -421,28 +421,28 @@ u + .body .cv{display:none;}
 {% endcall %}
 {% endif %}
 
-{# ---------- Markets & macro: each indicator's signal by group, the full table and the stories one tap away.
-    2026-10-21: the groups and levels of Andres's "Global Macro Pulse" table (create_html._signals). ---------- #}
+{# ---------- Markets & macro: the key signals with their grades first, the rest under "All indicators", then the
+    stories. 2026-10-21: graded at the levels in MARKET_SIGNALS (create_html._signals); each name opens a chart of its
+    last month. ---------- #}
+{%- macro signal_rows(signals) -%}
+<table {{ T }}>
+{% for s in signals %}
+<tr><td class="qd"><span class="dot {{ s.dot }}"></span></td><td class="qn">{% if s.link %}<a href="{{ s.link }}" class="qa">{{ s.name }}</a>{% else %}<b>{{ s.name }}</b>{% endif %}<div class="xs"><b class="{{ TC[s.tone] }}">{{ s.grade }}</b>{% if s.detail %}<span class="mu"> &middot; {{ s.detail }}</span>{% endif %}</div></td><td class="qv"><b>{{ s.value }}</b>{% if s.sub %}<div class="xs {{ TC[s.sub_tone] }}">{{ s.sub }}</div>{% endif %}</td></tr>
+{% endfor %}
+</table>
+{%- endmacro -%}
 {% if market or stories %}
 {% call section("markets", "Markets & macro", markets_summary) %}
 {% if market %}
+{% if market.key %}{{ label("Key signals", MUTED) }}
+{{ signal_rows(market.key) }}{% endif %}
+{% if market.groups %}
+{% call fold("All indicators", top="t10" if market.key else "") %}
 {% for g in market.groups %}
-{{ label(g.name, MUTED, top="0" if loop.first else "12px") }}
-<table {{ T }}>
-{% for s in g.signals %}
-<tr><td class="qd"><span class="dot {{ s.dot }}"></span></td><td class="qn"><b>{{ s.name }}</b><div class="xs mu">{{ s.text }}</div></td><td class="qv"><b>{{ s.value }}</b>{% if s.sub %}<div class="xs {{ TC[s.sub_tone] }}">{{ s.sub }}</div>{% endif %}</td></tr>
+{{ label(g.name, MUTED, top="6px" if loop.first else "12px") }}
+{% if g.name == "Sentiment" %}<div class="xs mu t2">VIX jumps within hours of a shock; Fear &amp; Greed moves over days.</div>{% endif %}
+{{ signal_rows(g.signals) }}
 {% endfor %}
-</table>
-{% endfor %}
-{% if market.rows %}
-{% call fold("All indicators", top="t10" if market.groups else "") %}
-<table {{ T }}>
-<tr>{% for head in ("Last", day_label, "5D", "1M") %}<td{% if not loop.first %} align="right"{% endif %} class="mh{{ ' m0' if loop.first else '' }}">{{ head }}</td>{% endfor %}</tr>
-{% for r in market.rows %}
-<tr><td colspan="4" class="mn">{{ r.name }}{% if r.ticker %} <span class="mt">{{ r.ticker }}</span>{% endif %}</td></tr>
-<tr><td class="mc m0">{{ r.last }}</td><td class="mc ar fb {{ TC[r.d1.tone] }}">{{ r.d1.text }}</td><td class="mc ar {{ TC[r.d5.tone] }}">{{ r.d5.text }}</td><td class="mc ar {{ TC[r.m1.tone] }}">{{ r.m1.text }}</td></tr>
-{% endfor %}
-</table>
 {% endcall %}
 {% endif %}
 {% endif %}
@@ -461,14 +461,15 @@ u + .body .cv{display:none;}
 {# ---------- Holdings: one collapsed row per stock ---------- #}
 {% if holdings %}
 {% call section("holdings", "Your holdings", holdings_summary, holdings|length) %}
+{#- 2026-10-21: no phrase kept whole here: at enlarged text that added a line -#}
 <div class="xs mu" style="padding-bottom:4px;">{{ holdings_note }}</div>
 {% for h in holdings %}
 {% set detail %}{% if h.day.text %}<div><span class="{{ TC[h.day.tone] }}">{{ h.day.text }}</span> <span class="mu">{{ day }}</span></div>{% endif %}<div class="mu">{{ h.weight_short }} weight</div>{% endset %}
 {% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first, h.anchor) %}
-<div class="xs mu ml">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta }}</div>
+<div class="xs mu ml">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta|phrases }}</div>
 <div class="t8">{{ stats(h.stats) }}</div>
 {% for c in h.catalysts %}
-<div class="sm t10">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text }}</div>
+<div class="sm t10">{{ badge({"text": c.when, "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {{ c.text|phrases }}</div>
 {% endfor %}
 {% if h.chart %}{{ chart(h.chart) }}{% endif %}
 {% if h.rationale %}
@@ -494,10 +495,10 @@ u + .body .cv{display:none;}
 
 {# ---------- Swing ideas ---------- #}
 {% call section("swing", "Swing ideas", swing_summary, swing|length, empty=(not swing)) %}
-<div class="xs mu" style="padding-bottom:4px;">Short-term setups: days to a few weeks · Prices in {{ ideas_currency }}</div>
+<div class="xs mu" style="padding-bottom:4px;">{{ ("Short-term setups: days to a few weeks · Prices in " ~ ideas_currency)|phrases }}</div>
 {% for c in swing %}
 {% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
-<div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+<div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector|phrases }}</div>
 {% if c.plan %}
 <div class="t8">{{ stats(c.plan) }}</div>
 {% else %}
@@ -505,7 +506,7 @@ u + .body .cv{display:none;}
 {% endif %}
 {% if c.thesis %}<div class="t10">{{ c.thesis }}</div>{% endif %}
 {% if c.earnings_warning %}<div class="sm ew">{{ c.earnings_warning }}</div>{% endif %}
-{% if c.analyst %}<div class="sm mu t10">{{ c.analyst }}</div>{% endif %}
+{% if c.analyst %}<div class="sm mu t10">{{ c.analyst|phrases }}</div>{% endif %}
 {{ pick_details(c, "Technicals & score breakdown") }}
 {% endcall %}
 {% endfor %}
@@ -513,16 +514,16 @@ u + .body .cv{display:none;}
 
 {# ---------- Long-term ideas ---------- #}
 {% call section("long_term", "Long-term ideas", long_summary, long_term|length, empty=(not long_term)) %}
-<div class="xs mu" style="padding-bottom:4px;">Businesses worth owning for years · Prices in {{ ideas_currency }}</div>
+<div class="xs mu" style="padding-bottom:4px;">{{ ("Businesses worth owning for years · Prices in " ~ ideas_currency)|phrases }}</div>
 {% for c in long_term %}
 {% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
-<div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector }}</div>
+<div class="xs mu ml">{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector|phrases }}</div>
 {% if c.thesis %}<div class="t8">{{ c.thesis }}</div>{% endif %}
 {% if c.key_risk %}
 <table {{ T }} style="margin-top:12px;"><tr>{{ stripe("#F59E0B") }}<td style="padding:1px 0 1px 10px;">{{ label("Key risk", "#92400E") }}<div class="sm t2">{{ c.key_risk }}</div></td></tr></table>
 {% endif %}
 <div class="t12">{{ stats(c.stats) }}</div>
-{% if c.analyst %}<div class="sm mu t10">{{ c.analyst }}</div>{% endif %}
+{% if c.analyst %}<div class="sm mu t10">{{ c.analyst|phrases }}</div>{% endif %}
 {% if c.range %}
 {{ label("52-week range", MUTED, top="12px") }}
 <table {{ T }} style="margin-top:6px;"><tr><td width="{{ c.range.left }}%" class="rg" style="background-color:#93C5FD;">&nbsp;</td><td width="4" class="rg" style="width:4px;background-color:#0F2A44;">&nbsp;</td><td width="{{ c.range.right }}%" class="rg" style="background-color:#E2E8F0;">&nbsp;</td></tr></table>
@@ -550,8 +551,7 @@ u + .body .cv{display:none;}
 {% if trimmed %}<div style="padding-bottom:8px;">Some lower-priority content was left out to keep this email under Gmail's size limit.</div>{% endif %}
 {% if usage or screening %}
 {% call fold("About this digest", top="") %}
-{% if usage %}{{ kv(usage) }}
-{% if usage_note %}<div style="padding-top:6px;font-size:11px;line-height:16px;">{{ usage_note }}</div>{% endif %}{% endif %}
+{% if usage %}{{ kv(usage) }}{% endif %}
 {% if screening %}{{ label("Stocks left after each screening stage", MUTED, top="14px" if usage else "0") }}
 {{ kv(screening) }}{% endif %}
 {% endcall %}

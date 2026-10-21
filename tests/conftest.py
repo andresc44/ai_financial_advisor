@@ -103,6 +103,12 @@ def isolated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(universal, "get_macro_stories", lambda: (None, []))
     monkeypatch.setattr(universal, "get_market_dashboard", lambda: ({}, []))
+
+    # 2026-10-21: the hourly digest run's earnings reminders read the real watchdog state and market-context cache, so
+    # digest-run tests skip them; tests/test_earnings_reminder.py tests the real function
+    import src.digest.digest_payload as digest_payload
+
+    monkeypatch.setattr(digest_payload, "send_earnings_reminders", lambda now: 0)
     return tmp_path
 
 

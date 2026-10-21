@@ -4,6 +4,7 @@ digest_payload.py --from-payload. Written by Claude (Claude Opus 5.5 via Claude 
 request. Every payload here is made up; none of it is anyone's real portfolio.
 """
 import json
+from datetime import date
 import re
 from email import message_from_bytes
 from email.policy import default as default_policy
@@ -113,7 +114,7 @@ def test_sections_follow_the_requested_order():
     _, html = render(payload())
     assert html.startswith("<!DOCTYPE html>")
     # The connected account is a small dropdown at the foot of the overview card (UI pass, 2026-10-17)
-    markers = ["Good morning, Test", "Your portfolio", "Needs attention", "Questrade · 1 account", "Portfolio risk",
+    markers = ["Good morning, Test", "Your portfolio", "Needs attention", '<span class="nw">Questrade</span>&nbsp;&middot; <span class="nw">1 account</span>', "Portfolio risk",
                "Markets &amp; macro", "Top stories", "Your holdings", "Swing ideas", "Long-term ideas"]
     positions = [html.index(marker) for marker in markers]
     assert positions == sorted(positions)
@@ -282,7 +283,7 @@ def test_a_portfolio_too_big_for_gmail_still_renders_and_warns(capsys):
 def test_plain_text_version_covers_every_section():
     text = ch.render_text(ch.build_view(payload()))
     for expected in ("Good morning, Test.", "PORTFOLIO (USD) $4,000.00", "PORTFOLIO RISK", "CONNECTED ACCOUNT Questrade",
-                     "MARKETS", "The central bank held rates.", "CCC - Urgent sell", "SWING IDEAS", "SWA (score 85)",
+                     "KEY MARKET SIGNALS", "The central bank held rates.", "CCC - Urgent sell", "SWING IDEAS", "SWA (score 85)",
                      "LONG-TERM IDEAS", "LTA (score 91)"):
         assert expected in text, expected
     assert "investment advice" not in text  # Removed at Andres's request (2026-10-17)
@@ -463,12 +464,15 @@ def test_review_notes_and_stories_are_rows_with_titles():
     for title in titles + ["The central bank held rates."]:
         summary_start = html.rfind("<summary", 0, html.index(title))
         assert html.index("</summary>", summary_start) > html.index(title)  # The title is the row's header
-    # Markets opens on its key tiles; the full table is one tap away
-    assert ">All indicators<" in html and ">Why it matters<" in html
-    # 2026-10-21: the signals it has data for, in their groups
+    # 2026-10-21: no 1-day / 5-day / 1-month table any more; each signal's name opens a chart of its month
+    # 2026-10-21: the key signals first, the rest under "All indicators"; each name opens its chart
+    assert html.index(">Key signals<") < html.index(">All indicators<") and ">Why it matters<" in html
+    assert ('<a href="https://www.google.com/finance/quote/SPY:NYSEARCA?window=1M" class="qa">'
+            'S&amp;P 500</a>') in html
+    # 2026-10-21: the signals it has data for: the key ones first, the rest in their groups
+    assert [s["name"] for s in view["market"]["key"]] == ["S&P 500", "S&P breadth", "10Y yield"]
     assert [(g["name"], [s["name"] for s in g["signals"]]) for g in view["market"]["groups"]] == [
-        ("Benchmarks", ["S&P 500"]), ("Sentiment", ["Fear & Greed", "S&P breadth"]),
-        ("Macro", ["10Y yield", "10Y–2Y spread"])]
+        ("Sentiment", ["Fear & Greed"]), ("Macro", ["10Y–2Y spread"])]
 
 
 def macro_pulse(**changes):
@@ -492,66 +496,112 @@ def macro_pulse(**changes):
             "put_call_ratio": {"Ratio": 0.65, "Session": "2026-10-15", "5D Avg": 0.72}}
 
 
-def signals_of(dashboard):
-    return {s["name"]: (s["tone"], s["text"], s["value"], s["sub"]) for s in ch._signals(dashboard, "day")}
+def signals_of(dashboard, today=date(2026, 10, 16)):
+    return {sig["name"]: (sig["tone"], sig["text"], sig["value"], sig["sub"]) for sig in ch._signals(dashboard, "day", today)}
 
 
 def test_market_signals_on_a_calm_healthy_day():
-    # Claude-authored (2026-10-21): Andres's "Global Macro Pulse" table, at params_dict["MARKET_SIGNALS"]
+    # Claude-authored (2026-10-21): graded at params_dict["MARKET_SIGNALS"] (researched levels)
     signals = signals_of(macro_pulse())
-    assert list(signals) == ["S&P 500", "Nasdaq-100 vs Dow", "NYSE vs S&P 500", "Russell 2000 vs S&P", "VIX",
-                             "Put/call ratio", "Fear & Greed", "S&P breadth", "US Dollar (DXY)", "10Y yield",
+    assert list(signals) == ["S&P 500", "Nasdaq-100 vs Dow", "NYSE vs S&P 500", "Russell 2000 vs S&P", "Market mood",
+                             "VIX", "Put/call ratio", "Fear & Greed", "S&P breadth", "US Dollar (DXY)", "10Y yield",
                              "10Y–2Y spread", "Crude oil (WTI)"]
-    assert signals["S&P 500"] == ("pos", "Above its 50- and 200-day averages: an uptrend", "$700.00", "+0.2% day")
-    assert signals["Nasdaq-100 vs Dow"][:3] == ("flat", "Growth and value even", "+0.3 pts")  # Under the 1-pt gap
-    assert signals["NYSE vs S&P 500"][0] == "pos" and signals["Russell 2000 vs S&P"][0] == "flat"
-    assert signals["VIX"] == ("pos", "Calm (under 18)", "15.00", "-3.0% day")
-    assert signals["Put/call ratio"] == ("pos", "Bullish: heavy call buying (Oct 15 session)", "0.65", "avg 0.72")
-    assert signals["Fear & Greed"] == ("pos", "Greed", "65", "was 62")
-    assert signals["S&P breadth"][:3] == ("pos", "Strong: the share of S&P 500 stocks above their 50-day average", "66%")
-    assert signals["US Dollar (DXY)"][:2] == ("pos", "Falling: a tailwind for stocks")
-    assert signals["10Y yield"] == ("flat", "Steady (+10 bps in a month)", "4.10%", "+2 bps day")
+    assert signals["S&P 500"] == ("pos", "Uptrend: above its 50- and 200-day averages", "$700.00", "+0.2% day")
+    assert signals["Nasdaq-100 vs Dow"][:3] == ("flat", "Even: growth and value moved together", "+0.3 pts")  # Under 2
+    assert signals["NYSE vs S&P 500"][:2] == ("pos", "Broad: in step with the S&P: wide participation")
+    assert signals["Russell 2000 vs S&P"][:2] == ("flat", "In step: small caps moved with the S&P")
+    assert signals["Market mood"][0] == "pos" and signals["Market mood"][1].startswith("Confident: Low volatility")
+    assert signals["Market mood"][2:] == ("VIX 15.0", "F&G 65")
+    assert signals["VIX"] == ("pos", "Calm: under 20, its long-run average", "15.00", "-3.0% day")
+    # Heavy call buying is over-exuberance: a caution, not a good sign
+    assert signals["Put/call ratio"] == ("warn", "Complacent: under 0.70: heavy call buying, often over-exuberance "
+                                                 "(Oct 15 session)", "0.65", "avg 0.72")
+    assert signals["Fear & Greed"] == ("pos", "Greed: investors are buying", "65", "was 62")
+    assert signals["S&P breadth"][:3] == ("pos", "Strong: 66% of S&P 500 stocks above their 50-day average", "66%")
+    assert signals["US Dollar (DXY)"][:2] == ("flat", "Steady: no big move, -0.5% in 5 days")  # Under the 1% fall
+    assert signals["10Y yield"] == ("flat", "Steady: no big move, +10 bps in a month", "4.10%", "+2 bps day")
     assert signals["10Y–2Y spread"][:3] == ("pos", "Positive: no recession signal", "+0.45%")
-    assert signals["Crude oil (WTI)"][:2] == ("flat", "No sharp weekly move")
+    assert signals["Crude oil (WTI)"][:2] == ("flat", "Calm: no sharp weekly move, +2.0% in 5 days")
 
 
 def test_market_signals_on_a_stressed_day():
     dashboard = macro_pulse(**{
-        "S&P 500 (SPY)": {"Latest": 640.0}, "Nasdaq-100 (QQQ)": {"5D %": "-4.00%"}, "Dow Jones (DIA)": {"5D %": "-1.00%"},
-        "NYSE Composite ($NYA)": {"5D %": "-3.50%"}, "Russell 2000 (IWM)": {"5D %": "-4.50%"},
-        "VIX Index": {"Latest": 31.0}, "US Dollar Index (DXY)": {"5D %": "+1.40%"},
-        "10Y Treasury Yield ($TNX)": {"1M bps": 32.0}, "Crude Oil (WTI)": {"5D %": "+9.50%"}})
-    dashboard["yahoo_finance"]["S&P 500 (SPY)"]["5D %"] = "-2.00%"
+        "S&P 500 (SPY)": {"Latest": 640.0, "5D %": "-2.00%"}, "Nasdaq-100 (QQQ)": {"5D %": "-4.00%"},
+        "Dow Jones (DIA)": {"5D %": "-1.00%"}, "NYSE Composite ($NYA)": {"5D %": "-4.50%"},
+        "Russell 2000 (IWM)": {"5D %": "-4.50%"}, "VIX Index": {"Latest": 31.0}, "US Dollar Index (DXY)": {"5D %": "+1.60%"},
+        "10Y Treasury Yield ($TNX)": {"1M bps": 32.0}, "Crude Oil (WTI)": {"5D %": "+10.50%"}})
     dashboard.update(fear_and_greed={"Score": 18.0, "Rating": "extreme fear"}, put_call_ratio={"Ratio": 1.12},
                      sp500_breadth={"% > 50MA": "31.00%"}, yield_curve_10y_2y={"Spread": "-0.12%"})
     signals = signals_of(dashboard)
-    assert signals["S&P 500"][:2] == ("neg", "Below its 50- and 200-day averages: a downtrend")
-    assert signals["Nasdaq-100 vs Dow"][:3] == ("warn", "Value beating growth: defensive", "-3.0 pts")
-    assert signals["NYSE vs S&P 500"][:3] == ("warn", "The S&P beat the broad market: a few giants carry it", "-1.5 pts")
-    assert signals["Russell 2000 vs S&P"][:2] == ("neg", "Small caps lagging: a tight-credit warning")
-    assert signals["VIX"][:2] == ("neg", "Panic (over 25)")
-    assert signals["Put/call ratio"][:2] == ("neg", "Extreme bearish: heavy put buying")
-    assert signals["Fear & Greed"][:2] == ("neg", "Extreme fear")  # CNN's word when it says extreme
-    assert signals["S&P breadth"][0] == "neg" and signals["US Dollar (DXY)"][:2] == ("neg", "Rising fast: a headwind for stocks")
-    assert signals["10Y yield"][:2] == ("neg", "Rising: pressure on stock valuations (+32 bps in a month)")
+    assert signals["S&P 500"][:2] == ("neg", "Downtrend: below its 50- and 200-day averages")
+    assert signals["Nasdaq-100 vs Dow"][:3] == ("warn", "Defensive: value stocks beat growth", "-3.0 pts")
+    assert signals["NYSE vs S&P 500"][:3] == ("warn", "Concentrated: the S&P beat the broad market: a few giants "
+                                                      "carry it", "-2.5 pts")
+    assert signals["Russell 2000 vs S&P"][:2] == ("neg", "Credit warning: small caps lagged the S&P")
+    assert signals["Market mood"][:2] == ("neg", "Capitulation: Fear on both gauges: the worst of a sell-off, which has "
+                                                 "often come near short-term bottoms for patient buyers.")
+    assert signals["VIX"][:2] == ("neg", "High fear: over 30: big swings expected")
+    assert signals["Put/call ratio"][:2] == ("neg", "Fearful: over 1.00: heavy put buying")
+    assert signals["Fear & Greed"][:2] == ("neg", "Extreme fear: often near a bottom for patient buyers")
+    assert signals["S&P breadth"][0] == "neg"
+    assert signals["US Dollar (DXY)"][:2] == ("neg", "Rising fast: a headwind for stocks, +1.6% in 5 days")
+    assert signals["10Y yield"][:2] == ("neg", "Rising: pressure on stock valuations, +32 bps in a month")
     assert signals["10Y–2Y spread"][:2] == ("neg", "Inverted: a recession warning")
-    assert signals["Crude oil (WTI)"][:2] == ("neg", "Spiking: an inflation risk")
-    # A spread just pushed out of inversion counts as a warning too
-    dashboard["yield_curve_10y_2y"] = {"Spread": "0.08%", "5D Change": "+20.0 bps"}
+    assert signals["Crude oil (WTI)"][:2] == ("neg", "Spiking: an inflation risk, +10.5% in 5 days")
+    # A curve that turned positive within 6 months of being inverted is a caution; longer ago, it isn't
+    dashboard["yield_curve_10y_2y"] = {"Spread": "0.08%", "Last inverted": "2026-08-03"}
     assert signals_of(dashboard)["10Y–2Y spread"][:2] == (
-        "neg", "Un-inverting fast (+20 bps in 5 days): often just before a recession")
+        "warn", "Recently un-inverted: positive since Aug 3: historically close to recessions")
+    assert signals_of(dashboard, today=date(2027, 3, 1))["10Y–2Y spread"][0] == "pos"
+    # Extreme greed is froth: a caution
+    dashboard["fear_and_greed"] = {"Score": 80.0}
+    assert signals_of(dashboard)["Fear & Greed"][:2] == ("warn", "Extreme greed: froth: often near a top")
 
 
-def test_markets_section_shows_signals_in_groups_and_the_full_table(monkeypatch):
+def test_key_signals_come_first_and_the_rest_are_under_all_indicators():
+    # Claude-authored (2026-10-21): MARKET_SIGNALS["KEY_SIGNALS"], each with its grade; each name opens its month
     view, html = render(payload(market_data=macro_pulse()))
-    assert [g["name"] for g in view["market"]["groups"]] == ["Benchmarks", "Sentiment", "Macro"]
-    assert html.count('<span class="dot dp"></span>') == 8 and '<span class="dot df"></span>' in html
-    rows = {row["name"]: row for row in view["market"]["rows"]}
-    assert (rows["10Y Yield"]["d1"]["text"], rows["10Y Yield"]["m1"]["text"]) == ("+2bp", "+10bp")  # Basis points
-    assert (rows["10Y–2Y"]["last"], rows["10Y–2Y"]["d5"]["text"]) == ("+0.45%", "+5bp")
-    assert (rows["S&P breadth"]["last"], rows["S&P breadth"]["d5"]["text"]) == ("66%", "-2pt")
+    assert [sig["name"] for sig in view["market"]["key"]] == ["S&P 500", "Market mood", "S&P breadth", "10Y yield",
+                                                             "Nasdaq-100 vs Dow"]
+    assert [(g["name"], [sig["name"] for sig in g["signals"]]) for g in view["market"]["groups"]] == [
+        ("Benchmarks", ["NYSE vs S&P 500", "Russell 2000 vs S&P"]),
+        ("Sentiment", ["VIX", "Put/call ratio", "Fear & Greed"]),
+        ("Macro", ["US Dollar (DXY)", "10Y–2Y spread", "Crude oil (WTI)"])]
+    key, rest = html.index(">Key signals<"), html.index(">All indicators<")
+    mood_row = html.index(">Market mood<")
+    assert key < mood_row < html.index('<b class="pos">Confident</b>', mood_row) < rest
+    assert rest < html.index("VIX jumps within hours of a shock") < html.index('class="qa">VIX</a>')
+    assert html.count('<span class="dot dp"></span>') == 7  # S&P, NYSE, mood, VIX, Fear & Greed, breadth, spread
+    links = {sig["name"]: sig["link"] for sig in view["market"]["signals"]}
+    # Google Finance at 1 month where it has the series (an "A vs B" opens A), then Yahoo, Barchart, FRED, and CNN
+    google = "https://www.google.com/finance/quote/{}?window=1M"
+    assert links["Nasdaq-100 vs Dow"] == google.format("QQQ:NASDAQ") and links["VIX"] == google.format("VIX:INDEXCBOE")
+    assert links["Crude oil (WTI)"] == google.format("CLW00:NYMEX")
+    assert links["US Dollar (DXY)"] == "https://finance.yahoo.com/quote/DX-Y.NYB/"
+    assert links["S&P breadth"] == "https://www.barchart.com/stocks/quotes/$S5FI/overview"
+    assert links["10Y–2Y spread"] == "https://fred.stlouisfed.org/series/T10Y2Y"
+    assert links["Fear & Greed"] == links["Market mood"] == links["Put/call ratio"] == "https://www.cnn.com/markets/fear-and-greed"
+    assert "stockcharts" not in html
+    assert all(links.values()) and html.count('class="qa"') == len(links)
     text = ch.render_text(view)
-    assert "SENTIMENT" in text and "  🟢 VIX 15.00 (-3.0% prev. day): Calm (under 18)" in text
+    assert text.index("KEY MARKET SIGNALS") < text.index("  🟢 Market mood VIX 15.0 (F&G 65): Confident: ")
+    assert "  🟢 VIX 15.00 (-3.0% prev. day): Calm: under 20, its long-run average" in text
+
+
+def test_market_mood_reads_vix_and_fear_greed_together():
+    # Claude-authored (2026-10-21): MARKET_SIGNALS["MOOD_MATRIX"], VIX state by Fear & Greed state
+    def mood(vix, score):
+        dashboard = macro_pulse(**{"VIX Index": {"Latest": vix}})
+        dashboard["fear_and_greed"] = {"Score": score}
+        return ch._mood(dashboard)
+    assert (mood(15, 70)["grade"], mood(15, 70)["tone"]) == ("Confident", "pos")
+    assert mood(15, 30)["grade"] == "Quietly cautious" and mood(25, 50)["grade"] == "Unsettled"
+    assert mood(35, 70)["grade"] == "Fresh shock"  # VIX spiked before the slower gauges turned
+    assert (mood(35, 20)["grade"], mood(35, 20)["tone"]) == ("Capitulation", "neg")
+    assert ch._mood({"yahoo_finance": {}, "fear_and_greed": {"Score": 50}}) is None  # Needs both
+    # Its label replaces the VIX level in the collapsed section's line
+    view, _ = render(payload(market_data=macro_pulse()))
+    assert flat(view["markets_summary"]).startswith("S&P 500 +0.2% prev. day · Mood: Confident")
 
 
 def test_the_heat_map_button_is_under_the_greeting():
@@ -561,6 +611,26 @@ def test_the_heat_map_button_is_under_the_greeting():
         link = '<a href="https://finviz.com/map?t=sec&amp;st=w1" class="btn">S&amp;P 500 heat map · 1 week</a>'
         assert html.index(view["greeting"]) < html.index(link) < html.index("Markets &amp; macro")
         assert "S&P 500 heat map · 1 week: https://finviz.com/map?t=sec&st=w1" in ch.render_text(view)
+
+
+def test_short_phrases_are_kept_on_one_line():
+    # Claude-authored (2026-10-21): where text wraps, a whole " · " phrase moves to the next line
+    assert ch._phrases("$8,466.64 USD · 1 AUD = 0.702 USD") == (
+        '<span class="nw">$8,466.64 USD</span>&nbsp;&middot; <span class="nw">1 AUD = 0.702 USD</span>')
+    long = "Short-term setups: days to a few weeks"  # Longer than a phone's line at enlarged text: may wrap
+    assert ch._phrases(f"{long} · Prices in USD") == f'{long}&nbsp;&middot; <span class="nw">Prices in USD</span>'
+    assert ch._phrases("S&P <b> · x") == '<span class="nw">S&amp;P &lt;b&gt;</span>&nbsp;&middot; <span class="nw">x</span>'
+    view, html = render(payload())
+    # The greeting is 21 px, so "Good afternoon," fits on one line at Andres's text size without being forced to
+    # (forced, it overflowed narrower phones); the pill's session date stays whole
+    assert 'font-size:21px;line-height:27px;' in html and "Good morning, Test" in html
+    assert f'<span class="nw">{view["portfolio"]["session"]}</span>' in html
+    # Short summary parts are whole; "Tap a stock" and the cost note are gone
+    amp = ch.render_html(view, TEMPLATE_DIR, amp=True)
+    assert '<span class="nw">1 story</span>' in html and "Tap a stock" not in amp
+    # A stock row's name line may break inside a long word, only when nothing else fits (very large text)
+    assert html.count('<div class="xs mu t2 ow">') == len(view["holdings"]) + len(view["swing"]) + len(view["long_term"])
+    assert ".ow{overflow-wrap:anywhere;}" in html and ".ow{overflow-wrap:anywhere;}" in amp
 
 
 def test_send_html_email_needs_gmail_credentials(monkeypatch):
@@ -608,10 +678,10 @@ def test_daily_changes_say_prev_day_before_the_open_and_day_after_the_close():
     assert [s["sub"] for s in pre["market"]["signals"] if s["name"] == "10Y–2Y spread"] == ["-4 bps prev. day"]
     assert "(+0.50% prev. day)" in pre["preheader"]
     pre_html, post_html = ch.render_html(pre, TEMPLATE_DIR), ch.render_html(post, TEMPLATE_DIR)
-    assert ">Prev. day</td>" in pre_html and ">Day</td>" in post_html  # The market table's one-day column
+    assert "S&amp;P 500 +0.3% prev. day" in pre_html.replace('<b class="pos">', "").replace("</b>", "")
     post["glossary"] = []  # The glossary defines both terms
     assert "prev. day" not in ch.render_html(post, TEMPLATE_DIR).lower()
-    assert "MARKETS (Day / 5D / 1M)" in ch.render_text(post)
+    assert "S&P 500 $700.00 (+0.3% day)" in ch.render_text(post)
 
 
 def test_the_glossary_is_static_and_left_out_first():
@@ -621,7 +691,12 @@ def test_the_glossary_is_static_and_left_out_first():
     html = ch.render_html(view, TEMPLATE_DIR)
     assert html.index(">Glossary<") > html.index(">Long-term ideas ")  # At the very bottom
     assert "<b>RSI 14</b><br>Relative Strength Index" in html and "<b>Beta</b><br>" in html
-    assert ch.TRIM_STEPS[0].__name__ == "_drop_glossary"  # The least important content goes first
+    # 2026-10-21: "About this digest" goes first, then the glossary
+    assert [step.__name__ for step in ch.TRIM_STEPS[:2]] == ["_drop_about", "_drop_glossary"]
+    trimmed = ch.build_view(payload(screening={"stages": [{"stage": "listings", "count": 7012}]}))
+    ch._drop_about(trimmed)
+    assert trimmed["usage"] == [] and trimmed["screening"] == []
+    assert "About this digest" not in ch.render_html(trimmed, TEMPLATE_DIR)
 
 
 def test_currencies_come_from_the_payload_or_default_to_usd(monkeypatch):
@@ -632,7 +707,7 @@ def test_currencies_come_from_the_payload_or_default_to_usd(monkeypatch):
     assert (cards["AAA"]["stats"][0]["label"], cards["AAA"]["stats"][0]["value"]) == ("Price · USD", "$100.00")
     # 2026-10-21: every currency is converted, EUR included (it used to stay in euros)
     assert (cards["XYZ.DE"]["stats"][0]["label"], cards["XYZ.DE"]["stats"][0]["value"]) == ("Price · USD", "$110.00")
-    assert cards["XYZ.DE"]["meta"].endswith("Listed in EUR at €100.00 (1 EUR = 1.1000 USD)")
+    assert cards["XYZ.DE"]["meta"].endswith("Listed in EUR at €100.00 · 1 EUR = 1.100 USD")  # 3 decimals
     assert cards["NOC"]["stats"][0]["label"] == "Price · USD" and cards["NOC"]["currency_assumed"] is True
     assert all(card["stats"][1]["label"] == "Unrealized · USD" for card in view["holdings"])
     assert view["portfolio"]["label"] == "Your portfolio · USD" and "Values in USD" in view["holdings_note"]
@@ -669,20 +744,20 @@ def test_holdings_in_other_currencies_are_converted_to_usd_at_the_current_rate(m
     enb, bhp, vod, sap = cards["ENB.TO"], cards["BHP.AX"], cards["VOD.L"], cards["SAP.DE"]
     eco = cards["ECOPETROL.CL"]
     assert (enb["value"], enb["stats"][0]["label"], enb["stats"][0]["value"]) == ("$700.00", "Price · USD", "$35.00")
-    assert enb["meta"].endswith("Listed in CAD at C$50.00 (1 CAD = 0.7000 USD)") and enb["chart"] is None
+    assert enb["meta"].endswith("Listed in CAD at C$50.00 · 1 CAD = 0.700 USD") and enb["chart"] is None
     assert (bhp["value"], bhp["stats"][0]["value"]) == ("$65.00", "$26.00")  # 100 and 40 AUD at 0.65
-    assert vod["stats"][0]["value"] == "$1.00" and vod["meta"].endswith("Listed in GBP pence at 80.0p (1 GBP = 1.2500 USD)")
+    assert vod["stats"][0]["value"] == "$1.00" and vod["meta"].endswith("Listed in GBP pence at 80.0p · 1 GBP = 1.250 USD")
     assert (sap["value"], sap["stats"][0]["label"], sap["stats"][0]["value"]) == ("$110.00", "Price · USD", "$220.00")
-    assert sap["meta"].endswith("Listed in EUR at €200.00 (1 EUR = 1.1000 USD)")
+    assert sap["meta"].endswith("Listed in EUR at €200.00 · 1 EUR = 1.100 USD")
     # COP: restated from 0.00024 to 0.00025, in whole pesos, and the rate per dollar (not 1 COP = 0.0003 USD)
     assert (eco["value"], eco["stats"][0]["value"]) == ("$100.00", "$0.70")
-    assert eco["meta"].endswith("Listed in COP at COP$2,800 (1 USD = 4,000 COP)")
+    assert eco["meta"].endswith("Listed in COP at COP$2,800 · 1 USD = 4,000 COP")
     assert eco["stats"][1]["value"] == "+$25.00"  # (96 - 72) at 0.00024, restated at 0.00025
     # Unrealized P/L follows the converted values, and the weights are recomputed from them
     assert enb["stats"][1]["value"] == "+$70.00"  # (720 - 648) CAD-in-USD at 0.72, restated at 0.70
     assert round(sum(card["weight_pct"] for card in view["holdings"]), 1) == 100.0
     assert enb["weight_pct"] == round(700 / (1000 + 700 + 65 + 100 + 110 + 100) * 100, 2)
-    assert "converted CAD holdings to USD at 1 CAD = 0.7000 USD" in view["fx_notes"]
+    assert "converted CAD holdings to USD at 1 CAD = 0.700 USD" in view["fx_notes"]
     assert "converted COP holdings to USD at 1 USD = 4,000 COP" in view["fx_notes"]
     assert view["issues"] == []
 
@@ -751,14 +826,14 @@ def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
     view = ch.build_view(mixed_currency_payload(home_currency="CAD"))
     cad = view["portfolio"]
     assert cad["label"] == "Your portfolio · CAD" and cad["value"] == f"C${total / 0.70:,.2f}"
-    assert cad["usd_value"] == f"{usd['value']} USD · 1 CAD = 0.7000 USD"
+    assert cad["usd_value"] == f"{usd['value']} USD · 1 CAD = 0.700 USD"
     assert cad["change"].split(" · ")[0][2:].startswith("C$") and cad["change_pct"] == usd["change_pct"]
     assert cad["stats"][0]["value"].startswith(("+C$", "-C$")) and cad["stats"][0]["sub"] == usd["stats"][0]["sub"]
     assert view["account"]["accounts"][0]["value"].startswith("C$")
     assert "Values in USD" in view["holdings_note"] and view["holdings"][0]["value"].startswith("$")
     assert view["preheader"].startswith(f"Portfolio C${total / 0.70:,.2f} CAD")
     html, text = ch.render_html(view, TEMPLATE_DIR), ch.render_text(view)
-    assert cad["value"] in html and cad["usd_value"] in html
+    assert cad["value"] in html and '<span class="nw">1 CAD = 0.700 USD</span>' in html  # A phrase kept whole
     assert f"PORTFOLIO (CAD) {cad['value']}" in text and f"In USD: {cad['usd_value']}" in text
     # Pesos: no cents, the rate per dollar, and a smaller font for the long number
     cop = ch.build_view(mixed_currency_payload(home_currency="COP"))["portfolio"]
@@ -771,6 +846,28 @@ def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
     sizes = {length: ch._portfolio(*portfolio_args(total))["value_size"]
              for length, total in ((9, 1234.56), (11, 123456.78), (13, 1234567.89), (17, 12345678901234.5))}
     assert sizes == {9: 34, 11: 26, 13: 22, 17: 18}
+
+
+def test_the_overview_shows_the_home_currencys_week_against_the_dollar(monkeypatch):
+    # Claude-authored (2026-10-21): for a non-USD home currency, how it moved against the dollar over the past week,
+    # after the exchange rate (condensed at Andres's request from a line of its own)
+    monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: RATES_NOW.get(code, 0.70) for code in [*codes, "USD"]})
+    weeks = {"CAD": (0.7084, 0.70)}  # CAD +1.2% vs USD
+    monkeypatch.setattr(ch, "usd_rate_change", lambda code: weeks.get(code))
+    view = ch.build_view(mixed_currency_payload(home_currency="CAD"))
+    line = view["portfolio"]["usd_value"]
+    assert line.endswith(" USD · 1 CAD = 0.700 USD · CAD +1.2% this week")
+    html, text = ch.render_html(view, TEMPLATE_DIR), ch.render_text(view)
+    assert '<span class="nw">CAD +1.2% this week</span>' in html and "vs USD this week" not in html
+    assert f"  In USD: {line}" in text.splitlines()
+    weeks["CAD"] = (0.7, 0.70001)  # Barely moved
+    assert ch.build_view(mixed_currency_payload(home_currency="CAD"))["portfolio"]["usd_value"].endswith(
+        "USD · CAD flat this week")
+    # No history from Yahoo: the rate alone. USD at home: no line at all
+    del weeks["CAD"]
+    assert ch.build_view(mixed_currency_payload(home_currency="CAD"))["portfolio"]["usd_value"].endswith(
+        " USD · 1 CAD = 0.700 USD")
+    assert ch.build_view(mixed_currency_payload())["portfolio"]["usd_value"] == ""
 
 
 def test_a_home_currency_without_a_rate_shows_the_overview_in_usd(monkeypatch):
@@ -820,7 +917,9 @@ def test_about_section_ends_with_the_stocks_left_after_each_screening_stage():
         ("Swing: reward : risk 1.5+", "95"), ("Swing: best setups scored by AI", "19 of 20"), ("Swing score 80+", "0"),
         ("Still early in their run", "0"), ("Picked", "2 long-term \u00b7 0 swing")]
     about = html.index("About this digest")
-    assert about < html.index("Estimated.") < html.index("Stocks left after each screening stage") < html.index("7,012")
+    # 2026-10-21: no "Estimated from token counts..." note under the costs
+    assert about < html.index("Stocks left after each screening stage") < html.index("7,012")
+    assert "Estimated." not in html
     assert "STOCKS LEFT AFTER EACH SCREENING STAGE" in ch.render_text(view) and "  Long-term: scored by AI: 36 of 37" in ch.render_text(view)
     # Everything scored: no "of"
     assert ch.build_view(payload(screening={"stages": [{"stage": "scored", "count": 37, "of": 37}]}))["screening"] == [

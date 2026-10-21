@@ -518,29 +518,74 @@ params_dict = {
         "MARKET_DASHBOARD": True,  # Index/VIX/yield moves, 10Y-2Y spread (FRED_API_KEY), Fear & Greed, S&P breadth,
                                    # Cboe put/call ratio
     },
-    # Claude-authored (2026-10-21): the signal dot (green / yellow / red, grey for no clear signal) beside each market
-    # indicator in the email's Markets & macro section (create_html._signals), from Andres's "Global Macro Pulse"
-    # table. The glossary (src/digest/glossary.py) quotes these same levels.
+    # Claude-authored (2026-10-21): each market indicator's grade (green / yellow / red, grey for no clear signal) in
+    # the email's Markets & macro section (create_html._signals). Started from Andres's "Global Macro Pulse" table;
+    # the levels were then set from research and 2 years of data (2026-10-21, at his request; the reasons are on each).
+    # The glossary (src/digest/glossary.py) quotes these same levels.
     "MARKET_SIGNALS": {
+        # Shown first when Markets & macro opens, in this order; the rest are under "All indicators". "Market mood" is
+        # VIX and Fear & Greed read together (MOOD_MATRIX below).
+        "KEY_SIGNALS": ["S&P 500", "Market mood", "S&P breadth", "10Y yield", "Nasdaq-100 vs Dow"],
         # Benchmarks: the S&P 500 against its 50- and 200-day averages; the Nasdaq-100 against the Dow (growth vs
-        # value), the S&P against the NYSE Composite (concentration), and the Russell 2000 against the S&P (credit)
+        # value), the NYSE Composite against the S&P (concentration), and the Russell 2000 against the S&P (credit)
         "RELATIVE_WINDOW": "5D",        # The window those comparisons use: "1D", "5D", or "1M"
-        "RELATIVE_GAP_PTS": 1.0,        # A lead of at least this many percentage points over it counts
+        "RELATIVE_GAP_PTS": 2.0,        # A lead of this many percentage points counts (Andres, 2026-10-21; was 1, which
+                                        # flagged a lead on 36-55% of days over 2 years: noise rather than a signal)
         # Sentiment
-        "VIX_CALM_BELOW": 18,           # Green under it, yellow up to VIX_PANIC_ABOVE, red over that
-        "VIX_PANIC_ABOVE": 25,
-        "PUT_CALL_BULLISH_BELOW": 0.70,  # Cboe total put/call ratio: green under it (heavy call buying) ...
-        "PUT_CALL_BEARISH_ABOVE": 1.00,  # ... red over it (heavy put buying), yellow between
-        "FEAR_GREED_FEAR_BELOW": 40,    # CNN Fear & Greed: red under it, yellow up to the greed level, green over it
-        "FEAR_GREED_GREED_ABOVE": 60,
-        "BREADTH_WEAK_BELOW": 40,       # % of S&P 500 stocks above their 50-day average: red under it, yellow up
-        "BREADTH_STRONG_ABOVE": 60,     # to the strong level, green over it
+        "VIX_CALM_BELOW": 20,           # VIX's long-run average is about 19.5-20: under it calm (78% of days in the last
+        "VIX_PANIC_ABOVE": 30,          # 2 years), 20-30 elevated, over 30 stress (3% of days)
+        "PUT_CALL_LOW_BELOW": 0.70,     # Cboe total put/call: under it heavy call buying, i.e. over-exuberance: yellow
+        "PUT_CALL_HIGH_ABOVE": 1.00,    # Over it heavy put buying, i.e. fear: red. Between: a normal balance, green
+        # CNN's own Fear & Greed bands: 0-24 extreme fear (red), 25-44 fear (yellow), 45-55 neutral and 56-75 greed
+        # (green), 76-100 extreme greed (yellow: froth, often near tops)
+        "FEAR_GREED_EXTREME_FEAR_BELOW": 25,
+        "FEAR_GREED_FEAR_BELOW": 45,
+        "FEAR_GREED_GREED_ABOVE": 55,
+        "FEAR_GREED_EXTREME_GREED_ABOVE": 75,
+        "BREADTH_WEAK_BELOW": 40,       # % of S&P 500 stocks above their 50-day average: red under it (a narrow market),
+        "BREADTH_STRONG_ABOVE": 60,     # green over it (broad strength), yellow between. No "overbought" flag: readings
+                                        # over 90% have historically been followed by gains (SentimentTrader)
         # Macro
-        "DOLLAR_FAST_RISE_PCT": 1.0,    # US Dollar Index: green when it fell over 5 days, red when it rose this much
-        "YIELD_MOVE_BPS": 25,           # 10Y yield: red when it rose this many basis points in a month (valuations
-                                        # under pressure), green when it fell as much
-        "CURVE_UNINVERT_BPS": 15,       # 10Y-2Y spread: red when inverted, or up this many bps in 5 days from inverted
-        "OIL_BREAKOUT_PCT": 8.0,        # WTI crude: red when up this much in 5 days (inflation), yellow when down as much
+        "DOLLAR_FALL_PCT": 1.0,         # US Dollar Index over 5 days: green when down this much (a tailwind), red when up
+        "DOLLAR_FAST_RISE_PCT": 1.5,    # this much (a headwind; the top ~10% of weeks), grey between (a typical week
+                                        # moves about 0.6%)
+        "YIELD_MOVE_BPS": 25,           # 10Y yield over a month: red when up this many basis points (a quarter point;
+                                        # 11% of months), green when down as much (a typical month moves ~12 bps)
+        "CURVE_RECENT_DAYS": 182,       # 10Y-2Y spread: red when inverted, yellow when it turned positive within this many
+                                        # days after inverting (historically closer to recessions than the inversion)
+        "OIL_BREAKOUT_PCT": 10.0,       # WTI over 5 days: red when up this much (inflation), yellow when down as much (the
+                                        # top ~10% of weekly moves; a typical week moves about 3%)
+        # The market's mood, from VIX and Fear & Greed read together (create_html._mood): VIX comes from S&P 500 option
+        # prices and jumps within hours of a shock, while Fear & Greed blends seven gauges and moves over days. VIX
+        # state (calm / elevated / panic, at the VIX levels above) -> Fear & Greed state (fear under 45, neutral, greed
+        # over 55) -> (label, dot: "pos" green / "warn" yellow / "neg" red, what it means). The label is also the
+        # collapsed Markets & macro line.
+        "MOOD_MATRIX": {
+            "calm": {
+                "greed": ("Confident", "pos", "Low volatility and eager buyers: a supportive backdrop for stocks, though "
+                                              "complacency tends to build when everyone is relaxed."),
+                "neutral": ("Steady", "pos", "Low volatility and a balanced mood: normal conditions, with no strong pull "
+                                             "either way."),
+                "fear": ("Quietly cautious", "warn", "Prices are calm but investors are wary: more often a slow grind or a "
+                                                     "rotation between sectors than a sell-off."),
+            },
+            "elevated": {
+                "greed": ("Jittery rally", "warn", "Buyers are still eager while options price in bigger swings: rallies "
+                                                   "can stall or reverse quickly."),
+                "neutral": ("Unsettled", "warn", "Volatility is rising before the broad mood has turned: an early sign of "
+                                                 "stress worth watching."),
+                "fear": ("Stressed", "neg", "Rising volatility and fearful investors: a risk-off market, where selling can "
+                                            "feed on itself."),
+            },
+            "panic": {
+                "greed": ("Fresh shock", "neg", "Volatility has spiked while the slower gauges still look upbeat: a new "
+                                                "shock the market is still absorbing."),
+                "neutral": ("Shock spreading", "neg", "A volatility spike the broad mood is starting to reflect: the "
+                                                      "sell-off is widening."),
+                "fear": ("Capitulation", "neg", "Fear on both gauges: the worst of a sell-off, which has often come near "
+                                                "short-term bottoms for patient buyers."),
+            },
+        },
     },
 
     # Claude-authored (2026-10-16): list prices for the cost estimates in each digest (src/usage_tracking.py).
@@ -626,6 +671,9 @@ params_dict = {
         "ALERT_RECOMMENDATIONS": ["urgent_sell"],  # Recommendations that trigger a Telegram alert
         "ALERT_COOLDOWN_HOURS": 24,              # Suppress a repeat alert for the same (user, symbol, recommendation)
         "ALERT_LOG_RETENTION_DAYS": 30,          # Days of alert history kept in data/alerts_sent/
+        # Claude-authored (2026-10-21): a Telegram reminder when a held stock reports earnings within this many hours,
+        # once per stock and report (src/telegram_alert/earnings_reminder.py, from the hourly digest run; 0 = off)
+        "EARNINGS_REMINDER_HOURS": 24,
         "MAX_CLAUDE_CALLS_PER_USER_DAY": 40,     # Cap on watchdog LLM calls (Claude or DeepSeek) per user per market-local day (digest calls not counted)
         "FRESH_CONTEXT_MAX_AGE_MINUTES": 30,     # Quote + news in the cached market context older than this are re-fetched
         "CONTEXT_CACHE_RETENTION_DAYS": 7,       # Drop cached market context for symbols not refreshed within this many days
@@ -652,6 +700,26 @@ params_dict = {
         # and coloured by the past week's performance (st=w1; st=d1 is one day, w4 a month)
         "HEAT_MAP_URL": "https://finviz.com/map?t=sec&st=w1",
         "HEAT_MAP_LABEL": "S&P 500 heat map · 1 week",
+        # Claude-authored (2026-10-21): where each market signal's name links (Andres asked for Yahoo or another site
+        # than StockCharts). Google Finance opens at its 1-month view (window=1M) for the series it has; its links
+        # can't preset a comparison, so each "A vs B" opens A. It has no dollar index (Yahoo, which opens on 1 day),
+        # no breadth series (Barchart's $S5FI, on 3 months), and no spread (FRED, the full recent history). CNN's
+        # page has Fear & Greed and its put/call chart. A signal without a link here shows its name as plain text.
+        "INDICATOR_LINKS": {
+            "S&P 500": "https://www.google.com/finance/quote/SPY:NYSEARCA?window=1M",
+            "Nasdaq-100 vs Dow": "https://www.google.com/finance/quote/QQQ:NASDAQ?window=1M",
+            "NYSE vs S&P 500": "https://www.google.com/finance/quote/NYA:INDEXNYSEGIS?window=1M",
+            "Russell 2000 vs S&P": "https://www.google.com/finance/quote/IWM:NYSEARCA?window=1M",
+            "Market mood": "https://www.cnn.com/markets/fear-and-greed",
+            "VIX": "https://www.google.com/finance/quote/VIX:INDEXCBOE?window=1M",
+            "Put/call ratio": "https://www.cnn.com/markets/fear-and-greed",
+            "Fear & Greed": "https://www.cnn.com/markets/fear-and-greed",
+            "S&P breadth": "https://www.barchart.com/stocks/quotes/$S5FI/overview",
+            "US Dollar (DXY)": "https://finance.yahoo.com/quote/DX-Y.NYB/",
+            "10Y yield": "https://www.google.com/finance/quote/TNX:INDEXCBOE?window=1M",
+            "10Y–2Y spread": "https://fred.stlouisfed.org/series/T10Y2Y",
+            "Crude oil (WTI)": "https://www.google.com/finance/quote/CLW00:NYMEX?window=1M",
+        },
         # Main sections that start expanded; the rest start collapsed, showing a one-line summary. Any of:
         # "risk", "markets", "holdings", "swing", "long_term" (the overview at the top is always shown)
         "OPEN_SECTIONS": [],

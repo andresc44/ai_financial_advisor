@@ -92,12 +92,12 @@ GLOSSARY = [
         ("Earnings (before open, after close)", "When quarterly results come out; prices often move sharply around "
                                                 "them."),
     ]),
-    # Claude-authored (2026-10-21): in the order of the Markets & macro section's groups
+    # Claude-authored (2026-10-21): in the order of the Markets & macro section, at the levels in MARKET_SIGNALS
     ("Market indicators", [
-        ("Signal dots", "Each indicator against its levels below: green is good for stocks, yellow mixed, red a "
-                        "warning, grey no clear signal."),
+        ("Signal grades", "Each indicator's dot and label: green is good for stocks, yellow a caution, red a warning, "
+                          "grey no clear signal. The key ones show first; the rest are under All indicators."),
         ("S&P 500 (SPY)", "500 large US companies weighted by size, the market's baseline: above its 50- and 200-day "
-                          "averages is an uptrend, below both a downtrend."),
+                          "averages is an uptrend, below both a downtrend, between them a pullback or a recovery."),
         ("Nasdaq-100 (QQQ)", "100 large non-financial Nasdaq companies, tech-heavy and rate-sensitive: it leads rallies "
                              "and falls fastest, and beating the Dow means investors are taking risk (risk-on)."),
         ("Dow Jones (DIA)", "30 industrial and financial blue chips, weighted by price: they hold up better in tech "
@@ -108,31 +108,37 @@ GLOSSARY = [
         ("Russell 2000 (IWM)", "2,000 small US companies, sensitive to borrowing costs: lagging the S&P warns of "
                                "tight credit, leading it signals confidence in the economy."),
         ("A vs B (pts)", f"A's move minus B's over {_WINDOW}, in percentage points; "
-                         f"{_level('RELATIVE_GAP_PTS', 1.0)} or more counts as a lead."),
-        ("VIX", f"Expected S&P 500 volatility over 30 days, from option prices: under {_level('VIX_CALM_BELOW', 18)} "
-                f"calm, {_level('VIX_CALM_BELOW', 18)}-{_level('VIX_PANIC_ABOVE', 25)} elevated, over "
-                f"{_level('VIX_PANIC_ABOVE', 25)} panic."),
-        ("Put/call ratio", f"Cboe's daily put volume over call volume, beside its 5-day average: over "
-                           f"{_level('PUT_CALL_BEARISH_ABOVE', 1.0, 2)} heavy put buying (fear), under "
-                           f"{_level('PUT_CALL_BULLISH_BELOW', 0.7, 2)} heavy call buying (bullish, even over-exuberant)."),
-        ("Fear & Greed", f"CNN's 0-100 blend of 7 mood gauges: over {_level('FEAR_GREED_GREED_ABOVE', 60)} greed, "
-                         f"under {_level('FEAR_GREED_FEAR_BELOW', 40)} fear; read it contrarian, as extreme greed often "
-                         f"comes near tops and extreme fear near bottoms."),
+                         f"{_level('RELATIVE_GAP_PTS', 2.0)} or more counts as a lead."),
+        ("Market mood", "VIX and Fear & Greed read together: VIX jumps within hours of a shock while Fear & Greed moves "
+                        "over days, so a VIX spike while greed still shows is a fresh shock, and fear on both is "
+                        "capitulation."),
+        ("VIX", f"Expected S&P 500 volatility over 30 days, from option prices: under {_level('VIX_CALM_BELOW', 20)} "
+                f"(about its long-run average) calm, {_level('VIX_CALM_BELOW', 20)}-{_level('VIX_PANIC_ABOVE', 30)} "
+                f"elevated, over {_level('VIX_PANIC_ABOVE', 30)} high fear."),
+        ("Put/call ratio", f"Cboe's daily put volume over call volume, beside its 5-day average: "
+                           f"{_level('PUT_CALL_LOW_BELOW', 0.7, 2)}-{_level('PUT_CALL_HIGH_ABOVE', 1.0, 2)} a normal "
+                           f"balance, over {_level('PUT_CALL_HIGH_ABOVE', 1.0, 2)} heavy put buying (fear), under "
+                           f"{_level('PUT_CALL_LOW_BELOW', 0.7, 2)} heavy call buying (over-exuberance)."),
+        ("Fear & Greed", f"CNN's 0-100 blend of 7 mood gauges, in CNN's bands: under "
+                         f"{_level('FEAR_GREED_EXTREME_FEAR_BELOW', 25)} extreme fear, under "
+                         f"{_level('FEAR_GREED_FEAR_BELOW', 45)} fear, up to {_level('FEAR_GREED_GREED_ABOVE', 55)} "
+                         f"neutral, up to {_level('FEAR_GREED_EXTREME_GREED_ABOVE', 75)} greed, then extreme greed; "
+                         f"the extremes often come near turning points."),
         ("S&P breadth", f"The share of S&P 500 stocks above their 50-day average: over "
                         f"{_level('BREADTH_STRONG_ABOVE', 60)}% a broad, strong market, under "
                         f"{_level('BREADTH_WEAK_BELOW', 40)}% a weak one carried by a few giants."),
-        ("US Dollar (DXY)", f"The dollar against major currencies: falling is a tailwind for stocks, rising "
-                            f"{_level('DOLLAR_FAST_RISE_PCT', 1.0)}%+ in 5 days a headwind for multinationals' "
-                            f"earnings and risk assets."),
+        ("US Dollar (DXY)", f"The dollar against major currencies: down {_level('DOLLAR_FALL_PCT', 1.0)}%+ in 5 days "
+                            f"is a tailwind for stocks, up {_level('DOLLAR_FAST_RISE_PCT', 1.5)}%+ a headwind for "
+                            f"multinationals' earnings and risk assets."),
         ("10Y yield", f"The 10-year Treasury rate, the base cost of capital: up {_level('YIELD_MOVE_BPS', 25)}+ bps "
                       f"in a month weighs on stock valuations, especially growth stocks."),
         ("10Y-2Y spread", "The 10-year minus the 2-year Treasury yield: below zero (inverted) has often preceded "
-                          "recessions, and a fast un-inversion often comes just before one."),
-        ("Crude oil (WTI)", f"The US oil price, the main energy input: a jump of {_level('OIL_BREAKOUT_PCT', 8.0)}%+ in "
-                            f"5 days feeds inflation through transport and manufacturing."),
-        ("5D / 1M", "The change over the last 5 trading days and the last month."),
-        ("bps", "Basis points: hundredths of a percent, so 100 bps = 1% (bp in the table)."),
-        ("pts", "Percentage points: the gap between two percentages, e.g. 50% to 53% is +3 pts (pt in the table)."),
+                          "recessions, and turning positive again has historically come even closer to one."),
+        ("Crude oil (WTI)", f"The US oil price, the main energy input: up {_level('OIL_BREAKOUT_PCT', 10.0)}%+ in 5 "
+                            f"days feeds inflation; down as much often signals weaker demand."),
+        ("5D", "Over the last 5 trading days."),
+        ("bps", "Basis points: hundredths of a percent, so 100 bps = 1%."),
+        ("pts", "Percentage points: the gap between two percentages, e.g. 50% to 53% is +3 pts."),
     ]),
 ]
 
