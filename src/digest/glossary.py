@@ -11,7 +11,26 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   to read it, so the glossary still fits on a day with 10 holdings and 5 swing ideas.
 - 2026-10-21: a digest without holdings (an ideas-only user) leaves out HOLDINGS_ONLY_TERMS, and a swing idea is
   either setup the swing screen finds: a dip in an uptrend or a fresh turn up.
+- 2026-10-21: the market indicators follow Andres's "Global Macro Pulse" table, one entry each, with the levels
+  of their signal dots taken from params_dict["MARKET_SIGNALS"], so the two can't disagree.
 """
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from src.parameters import params_dict
+
+_LEVELS = params_dict.get("MARKET_SIGNALS") or {}
+_WINDOW = {"1D": "a day", "5D": "5 days", "1M": "a month"}.get(_LEVELS.get("RELATIVE_WINDOW", "5D"), "5 days")
+
+
+def _level(key: str, default: float, decimals: int = -1) -> str:
+    """A signal level from params_dict["MARKET_SIGNALS"] as the glossary writes it, e.g. 18, or 0.70 with decimals=2."""
+    value = _LEVELS.get(key, default)
+    return f"{value:.{decimals}f}" if decimals >= 0 else f"{value:g}"
 
 # (category, [(term, explanation), ...]), in the order the email shows them
 GLOSSARY = [
@@ -73,23 +92,47 @@ GLOSSARY = [
         ("Earnings (before open, after close)", "When quarterly results come out; prices often move sharply around "
                                                 "them."),
     ]),
+    # Claude-authored (2026-10-21): in the order of the Markets & macro section's groups
     ("Market indicators", [
-        ("S&P 500, Nasdaq-100, Dow Jones", "US indexes of 500 large companies, 100 large non-financial Nasdaq stocks "
-                                           "(tech-heavy), and 30 blue chips, via SPY, QQQ, and DIA."),
-        ("Russell 2000, NYSE Comp.", "Small US companies (via IWM), and every NYSE-listed stock."),
-        ("VIX", "Expected S&P 500 volatility over 30 days, the 'fear gauge': under about 15 calm, over about 25 "
-                "stressed."),
-        ("10Y yield", "The 10-year US Treasury rate; rising yields tend to weigh on stocks, especially growth stocks."),
-        ("10Y-2Y spread", "The 10-year minus the 2-year Treasury yield; below zero ('inverted') has often preceded "
-                          "recessions."),
-        ("US Dollar (DXY)", "The dollar against major currencies; a stronger dollar weighs on multinationals' earnings "
-                            "and commodity prices."),
-        ("Crude oil (WTI)", "The US oil price: it drives energy stocks and feeds inflation."),
-        ("Fear & Greed", "CNN's 0-100 investor-mood gauge; fear has often come near market bottoms, greed near tops."),
-        ("S&P breadth", "The share of S&P 500 stocks above their 50-day average: over about 60% broad strength, under "
-                        "about 40% weakness beneath the surface."),
+        ("Signal dots", "Each indicator against its levels below: green is good for stocks, yellow mixed, red a "
+                        "warning, grey no clear signal."),
+        ("S&P 500 (SPY)", "500 large US companies weighted by size, the market's baseline: above its 50- and 200-day "
+                          "averages is an uptrend, below both a downtrend."),
+        ("Nasdaq-100 (QQQ)", "100 large non-financial Nasdaq companies, tech-heavy and rate-sensitive: it leads rallies "
+                             "and falls fastest, and beating the Dow means investors are taking risk (risk-on)."),
+        ("Dow Jones (DIA)", "30 industrial and financial blue chips, weighted by price: they hold up better in tech "
+                            "sell-offs and when rates are high, so beating the Nasdaq-100 means investors are playing "
+                            "defense."),
+        ("NYSE Composite", "Every NYSE stock (2,000+), not skewed by mega-caps: when the S&P 500 beats it, a few "
+                           "giants are carrying the market."),
+        ("Russell 2000 (IWM)", "2,000 small US companies, sensitive to borrowing costs: lagging the S&P warns of "
+                               "tight credit, leading it signals confidence in the economy."),
+        ("A vs B (pts)", f"A's move minus B's over {_WINDOW}, in percentage points; "
+                         f"{_level('RELATIVE_GAP_PTS', 1.0)} or more counts as a lead."),
+        ("VIX", f"Expected S&P 500 volatility over 30 days, from option prices: under {_level('VIX_CALM_BELOW', 18)} "
+                f"calm, {_level('VIX_CALM_BELOW', 18)}-{_level('VIX_PANIC_ABOVE', 25)} elevated, over "
+                f"{_level('VIX_PANIC_ABOVE', 25)} panic."),
+        ("Put/call ratio", f"Cboe's daily put volume over call volume, beside its 5-day average: over "
+                           f"{_level('PUT_CALL_BEARISH_ABOVE', 1.0, 2)} heavy put buying (fear), under "
+                           f"{_level('PUT_CALL_BULLISH_BELOW', 0.7, 2)} heavy call buying (bullish, even over-exuberant)."),
+        ("Fear & Greed", f"CNN's 0-100 blend of 7 mood gauges: over {_level('FEAR_GREED_GREED_ABOVE', 60)} greed, "
+                         f"under {_level('FEAR_GREED_FEAR_BELOW', 40)} fear; read it contrarian, as extreme greed often "
+                         f"comes near tops and extreme fear near bottoms."),
+        ("S&P breadth", f"The share of S&P 500 stocks above their 50-day average: over "
+                        f"{_level('BREADTH_STRONG_ABOVE', 60)}% a broad, strong market, under "
+                        f"{_level('BREADTH_WEAK_BELOW', 40)}% a weak one carried by a few giants."),
+        ("US Dollar (DXY)", f"The dollar against major currencies: falling is a tailwind for stocks, rising "
+                            f"{_level('DOLLAR_FAST_RISE_PCT', 1.0)}%+ in 5 days a headwind for multinationals' "
+                            f"earnings and risk assets."),
+        ("10Y yield", f"The 10-year Treasury rate, the base cost of capital: up {_level('YIELD_MOVE_BPS', 25)}+ bps "
+                      f"in a month weighs on stock valuations, especially growth stocks."),
+        ("10Y-2Y spread", "The 10-year minus the 2-year Treasury yield: below zero (inverted) has often preceded "
+                          "recessions, and a fast un-inversion often comes just before one."),
+        ("Crude oil (WTI)", f"The US oil price, the main energy input: a jump of {_level('OIL_BREAKOUT_PCT', 8.0)}%+ in "
+                            f"5 days feeds inflation through transport and manufacturing."),
         ("5D / 1M", "The change over the last 5 trading days and the last month."),
-        ("bps", "Basis points: hundredths of a percent, so 100 bps = 1%."),
+        ("bps", "Basis points: hundredths of a percent, so 100 bps = 1% (bp in the table)."),
+        ("pts", "Percentage points: the gap between two percentages, e.g. 50% to 53% is +3 pts (pt in the table)."),
     ]),
 ]
 

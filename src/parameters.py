@@ -515,7 +515,32 @@ params_dict = {
     "UNIVERSAL_EXTRAS": {
         "MACRO_NEWS": True,        # Top macro stories from Gemini with Google Search, shared GEMINI_API_KEY
         "MACRO_NEWS_STORIES": 4,   # How many (Claude-authored, 2026-10-20: 4, was 5, to shorten the email)
-        "MARKET_DASHBOARD": True,  # Index/VIX/yield moves, 10Y-2Y spread (FRED_API_KEY), Fear & Greed, S&P breadth
+        "MARKET_DASHBOARD": True,  # Index/VIX/yield moves, 10Y-2Y spread (FRED_API_KEY), Fear & Greed, S&P breadth,
+                                   # Cboe put/call ratio
+    },
+    # Claude-authored (2026-10-21): the signal dot (green / yellow / red, grey for no clear signal) beside each market
+    # indicator in the email's Markets & macro section (create_html._signals), from Andres's "Global Macro Pulse"
+    # table. The glossary (src/digest/glossary.py) quotes these same levels.
+    "MARKET_SIGNALS": {
+        # Benchmarks: the S&P 500 against its 50- and 200-day averages; the Nasdaq-100 against the Dow (growth vs
+        # value), the S&P against the NYSE Composite (concentration), and the Russell 2000 against the S&P (credit)
+        "RELATIVE_WINDOW": "5D",        # The window those comparisons use: "1D", "5D", or "1M"
+        "RELATIVE_GAP_PTS": 1.0,        # A lead of at least this many percentage points over it counts
+        # Sentiment
+        "VIX_CALM_BELOW": 18,           # Green under it, yellow up to VIX_PANIC_ABOVE, red over that
+        "VIX_PANIC_ABOVE": 25,
+        "PUT_CALL_BULLISH_BELOW": 0.70,  # Cboe total put/call ratio: green under it (heavy call buying) ...
+        "PUT_CALL_BEARISH_ABOVE": 1.00,  # ... red over it (heavy put buying), yellow between
+        "FEAR_GREED_FEAR_BELOW": 40,    # CNN Fear & Greed: red under it, yellow up to the greed level, green over it
+        "FEAR_GREED_GREED_ABOVE": 60,
+        "BREADTH_WEAK_BELOW": 40,       # % of S&P 500 stocks above their 50-day average: red under it, yellow up
+        "BREADTH_STRONG_ABOVE": 60,     # to the strong level, green over it
+        # Macro
+        "DOLLAR_FAST_RISE_PCT": 1.0,    # US Dollar Index: green when it fell over 5 days, red when it rose this much
+        "YIELD_MOVE_BPS": 25,           # 10Y yield: red when it rose this many basis points in a month (valuations
+                                        # under pressure), green when it fell as much
+        "CURVE_UNINVERT_BPS": 15,       # 10Y-2Y spread: red when inverted, or up this many bps in 5 days from inverted
+        "OIL_BREAKOUT_PCT": 8.0,        # WTI crude: red when up this much in 5 days (inflation), yellow when down as much
     },
 
     # Claude-authored (2026-10-16): list prices for the cost estimates in each digest (src/usage_tracking.py).
@@ -623,6 +648,10 @@ params_dict = {
         "POST_MARKET_SEND_WINDOW_MINUTES": 240,  # A missed Post-Market run is retried for this long after it was due
         # Claude-authored (2026-10-17): the email itself (src/digest/create_html.py)
         "AMP_EMAIL": True,      # Also send an AMP version, whose dropdowns work in the Gmail app (needs setup: docs/watchdog.md)
+        # Claude-authored (2026-10-21): the button under the greeting: Finviz's S&P 500 heat map, sized by market cap
+        # and coloured by the past week's performance (st=w1; st=d1 is one day, w4 a month)
+        "HEAT_MAP_URL": "https://finviz.com/map?t=sec&st=w1",
+        "HEAT_MAP_LABEL": "S&P 500 heat map · 1 week",
         # Main sections that start expanded; the rest start collapsed, showing a one-line summary. Any of:
         # "risk", "markets", "holdings", "swing", "long_term" (the overview at the top is always shown)
         "OPEN_SECTIONS": [],

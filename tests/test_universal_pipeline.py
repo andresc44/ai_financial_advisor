@@ -301,13 +301,72 @@ def test_breadth_uses_enough_history_and_fred_errors_hide_the_key(monkeypatch):
         if "wikipedia" in url:
             rows = "".join(f"<tr><td>{t}</td></tr>" for t in ("AAA", "BBB", "CCC"))
             return SimpleNamespace(text=f'<table id="constituents"><tr><th>Symbol</th></tr>{rows}</table>')
-        return SimpleNamespace(json=lambda: {"fear_and_greed": {"score": 55.04, "rating": "neutral"}})
+        if "cboe" in url:
+            return SimpleNamespace(ok=False)
+        return SimpleNamespace(json=lambda: {"fear_and_greed": {"score": 55.04, "rating": "neutral", "previous_close": 50.0}})
 
     monkeypatch.setattr(macro.yf, "download", download)
     monkeypatch.setattr(macro.requests, "get", get)
     data = macro.get_market_dashboard_data()
-    assert periods[-1] == "6mo" and data["sp500_breadth"] == {"% > 50MA": "66.67%"}  # 2 of 3 above the 50-day
+    assert periods[-1] == "6mo" and data["sp500_breadth"]["% > 50MA"] == "66.67%"  # 2 of 3 above the 50-day
+    assert data["sp500_breadth"]["5D Change"] == 0.0  # The same 2 of 3 all along
     assert "SECRET123" not in json.dumps(data) and data["fear_and_greed"]["Rating"] == "Neutral"
+    assert data["fear_and_greed"]["Previous close"] == 50.0
+    assert "Error" in data["put_call_ratio"]  # Cboe had nothing
+
+
+def test_dashboard_has_the_macro_pulse_figures(monkeypatch):
+    # Claude-authored (2026-10-21): the S&P 500's averages, the 10Y yield's moves in basis points, and breadth's
+    # changes in points
+    def download(tickers, period, interval, progress):
+        days = pd.date_range("2025-10-01", periods=250, freq="B")
+        prices = {t: [(4.0 + i * 0.01) if t == "^TNX" else 100.0 + i for i in range(250)] for t in tickers}
+        if period == "6mo":  # Breadth: AAA rises all along, BBB turns down for the last 3 sessions
+            prices = {"AAA": [100.0 + i for i in range(250)], "BBB": [100.0 + i for i in range(247)] + [10.0] * 3}
+        return pd.concat({"Close": pd.DataFrame(prices, index=days)}, axis=1)
+
+    def get(url, headers=None, params=None, timeout=None):
+        if "wikipedia" in url:
+            rows = "".join(f"<tr><td>{t}</td></tr>" for t in ("AAA", "BBB"))
+            return SimpleNamespace(text=f'<table id="constituents"><tr><th>Symbol</th></tr>{rows}</table>')
+        if "cboe" in url:
+            return SimpleNamespace(ok=False)
+        return SimpleNamespace(json=lambda: {"fear_and_greed": {"score": 30.0, "rating": "fear"}})
+
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    monkeypatch.setattr(macro.yf, "download", download)
+    monkeypatch.setattr(macro.requests, "get", get)
+    data = macro.get_market_dashboard_data()
+    spy, tnx = data["yahoo_finance"]["S&P 500 (SPY)"], data["yahoo_finance"]["10Y Treasury Yield ($TNX)"]
+    assert (spy["50D MA"], spy["200D MA"]) == (324.5, 249.5)  # The last 50 and 200 closes of 100..349
+    assert (tnx["1D bps"], tnx["5D bps"], tnx["1M bps"]) == (1.0, 5.0, 21.0)  # +0.01% a day
+    assert data["sp500_breadth"]["% > 50MA"] == "50.00%" and data["sp500_breadth"]["5D Change"] == -50.0
+
+
+def test_put_call_ratio_walks_back_to_the_sessions_cboe_published(monkeypatch):
+    # Claude-authored (2026-10-21): Cboe posts each session's file after the close; a missing one is a 403
+    published = {"2026-10-20": "0.87", "2026-10-19": "0.85", "2026-10-16": "0.92", "2026-10-15": "0.80",
+                 "2026-10-14": "0.88", "2026-10-13": "0.83"}
+    asked = []
+
+    def get(url, headers=None, timeout=None):
+        assert timeout
+        day = url.rsplit("/", 1)[-1][:10]
+        asked.append(day)
+        if day not in published:
+            return SimpleNamespace(ok=False)
+        ratios = [{"name": "INDEX PUT/CALL RATIO", "value": "1.01"}, {"name": "TOTAL PUT/CALL RATIO", "value": published[day]}]
+        return SimpleNamespace(ok=True, json=lambda: {"ratios": ratios})
+
+    monkeypatch.setattr(macro.requests, "get", get)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    at_close = datetime(2026, 10, 21, 16, 10, tzinfo=ZoneInfo("America/New_York"))  # Today's file isn't out yet
+    result = macro.fetch_put_call_ratio(now=at_close)
+    assert result == {"Ratio": 0.87, "Session": "2026-10-20", "5D Avg": round((0.87 + 0.85 + 0.92 + 0.80 + 0.88) / 5, 3)}
+    assert asked == ["2026-10-21", "2026-10-20", "2026-10-19", "2026-10-16", "2026-10-15", "2026-10-14"]  # Sessions only
+    published.clear()
+    assert "Error" in macro.fetch_put_call_ratio(now=at_close)
 
 
 def test_macro_content_is_included_even_without_picks(monkeypatch, telegram):

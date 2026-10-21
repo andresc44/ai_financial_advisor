@@ -98,7 +98,15 @@ MARKET_NAMES = {
     "Crude Oil (WTI)": ("Crude Oil", "WTI"),
     "NYSE Composite ($NYA)": ("NYSE Comp.", "NYA"),
 }
-KEY_MARKETS = ("S&P 500", "Nasdaq-100", "VIX", "10Y Yield")  # Tiles shown first in Markets & macro
+# Claude-authored (2026-10-21): Markets & macro is Andres's "Global Macro Pulse" table: each indicator in its group,
+# with a dot by params_dict["MARKET_SIGNALS"] (_signals). These are the dashboard's names (macro_indicators.py).
+SP500, NASDAQ, DOW, NYSE, RUSSELL = (
+    "S&P 500 (SPY)", "Nasdaq-100 (QQQ)", "Dow Jones (DIA)", "NYSE Composite ($NYA)", "Russell 2000 (IWM)")
+VIX, DOLLAR, TEN_YEAR, OIL = "VIX Index", "US Dollar Index (DXY)", "10Y Treasury Yield ($TNX)", "Crude Oil (WTI)"
+SIGNAL_GROUPS = ("Benchmarks", "Sentiment", "Macro")
+SIGNAL_DOT_CLASSES = {"pos": "dp", "warn": "dw", "neg": "dn", "flat": "df"}  # Green, yellow, red, grey (template CSS)
+SIGNAL_EMOJI = {"pos": "🟢", "warn": "🟡", "neg": "🔴", "flat": "⚪"}  # The same dots in the plain-text version
+WINDOW_WORDS = {"1D": "1 day", "5D": "5 days", "1M": "1 month"}
 SECTION_ICONS = {  # (emoji, tile colour) beside each section's title
     "risk": ("🛡️", "#FFEDD5"), "markets": ("🌐", "#E0F2FE"), "holdings": ("💼", "#E0E7FF"),
     "swing": ("⚡", "#FEF3C7"), "long_term": ("🌱", "#DCFCE7"), "glossary": ("📖", "#F1F5F9"),
@@ -682,8 +690,9 @@ def _portfolio(holdings: list[dict], beta: Any, cards: list[dict], idea_counts: 
         "currency": code,
         "value": value,
         # Claude-authored (2026-10-21): a long total (a million dollars, or pesos) gets a smaller font, so it fits a
-        # 280 px phone: at 34 px about 11 characters fit (measured in a browser)
-        "value_size": 34 if len(value) <= 11 else 28 if len(value) <= 12 else 24 if len(value) <= 15 else 20,
+        # phone. The Gmail app enlarges email text by the phone's font-size setting (Andres's about 1.5-1.75x) and
+        # clips what doesn't fit: "A$12,060.73" at 34 px was cut off, so 34 px is for 9 characters at most
+        "value_size": 34 if len(value) <= 9 else 26 if len(value) <= 11 else 22 if len(value) <= 13 else 18,
         # e.g. "$102,345.67 USD · 1 CAD = 0.7111 USD", when the home currency isn't USD
         "usd_value": (f"{_money(total)} {MONEY_CURRENCY} · {_rate_text(code, usd_per_unit)}"
                       if code != MONEY_CURRENCY else ""),
@@ -800,14 +809,23 @@ def _account(company: Any, holdings: list[dict], home: tuple[str, float] = (MONE
     return {"company": company, "accounts": rows, "summary": summary}
 
 
-def _change(text: Any) -> dict:
-    """A dashboard change string such as '+0.28%' -> {'text', 'tone'}."""
-    raw = str(text or "").strip()
-    try:
-        number = float(raw.rstrip("%"))
-    except ValueError:
+def _figure(value: Any) -> Optional[float]:
+    """Claude-authored (2026-10-21): a dashboard figure stored as a number or as text: 4.5, '+0.28%', '-4.0 bps'."""
+    if isinstance(value, str):
+        match = re.match(r"\s*([+-]?\d+(?:\.\d+)?)", value)
+        return float(match.group(1)) if match else None
+    return _num(value)
+
+
+def _change(text: Any, unit: str = "%") -> dict:
+    """
+    A dashboard change such as '+0.28%' -> {'text', 'tone'}. 2026-10-21: `unit` "bp" (yields and the spread, in
+    basis points) or "pt" (breadth, in percentage points) shows whole numbers, e.g. '+15bp'.
+    """
+    number = _figure(text)
+    if number is None:
         return {"text": DASH, "tone": "muted"}
-    return {"text": f"{number:+.1f}%", "tone": _tone(number)}
+    return {"text": f"{number:+.1f}%" if unit == "%" else f"{number:+.0f}{unit}", "tone": _tone(number)}
 
 
 def _market_name(name: str) -> tuple[str, str]:
@@ -816,6 +834,139 @@ def _market_name(name: str) -> tuple[str, str]:
         return MARKET_NAMES[name]
     match = re.match(r"^(.*?)\s*\((.+)\)$", name)
     return (match.group(1), match.group(2).lstrip("$")) if match else (name, "")
+
+
+def _day_move(change: Optional[float], day: str, unit: str = "%", up_is_good: bool = True) -> tuple[str, str]:
+    """A signal row's sub-line and its tone, e.g. ('+0.3% day', 'pos'); a rising VIX or yield isn't good news."""
+    if change is None:
+        return "", "muted"
+    text = f"{change:+.1f}%" if unit == "%" else f"{change:+.0f} {unit}"
+    return f"{text} {day}", _tone(change if up_is_good else -change)
+
+
+def _signal(group: str, name: str, tone: str, text: str, value: str, sub: str = "", sub_tone: str = "muted") -> dict:
+    return {"group": group, "name": name, "tone": tone, "dot": SIGNAL_DOT_CLASSES[tone], "emoji": SIGNAL_EMOJI[tone],
+            "text": text, "value": value, "sub": sub, "sub_tone": sub_tone}
+
+
+def _signals(market_data: dict, day: str) -> list[dict]:
+    """
+    Claude-authored (2026-10-21): one row per indicator of Andres's "Global Macro Pulse" table, in its groups
+    (SIGNAL_GROUPS), each with a green, yellow, or red dot by params_dict["MARKET_SIGNALS"] (grey when there's no
+    clear signal), its value and move, and what the dot means. The Nasdaq-100 and the Dow share a row, since one
+    leading the other is the signal for both. An indicator missing from the dashboard has no row.
+    """
+    levels = params_dict.get("MARKET_SIGNALS") or {}
+    yahoo = market_data.get("yahoo_finance") or {}
+
+    def get(name: str, key: str) -> Optional[float]:
+        metric = yahoo.get(name)
+        return _figure(metric.get(key)) if isinstance(metric, dict) else None
+
+    signals = []
+    # Benchmarks
+    price, ma50, ma200 = (get(SP500, key) for key in ("Latest", "50D MA", "200D MA"))
+    if price is not None:
+        tone, text = {(True, True): ("pos", "Above its 50- and 200-day averages: an uptrend"),
+                      (True, False): ("warn", "Above its 50-day average, below its 200-day"),
+                      (False, True): ("warn", "Below its 50-day average, above its 200-day: a pullback"),
+                      (False, False): ("neg", "Below its 50- and 200-day averages: a downtrend")}[
+            (price > ma50, price > ma200)] if ma50 and ma200 else ("flat", "Not enough history for its averages")
+        signals.append(_signal("Benchmarks", "S&P 500", tone, text, _money(price), *_day_move(get(SP500, "1D %"), day)))
+    window = levels.get("RELATIVE_WINDOW", "5D")
+    gap, span = float(levels.get("RELATIVE_GAP_PTS", 1.0)), f"over {WINDOW_WORDS.get(window, window)}"
+
+    def lead(first: str, second: str) -> Optional[float]:  # first's move minus second's, in percentage points
+        a, b = get(first, f"{window} %"), get(second, f"{window} %")
+        return None if a is None or b is None else a - b
+
+    growth, broad, small = lead(NASDAQ, DOW), lead(NYSE, SP500), lead(RUSSELL, SP500)
+    if growth is not None:
+        tone, text = (("pos", "Growth beating value: risk-on") if growth >= gap else
+                      ("warn", "Value beating growth: defensive") if growth <= -gap else ("flat", "Growth and value even"))
+        signals.append(_signal("Benchmarks", "Nasdaq-100 vs Dow", tone, text, f"{growth:+.1f} pts", span))
+    if broad is not None:
+        tone, text = (("warn", "The S&P beat the broad market: a few giants carry it") if broad <= -gap else
+                      ("flat", "The broad market beat the S&P: the giants lag") if broad >= gap else
+                      ("pos", "In step with the S&P: broad participation"))
+        signals.append(_signal("Benchmarks", "NYSE vs S&P 500", tone, text, f"{broad:+.1f} pts", span))
+    if small is not None:
+        tone, text = (("neg", "Small caps lagging: a tight-credit warning") if small <= -gap else
+                      ("pos", "Small caps leading: economic confidence") if small >= gap else
+                      ("flat", "Small caps in step with the S&P"))
+        signals.append(_signal("Benchmarks", "Russell 2000 vs S&P", tone, text, f"{small:+.1f} pts", span))
+    # Sentiment
+    vix = get(VIX, "Latest")
+    if vix is not None:
+        calm, panic = levels.get("VIX_CALM_BELOW", 18), levels.get("VIX_PANIC_ABOVE", 25)
+        tone, text = (("pos", f"Calm (under {calm:g})") if vix < calm else ("neg", f"Panic (over {panic:g})")
+                      if vix > panic else ("warn", f"Elevated ({calm:g} to {panic:g})"))
+        signals.append(_signal("Sentiment", "VIX", tone, text, f"{vix:.2f}",
+                               *_day_move(get(VIX, "1D %"), day, up_is_good=False)))
+    put_call = market_data.get("put_call_ratio") or {}
+    ratio, average = _figure(put_call.get("Ratio")), _figure(put_call.get("5D Avg"))
+    if ratio is not None:
+        bullish, bearish = levels.get("PUT_CALL_BULLISH_BELOW", 0.70), levels.get("PUT_CALL_BEARISH_ABOVE", 1.00)
+        tone, text = (("pos", "Bullish: heavy call buying") if ratio < bullish else
+                      ("neg", "Extreme bearish: heavy put buying") if ratio > bearish else ("warn", "Neutral"))
+        session = _day(put_call.get("Session"))
+        text += f" ({_short_date(session)} session)" if session else ""
+        signals.append(_signal("Sentiment", "Put/call ratio", tone, text, f"{ratio:.2f}",
+                               f"avg {average:.2f}" if average is not None else ""))
+    fear_greed = market_data.get("fear_and_greed") or {}
+    score = _figure(fear_greed.get("Score"))
+    if score is not None:
+        fear, greed = levels.get("FEAR_GREED_FEAR_BELOW", 40), levels.get("FEAR_GREED_GREED_ABOVE", 60)
+        tone, text = (("pos", "Greed") if score > greed else ("neg", "Fear") if score < fear else ("warn", "Neutral"))
+        rating = str(fear_greed.get("Rating") or "")
+        if rating.lower() == f"extreme {text.lower()}":  # CNN's own word, when it says extreme
+            text = rating.capitalize()
+        previous = _figure(fear_greed.get("Previous close"))
+        signals.append(_signal("Sentiment", "Fear & Greed", tone, text, f"{score:.0f}",
+                               f"was {previous:.0f}" if previous is not None else ""))
+    breadth = market_data.get("sp500_breadth") or {}
+    share = _figure(breadth.get("% > 50MA"))
+    if share is not None:
+        weak, strong = levels.get("BREADTH_WEAK_BELOW", 40), levels.get("BREADTH_STRONG_ABOVE", 60)
+        tone, label = (("pos", "Strong") if share > strong else ("neg", "Weak") if share < weak else ("warn", "Neutral"))
+        signals.append(_signal("Sentiment", "S&P breadth", tone,
+                               f"{label}: the share of S&P 500 stocks above their 50-day average", f"{share:.0f}%",
+                               *_day_move(_figure(breadth.get("1D Change")), day, unit="pts")))
+    # Macro
+    dollar, dollar_5d = get(DOLLAR, "Latest"), get(DOLLAR, "5D %")
+    if dollar is not None and dollar_5d is not None:
+        tone, text = (("pos", "Falling: a tailwind for stocks") if dollar_5d < 0 else
+                      ("neg", "Rising fast: a headwind for stocks") if dollar_5d >= levels.get("DOLLAR_FAST_RISE_PCT", 1.0)
+                      else ("flat", "Rising slowly"))
+        signals.append(_signal("Macro", "US Dollar (DXY)", tone, text, f"{dollar:.2f}", f"{dollar_5d:+.1f}% 5D"))
+    ten, month = get(TEN_YEAR, "Latest"), get(TEN_YEAR, "1M bps")
+    if ten is not None:
+        move = levels.get("YIELD_MOVE_BPS", 25)
+        tone, text = (("flat", "Steady") if month is None else
+                      ("neg", "Rising: pressure on stock valuations") if month >= move else
+                      ("pos", "Falling: support for stock valuations") if month <= -move else ("flat", "Steady"))
+        text += f" ({month:+.0f} bps in a month)" if month is not None else ""
+        signals.append(_signal("Macro", "10Y yield", tone, text, f"{ten:.2f}%",
+                               *_day_move(get(TEN_YEAR, "1D bps"), day, unit="bps", up_is_good=False)))
+    curve = market_data.get("yield_curve_10y_2y") or {}
+    spread = None if curve.get("Error") else _figure(curve.get("Spread"))
+    if spread is not None:
+        five = _figure(curve.get("5D Change"))
+        if spread < 0:
+            tone, text = "neg", "Inverted: a recession warning"
+        elif five is not None and five >= levels.get("CURVE_UNINVERT_BPS", 15) and spread - five / 100 < 0:
+            tone, text = "neg", f"Un-inverting fast ({five:+.0f} bps in 5 days): often just before a recession"
+        else:
+            tone, text = "pos", "Positive: no recession signal"
+        signals.append(_signal("Macro", "10Y–2Y spread", tone, text, f"{spread:+.2f}%",
+                               *_day_move(_figure(curve.get("1D Change")), day, unit="bps")))
+    oil, oil_5d = get(OIL, "Latest"), get(OIL, "5D %")
+    if oil is not None and oil_5d is not None:
+        breakout = levels.get("OIL_BREAKOUT_PCT", 8.0)
+        tone, text = (("neg", "Spiking: an inflation risk") if oil_5d >= breakout else
+                      ("warn", "Falling sharply") if oil_5d <= -breakout else ("flat", "No sharp weekly move"))
+        signals.append(_signal("Macro", "Crude oil (WTI)", tone, text, _money(oil), f"{oil_5d:+.1f}% 5D"))
+    return signals
 
 
 def _market(market_data: Any, day: str) -> Optional[dict]:
@@ -835,34 +986,30 @@ def _market(market_data: Any, day: str) -> Optional[dict]:
             last = f"{latest:,.0f}" if latest >= 10_000 else f"{latest:,.2f}"
             if ticker in ETF_TICKERS:  # A US ETF's share price
                 last = f"{CURRENCY_SYMBOLS[IDEAS_CURRENCY]}{latest:,.2f}"
-        rows.append({"name": short, "ticker": ticker, "last": last,
-                     "d1": _change(metric.get("1D %")), "d5": _change(metric.get("5D %")),
-                     "m1": _change(metric.get("1M %"))})
+        # 2026-10-21: a yield moves in basis points (payloads from before then only have % changes)
+        moves = ([_change(metric.get(key), "bp") for key in ("1D bps", "5D bps", "1M bps")]
+                 if name == TEN_YEAR and "1D bps" in metric else
+                 [_change(metric.get(key)) for key in ("1D %", "5D %", "1M %")])
+        rows.append({"name": short, "ticker": ticker, "last": last, "d1": moves[0], "d5": moves[1], "m1": moves[2]})
 
-    chips = []
-    fear_greed = market_data.get("fear_and_greed") or {}
-    if _num(fear_greed.get("Score")) is not None:
-        rating = str(fear_greed.get("Rating") or "")
-        tone = "neg" if "fear" in rating.lower() else "pos" if "greed" in rating.lower() else "ink"
-        chips.append(_stat("Fear & Greed", f"{_num(fear_greed['Score']):.0f}", tone, rating, tone))
+    # Claude-authored (2026-10-21): the spread and breadth in the full table too, in basis points and points
     curve = market_data.get("yield_curve_10y_2y") or {}
-    if curve.get("Spread") and not curve.get("Error"):
-        spread = _num(str(curve["Spread"]).rstrip("%"))
-        chips.append(_stat("10Y–2Y spread", str(curve["Spread"]), "neg" if spread is not None and spread < 0 else "ink",
-                           f"{curve.get('1D Change', '')} {day}".strip() if curve.get("1D Change") else ""))
-    breadth = (market_data.get("sp500_breadth") or {}).get("% > 50MA")
-    if breadth:
-        share = _num(str(breadth).rstrip("%"))
-        tone = "ink" if share is None else "neg" if share < 40 else "pos" if share > 60 else "ink"
-        chips.append(_stat("S&P breadth", f"{share:.0f}%" if share is not None else str(breadth), tone,
-                           "above 50-day avg"))
-    if not rows and not chips:
+    spread = None if curve.get("Error") else _figure(curve.get("Spread"))
+    if spread is not None:
+        rows.append({"name": "10Y–2Y", "ticker": "spread", "last": f"{spread:+.2f}%", "d1": _change(curve.get("1D Change"), "bp"),
+                     "d5": _change(curve.get("5D Change"), "bp"), "m1": _change(None)})
+    breadth = market_data.get("sp500_breadth") or {}
+    share = _figure(breadth.get("% > 50MA"))
+    if share is not None:
+        rows.append({"name": "S&P breadth", "ticker": "", "last": f"{share:.0f}%",
+                     **{key: _change(breadth.get(field), "pt") for key, field in
+                        (("d1", "1D Change"), ("d5", "5D Change"), ("m1", "1M Change"))}})
+    signals = _signals(market_data, day)
+    if not rows and not signals:
         return None
-    # Claude-authored (2026-10-17): the four tiles shown first when the section opens; the rest are one tap away
-    key = [_stat(f"{row['name']} · {row['ticker']}" if row["ticker"] in ETF_TICKERS else row["name"], row["last"],
-                 sub=f"{row['d1']['text']} {day}", sub_tone=row["d1"]["tone"])
-           for row in rows if row["name"] in KEY_MARKETS]
-    return {"rows": rows, "chips": chips, "key": key}
+    # Claude-authored (2026-10-21): the signals, in their groups, replace the four tiles and three gauges shown first
+    groups = [{"name": group, "signals": [s for s in signals if s["group"] == group]} for group in SIGNAL_GROUPS]
+    return {"rows": rows, "signals": signals, "groups": [group for group in groups if group["signals"]]}
 
 
 def _stories(headline_news: Any) -> list[dict]:
@@ -1155,6 +1302,10 @@ def build_view(payload: dict) -> dict:
         "icons": SECTION_ICONS,
         "greeting": _greeting(started, user_name),
         "prepared": _prepared(started),
+        # Claude-authored (2026-10-21): the button under the greeting (DIGEST.HEAT_MAP_URL)
+        "heat_map": ({"url": params_dict["DIGEST"]["HEAT_MAP_URL"],
+                      "label": params_dict["DIGEST"].get("HEAT_MAP_LABEL") or "S&P 500 heat map"}
+                     if params_dict["DIGEST"].get("HEAT_MAP_URL") else None),
         "preheader": _preheader(portfolio, cards, len(swing) + len(long_term), market, day),
         "day_label": day.capitalize(),  # "Prev. day" or "Day"
         "day": day,
@@ -1301,6 +1452,8 @@ def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
 def render_text(view: dict) -> str:
     """The plain-text part of the email: the same content, without the dropdowns."""
     lines = [view["subject"], view["date_long"], "", view["greeting"] + ".", view["prepared"], ""]
+    if view["heat_map"]:
+        lines[-1:-1] = [f"{view['heat_map']['label']}: {view['heat_map']['url']}"]
     for issue in view["issues"]:
         lines.append(f"! {issue['title']}: {issue['message']}")
     portfolio, risk, account = view["portfolio"], view["risk"], view["account"]
@@ -1323,7 +1476,10 @@ def render_text(view: dict) -> str:
         lines += ["", f"MARKETS ({view['day_label']} / 5D / 1M)"]
         lines += [f"  {r['name']} {r['last']}  {r['d1']['text']} / {r['d5']['text']} / {r['m1']['text']}"
                   for r in view["market"]["rows"]]
-        lines += [f"  {c['label']}: {c['value']} {c['sub']}".rstrip() for c in view["market"]["chips"]]
+        for group in view["market"]["groups"]:  # Claude-authored (2026-10-21)
+            lines += ["", f"{group['name'].upper()}"]
+            lines += [f"  {s['emoji']} {s['name']} {s['value']}" + (f" ({s['sub']})" if s["sub"] else "")
+                      + f": {s['text']}" for s in group["signals"]]
     if view["stories"]:
         lines += ["", "MACRO NEWS"]
         for story in view["stories"]:

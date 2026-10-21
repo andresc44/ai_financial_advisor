@@ -245,7 +245,7 @@ a{text-decoration:none;}
 .ici{width:36px;height:36px;text-align:center;vertical-align:middle;font-size:18px;line-height:1;}
 .ici img{vertical-align:middle{{ IMP }};}
 .sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
-.st{padding:10px 8px;vertical-align:top;}
+.st{padding:10px 6px;vertical-align:top;}  /* 2026-10-21: 6px sides (was 8), for the Gmail app's enlarged text */
 .sg{background-color:#F5F7FA;border-radius:12px;}
 .sb{border-left:1px solid #E5EAF0;}
 .sh{border-top:1px solid #E5EAF0;}
@@ -281,6 +281,14 @@ a{text-decoration:none;}
 .btn{display:inline-block;padding:6px 12px;margin:0 2px 4px 0;border-radius:999px;background-color:#EAF2FB;color:#0B6BCB;font-size:12px;line-height:16px;font-weight:700;}
 .dot{display:inline-block;width:7px;height:7px;border-radius:4px;}
 .nd{width:14px;padding-top:7px;vertical-align:top;}
+.qd{width:14px;padding-top:12px;vertical-align:top;}
+.qn{padding:5px 0;vertical-align:top;}
+.qv{padding:5px 0 5px 8px;vertical-align:top;text-align:right;white-space:nowrap;}
+.qn b,.qv b{color:#0F2A44;}
+.dp{background-color:#16A34A;}
+.dw{background-color:#F59E0B;}
+.dn{background-color:#DC2626;}
+.df{background-color:#94A3B8;}
 .nt{padding-bottom:10px;vertical-align:top;}
 .gt{margin:0;font-size:13px;line-height:19px;padding-top:10px;}
 .gt b{color:#0F2A44;}
@@ -293,8 +301,11 @@ a{text-decoration:none;}
 .kl{color:#64748B;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;text-align:right;}
 .mh{padding:0 0 6px 4px;font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
-.mc{padding:7px 0 7px 4px;border-top:1px solid #EEF2F6;font-size:12px;line-height:17px;white-space:nowrap;}
-.mn{padding-left:0;white-space:normal;font-size:13px;font-weight:700;color:#0F2A44;}
+/* 2026-10-21: the full indicator table puts each name on its own line (.mn) above its figures (.mc), so a row
+   fits the Gmail app's enlarged text */
+.mc{padding:1px 0 7px 4px;font-size:12px;line-height:17px;white-space:nowrap;}
+.mn{padding:7px 0 0 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;font-weight:700;color:#0F2A44;}
+.m0{padding-left:0;}
 .mt{font-size:11px;font-weight:400;color:#64748B;}
 .rv{vertical-align:top;text-align:right;padding-left:8px;white-space:nowrap;}
 .cd{background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;}
@@ -334,6 +345,7 @@ u + .body .cv{display:none;}
 <div class="lb" style="letter-spacing:1.2px;color:#0B6BCB;">{{ period_icon }}&nbsp; {{ period }} &middot; {{ date_short }}</div>
 <div style="font-size:25px;line-height:31px;font-weight:800;color:#0F2A44;padding-top:6px;">{{ greeting }}</div>
 {% if prepared %}<div class="xs mu" style="padding-top:3px;">{{ prepared }}</div>{% endif %}
+{% if heat_map %}<div class="t10"><a href="{{ heat_map.url }}" class="btn">{{ heat_map.label }}</a></div>{% endif %}
 </td></tr>
 
 {# ---------- Notices: why parts of the digest are missing (always shown) ---------- #}
@@ -350,7 +362,7 @@ u + .body .cv{display:none;}
 {% if portfolio %}
 {% call card("18px") %}
 {{ label(portfolio.label, MUTED) }}
-<div style="font-size:{{ portfolio.value_size }}px;line-height:40px;font-weight:800;color:#0F2A44;padding-top:4px;">{{ portfolio.value }}</div>
+<div style="font-size:{{ portfolio.value_size }}px;line-height:40px;font-weight:800;color:#0F2A44;padding-top:4px;overflow-wrap:anywhere;">{{ portfolio.value }}</div>
 {% if portfolio.usd_value %}<div class="xs mu">{{ portfolio.usd_value }}</div>{% endif %}
 <div style="padding-top:6px;"><span class="bd" style="font-size:13px;line-height:18px;padding:3px 10px;background-color:{{ '#DCFCE7' if portfolio.change_tone == 'pos' else '#FEE2E2' if portfolio.change_tone == 'neg' else '#F1F5F9' }};color:{{ TONES[portfolio.change_tone] }};">{{ portfolio.change }}</span><span class="xs mu">&nbsp; {{ portfolio.session }}</span></div>
 <div class="t16">{{ stats(portfolio.stats) }}</div>
@@ -409,18 +421,26 @@ u + .body .cv{display:none;}
 {% endcall %}
 {% endif %}
 
-{# ---------- Markets & macro: key tiles first, the full table and the stories one tap away ---------- #}
+{# ---------- Markets & macro: each indicator's signal by group, the full table and the stories one tap away.
+    2026-10-21: the groups and levels of Andres's "Global Macro Pulse" table (create_html._signals). ---------- #}
 {% if market or stories %}
 {% call section("markets", "Markets & macro", markets_summary) %}
 {% if market %}
-{% if market.key %}{{ stats(market.key) }}{% endif %}
-{% if market.chips %}<div style="padding-top:{{ '8px' if market.key else '0' }};">{{ stats(market.chips) }}</div>{% endif %}
-{% if market.rows %}
-{% call fold("All indicators", top="t10") %}
+{% for g in market.groups %}
+{{ label(g.name, MUTED, top="0" if loop.first else "12px") }}
 <table {{ T }}>
-<tr><td class="mh" style="padding-left:0;">Market</td>{% for head in ("Last", day_label, "5D", "1M") %}<td align="right" class="mh">{{ head }}</td>{% endfor %}</tr>
+{% for s in g.signals %}
+<tr><td class="qd"><span class="dot {{ s.dot }}"></span></td><td class="qn"><b>{{ s.name }}</b><div class="xs mu">{{ s.text }}</div></td><td class="qv"><b>{{ s.value }}</b>{% if s.sub %}<div class="xs {{ TC[s.sub_tone] }}">{{ s.sub }}</div>{% endif %}</td></tr>
+{% endfor %}
+</table>
+{% endfor %}
+{% if market.rows %}
+{% call fold("All indicators", top="t10" if market.groups else "") %}
+<table {{ T }}>
+<tr>{% for head in ("Last", day_label, "5D", "1M") %}<td{% if not loop.first %} align="right"{% endif %} class="mh{{ ' m0' if loop.first else '' }}">{{ head }}</td>{% endfor %}</tr>
 {% for r in market.rows %}
-<tr><td class="mc mn">{{ r.name }}{% if r.ticker %} <span class="mt">{{ r.ticker }}</span>{% endif %}</td><td class="mc ar">{{ r.last }}</td><td class="mc ar fb {{ TC[r.d1.tone] }}">{{ r.d1.text }}</td><td class="mc ar {{ TC[r.d5.tone] }}">{{ r.d5.text }}</td><td class="mc ar {{ TC[r.m1.tone] }}">{{ r.m1.text }}</td></tr>
+<tr><td colspan="4" class="mn">{{ r.name }}{% if r.ticker %} <span class="mt">{{ r.ticker }}</span>{% endif %}</td></tr>
+<tr><td class="mc m0">{{ r.last }}</td><td class="mc ar fb {{ TC[r.d1.tone] }}">{{ r.d1.text }}</td><td class="mc ar {{ TC[r.d5.tone] }}">{{ r.d5.text }}</td><td class="mc ar {{ TC[r.m1.tone] }}">{{ r.m1.text }}</td></tr>
 {% endfor %}
 </table>
 {% endcall %}

@@ -320,7 +320,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 `src/digest/create_html.py` turns each user's payload into the email, and `src/digest/email_template.html` lays it out.
 
 **What the email answers, in order** (UI pass, 2026-10-17): how is my portfolio doing, do I need to act, what is the market doing, and are there new ideas.
-1. **Header:** the period (☀️ pre-market or 🌙 post-market), the date, a greeting by the time of day in the user's home timezone, and when it was prepared.
+1. **Header:** the period (☀️ pre-market or 🌙 post-market), the date, a greeting by the time of day in the user's home timezone, and when it was prepared. Since 2026-10-21 a button under it opens Finviz's S&P 500 heat map over the past week (`DIGEST.HEAT_MAP_URL`, `https://finviz.com/map?t=sec&st=w1`).
 2. **Notices** about anything missing.
 3. **Overview card** (always open):
    - the portfolio's value, with the day's change in a coloured pill. Since 2026-10-21 these are in the user's home currency (`<NAME>_HOME_CURRENCY`), and when that isn't USD, a line under the value gives it in USD with the rate, e.g. "$102,345.67 USD · 1 CAD = 0.7111 USD";
@@ -334,7 +334,24 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
      - **HTML version:** the chips stay plain there, because jump links don't work in the Gmail app or into closed dropdowns.
    - the connected brokerage, with each account's value in a small dropdown.
 4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes.
-5. **Markets & macro:** four key tiles (S&P 500, Nasdaq-100, VIX, 10Y yield) and the gauges. The full table is under "All indicators", followed by the top stories.
+5. **Markets & macro:** since 2026-10-21, Andres's "Global Macro Pulse" table: each indicator on a row in its group, with a signal dot, its value and move, and what the dot means (`create_html._signals`). The full table (1 day, 5 days, 1 month) is under "All indicators", followed by the top stories. The four tiles and three gauges this replaced are gone.
+
+   | Group | Indicator | Green | Yellow | Red | Grey |
+   |---|---|---|---|---|---|
+   | Benchmarks | S&P 500 vs its 50- and 200-day averages | above both | above one | below both | |
+   | | Nasdaq-100 vs Dow, over `RELATIVE_WINDOW` (5 days) | growth leads by `RELATIVE_GAP_PTS` (1) pt+: risk-on | value leads: defensive | | even |
+   | | NYSE Composite vs S&P 500 | in step: broad participation | the S&P leads: concentration | | the NYSE leads |
+   | | Russell 2000 vs S&P 500 | small caps lead: confidence | | small caps lag: tight credit | in step |
+   | Sentiment | VIX | under 18 | 18-25 | over 25 | |
+   | | Cboe total put/call ratio (and its 5-day average) | under 0.70 | between | over 1.00 | |
+   | | CNN Fear & Greed (and the prior close) | over 60 | 40-60 | under 40 | |
+   | | % of S&P 500 stocks above their 50-day average | over 60% | 40-60% | under 40% | |
+   | Macro | US Dollar Index, 5-day move | falling | | up 1%+ | rising slowly |
+   | | 10Y yield, 1-month move | down 25+ bps | | up 25+ bps | steady |
+   | | 10Y-2Y spread | positive | | inverted, or up 15+ bps in 5 days from inverted | |
+   | | WTI crude, 5-day move | | down 8%+ | up 8%+ | no sharp move |
+
+   Every level is in `params_dict["MARKET_SIGNALS"]`, and the glossary quotes them from there. The Nasdaq-100 and the Dow share a row, since one leading the other is the signal for both. Yields and the spread move in basis points ("+15bp" in the table), breadth in percentage points.
 6. **Your holdings:** most urgent signal first, then largest position. A stock held in several accounts gets one row.
 7. **Swing ideas.**
 8. **Long-term ideas.**
@@ -397,6 +414,12 @@ It is built for a phone first: one column up to 600 px wide.
   - **Margins:** narrow everywhere.
   - **Extra tightening:** on screens up to 420 px, margins and fonts tighten further where supported.
   - **Tested:** with every dropdown open, in both versions, nothing runs past the right edge at 280–390 px wide, with or without that CSS. The test also covered six-figure values and the longest badges.
+  - **Enlarged text (2026-10-21):** the Gmail app on Android enlarges email text by the phone's font-size setting (Andres's: about 1.75×), and clips whatever is wider than its view instead of scrolling. "A$12,060.73" at 34 px cut the overview card off on the right. So:
+    - the portfolio total is 34 px only up to 9 characters, then 26, 22, and 18 px;
+    - the full indicator table puts each name on its own line above its figures;
+    - figure boxes have 6 px sides.
+
+    Tested with every font multiplied: it fits at 1.75× in 375 and 395 px views and at 1.5× in 345 px. At 2×, the idea cards' headers still run about 10 px over. Keep any text that can't wrap (big figures, no-wrap cells, rows of figures) under about 190 px at normal size.
 
 Where they work:
 - **Collapse in the HTML version:** Apple Mail (including the iPhone Mail app with a Gmail account) and Samsung Email.
@@ -586,7 +609,7 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
 
 **Macro content.** It is switched with `UNIVERSAL_EXTRAS`, and both parts are on by default. Both run in the background while the picks are built, and both are included even when no picks could be made.
 - `headline_news`: `{"macro_stories": [{"priority", "event_summary", "market_impact", "source_url"}]}`, the top `UNIVERSAL_EXTRAS.MACRO_NEWS_STORIES` (4) stories, each impact one sentence, from Gemini with Google Search, using the shared `GEMINI_API_KEY`. A `source_url` is kept only when it matches a page the search returned; otherwise it's `null`.
-- `market_data`: index, VIX, dollar, 10-year yield, and oil moves (1 day, 5 days, 1 month); the 10Y–2Y spread (FRED); CNN Fear & Greed; and the share of S&P 500 stocks above their 50-day average.
+- `market_data`: index, VIX, dollar, 10-year yield, and oil moves (1 day, 5 days, 1 month); the 10Y–2Y spread (FRED); CNN Fear & Greed; and the share of S&P 500 stocks above their 50-day average. Added 2026-10-21 for the signals: the S&P 500's 50- and 200-day averages (a year of Yahoo history, was two months), the 10Y yield's moves in basis points, the spread's 5-day move, Fear & Greed's previous close, breadth's 1-day, 5-day, and 1-month changes, and `put_call_ratio`: Cboe's total put/call ratio for the latest session it has published (one JSON file per session at `cdn.cboe.com`, posted after the close) and the average of the last 5.
 
 A section that can't be fetched holds `{"Error": ...}` and adds a `universal_issues` entry. It never stops the digest.
 

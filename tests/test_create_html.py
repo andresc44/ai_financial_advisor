@@ -465,7 +465,102 @@ def test_review_notes_and_stories_are_rows_with_titles():
         assert html.index("</summary>", summary_start) > html.index(title)  # The title is the row's header
     # Markets opens on its key tiles; the full table is one tap away
     assert ">All indicators<" in html and ">Why it matters<" in html
-    assert [tile["label"] for tile in view["market"]["key"]] == ["S&P 500 · SPY", "10Y Yield"]  # The key ones it has
+    # 2026-10-21: the signals it has data for, in their groups
+    assert [(g["name"], [s["name"] for s in g["signals"]]) for g in view["market"]["groups"]] == [
+        ("Benchmarks", ["S&P 500"]), ("Sentiment", ["Fear & Greed", "S&P breadth"]),
+        ("Macro", ["10Y yield", "10Y–2Y spread"])]
+
+
+def macro_pulse(**changes):
+    """A full dashboard (macro_indicators.get_market_dashboard_data's shape) on a calm, healthy day."""
+    def instrument(latest, d1="+0.20%", d5="+1.00%", m1="+2.00%", **extra):
+        return {"Latest": latest, "1D %": d1, "5D %": d5, "1M %": m1, **extra}
+    yahoo = {
+        "S&P 500 (SPY)": instrument(700.0, **{"50D MA": 690.0, "200D MA": 650.0}),
+        "Nasdaq-100 (QQQ)": instrument(600.0, d5="+1.20%"), "Dow Jones (DIA)": instrument(450.0, d5="+0.90%"),
+        "NYSE Composite ($NYA)": instrument(20000.0, d5="+0.80%"), "Russell 2000 (IWM)": instrument(240.0, d5="+1.30%"),
+        "VIX Index": instrument(15.0, d1="-3.00%"), "US Dollar Index (DXY)": instrument(98.0, d5="-0.50%"),
+        "10Y Treasury Yield ($TNX)": instrument(4.1, **{"1D bps": 2.0, "5D bps": -4.0, "1M bps": 10.0}),
+        "Crude Oil (WTI)": instrument(70.0, d5="+2.00%"),
+    }
+    for name, values in changes.items():
+        yahoo[name] = {**yahoo[name], **values}
+    return {"yahoo_finance": yahoo,
+            "yield_curve_10y_2y": {"Spread": "0.45%", "1D Change": "+2.0 bps", "5D Change": "+5.0 bps"},
+            "fear_and_greed": {"Score": 65.0, "Rating": "Greed", "Previous close": 62.0},
+            "sp500_breadth": {"% > 50MA": "66.00%", "1D Change": 3.0, "5D Change": -2.0, "1M Change": 8.0},
+            "put_call_ratio": {"Ratio": 0.65, "Session": "2026-10-15", "5D Avg": 0.72}}
+
+
+def signals_of(dashboard):
+    return {s["name"]: (s["tone"], s["text"], s["value"], s["sub"]) for s in ch._signals(dashboard, "day")}
+
+
+def test_market_signals_on_a_calm_healthy_day():
+    # Claude-authored (2026-10-21): Andres's "Global Macro Pulse" table, at params_dict["MARKET_SIGNALS"]
+    signals = signals_of(macro_pulse())
+    assert list(signals) == ["S&P 500", "Nasdaq-100 vs Dow", "NYSE vs S&P 500", "Russell 2000 vs S&P", "VIX",
+                             "Put/call ratio", "Fear & Greed", "S&P breadth", "US Dollar (DXY)", "10Y yield",
+                             "10Y–2Y spread", "Crude oil (WTI)"]
+    assert signals["S&P 500"] == ("pos", "Above its 50- and 200-day averages: an uptrend", "$700.00", "+0.2% day")
+    assert signals["Nasdaq-100 vs Dow"][:3] == ("flat", "Growth and value even", "+0.3 pts")  # Under the 1-pt gap
+    assert signals["NYSE vs S&P 500"][0] == "pos" and signals["Russell 2000 vs S&P"][0] == "flat"
+    assert signals["VIX"] == ("pos", "Calm (under 18)", "15.00", "-3.0% day")
+    assert signals["Put/call ratio"] == ("pos", "Bullish: heavy call buying (Oct 15 session)", "0.65", "avg 0.72")
+    assert signals["Fear & Greed"] == ("pos", "Greed", "65", "was 62")
+    assert signals["S&P breadth"][:3] == ("pos", "Strong: the share of S&P 500 stocks above their 50-day average", "66%")
+    assert signals["US Dollar (DXY)"][:2] == ("pos", "Falling: a tailwind for stocks")
+    assert signals["10Y yield"] == ("flat", "Steady (+10 bps in a month)", "4.10%", "+2 bps day")
+    assert signals["10Y–2Y spread"][:3] == ("pos", "Positive: no recession signal", "+0.45%")
+    assert signals["Crude oil (WTI)"][:2] == ("flat", "No sharp weekly move")
+
+
+def test_market_signals_on_a_stressed_day():
+    dashboard = macro_pulse(**{
+        "S&P 500 (SPY)": {"Latest": 640.0}, "Nasdaq-100 (QQQ)": {"5D %": "-4.00%"}, "Dow Jones (DIA)": {"5D %": "-1.00%"},
+        "NYSE Composite ($NYA)": {"5D %": "-3.50%"}, "Russell 2000 (IWM)": {"5D %": "-4.50%"},
+        "VIX Index": {"Latest": 31.0}, "US Dollar Index (DXY)": {"5D %": "+1.40%"},
+        "10Y Treasury Yield ($TNX)": {"1M bps": 32.0}, "Crude Oil (WTI)": {"5D %": "+9.50%"}})
+    dashboard["yahoo_finance"]["S&P 500 (SPY)"]["5D %"] = "-2.00%"
+    dashboard.update(fear_and_greed={"Score": 18.0, "Rating": "extreme fear"}, put_call_ratio={"Ratio": 1.12},
+                     sp500_breadth={"% > 50MA": "31.00%"}, yield_curve_10y_2y={"Spread": "-0.12%"})
+    signals = signals_of(dashboard)
+    assert signals["S&P 500"][:2] == ("neg", "Below its 50- and 200-day averages: a downtrend")
+    assert signals["Nasdaq-100 vs Dow"][:3] == ("warn", "Value beating growth: defensive", "-3.0 pts")
+    assert signals["NYSE vs S&P 500"][:3] == ("warn", "The S&P beat the broad market: a few giants carry it", "-1.5 pts")
+    assert signals["Russell 2000 vs S&P"][:2] == ("neg", "Small caps lagging: a tight-credit warning")
+    assert signals["VIX"][:2] == ("neg", "Panic (over 25)")
+    assert signals["Put/call ratio"][:2] == ("neg", "Extreme bearish: heavy put buying")
+    assert signals["Fear & Greed"][:2] == ("neg", "Extreme fear")  # CNN's word when it says extreme
+    assert signals["S&P breadth"][0] == "neg" and signals["US Dollar (DXY)"][:2] == ("neg", "Rising fast: a headwind for stocks")
+    assert signals["10Y yield"][:2] == ("neg", "Rising: pressure on stock valuations (+32 bps in a month)")
+    assert signals["10Y–2Y spread"][:2] == ("neg", "Inverted: a recession warning")
+    assert signals["Crude oil (WTI)"][:2] == ("neg", "Spiking: an inflation risk")
+    # A spread just pushed out of inversion counts as a warning too
+    dashboard["yield_curve_10y_2y"] = {"Spread": "0.08%", "5D Change": "+20.0 bps"}
+    assert signals_of(dashboard)["10Y–2Y spread"][:2] == (
+        "neg", "Un-inverting fast (+20 bps in 5 days): often just before a recession")
+
+
+def test_markets_section_shows_signals_in_groups_and_the_full_table(monkeypatch):
+    view, html = render(payload(market_data=macro_pulse()))
+    assert [g["name"] for g in view["market"]["groups"]] == ["Benchmarks", "Sentiment", "Macro"]
+    assert html.count('<span class="dot dp"></span>') == 8 and '<span class="dot df"></span>' in html
+    rows = {row["name"]: row for row in view["market"]["rows"]}
+    assert (rows["10Y Yield"]["d1"]["text"], rows["10Y Yield"]["m1"]["text"]) == ("+2bp", "+10bp")  # Basis points
+    assert (rows["10Y–2Y"]["last"], rows["10Y–2Y"]["d5"]["text"]) == ("+0.45%", "+5bp")
+    assert (rows["S&P breadth"]["last"], rows["S&P breadth"]["d5"]["text"]) == ("66%", "-2pt")
+    text = ch.render_text(view)
+    assert "SENTIMENT" in text and "  🟢 VIX 15.00 (-3.0% prev. day): Calm (under 18)" in text
+
+
+def test_the_heat_map_button_is_under_the_greeting():
+    # Claude-authored (2026-10-21): Finviz's S&P 500 map over the past week (DIGEST.HEAT_MAP_URL), for every reader
+    for digest_payload in (payload(), payload(holdings=[], user_name="Koby")):
+        view, html = render(digest_payload)
+        link = '<a href="https://finviz.com/map?t=sec&amp;st=w1" class="btn">S&amp;P 500 heat map · 1 week</a>'
+        assert html.index(view["greeting"]) < html.index(link) < html.index("Markets &amp; macro")
+        assert "S&P 500 heat map · 1 week: https://finviz.com/map?t=sec&st=w1" in ch.render_text(view)
 
 
 def test_send_html_email_needs_gmail_credentials(monkeypatch):
@@ -509,8 +604,8 @@ def test_daily_changes_say_prev_day_before_the_open_and_day_after_the_close():
     assert post["holdings"][0]["stats"][0]["sub"] == "+0.50% day"
     assert pre["holdings_note"].endswith("Prev. day = the Oct 15 session")
     assert flat(pre["markets_summary"]).startswith("S&P 500 +0.3% prev. day")
-    assert pre["market"]["key"][0]["sub"] == "+0.3% prev. day"
-    assert [chip["sub"] for chip in pre["market"]["chips"] if chip["label"] == "10Y–2Y spread"] == ["-4.0 bps prev. day"]
+    assert pre["market"]["signals"][0]["sub"] == "+0.3% prev. day"
+    assert [s["sub"] for s in pre["market"]["signals"] if s["name"] == "10Y–2Y spread"] == ["-4 bps prev. day"]
     assert "(+0.50% prev. day)" in pre["preheader"]
     pre_html, post_html = ch.render_html(pre, TEMPLATE_DIR), ch.render_html(post, TEMPLATE_DIR)
     assert ">Prev. day</td>" in pre_html and ">Day</td>" in post_html  # The market table's one-day column
@@ -642,6 +737,12 @@ def test_pnl_adds_up_across_currencies_after_restating_at_the_current_rate(monke
     assert view["portfolio"]["change_pct"] == f"{daily / previous * 100:+.2f}%"
 
 
+def portfolio_args(total):
+    """_portfolio's arguments for one USD holding worth `total`."""
+    lot = holding("AAA", value=total)
+    return [lot], 1.0, ch._holding_cards([lot], "day"), (0, 0), "day"
+
+
 def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
     # Claude-authored (2026-10-21): <NAME>_HOME_CURRENCY; the holdings themselves stay in USD
     monkeypatch.setattr(ch, "usd_rates", lambda codes: {code: RATES_NOW[code] for code in [*codes, "USD"]})
@@ -664,7 +765,12 @@ def test_the_overview_is_in_the_home_currency_and_usd(monkeypatch):
     assert cop["value"] == f"COP${total / 0.00025:,.0f}" and cop["value_size"] < 34
     assert cop["usd_value"].endswith("1 USD = 4,000 COP")
     # USD at home (and payloads from before 2026-10-21): one figure, no USD line
-    assert usd["label"] == "Your portfolio · USD" and usd["usd_value"] == "" and usd["value_size"] == 34
+    assert usd["label"] == "Your portfolio · USD" and usd["usd_value"] == ""
+    # The font steps down as the total gets longer: the Gmail app enlarges email text (Andres's phone about 1.75x)
+    # and clips what doesn't fit, as "A$12,060.73" at 34 px was
+    sizes = {length: ch._portfolio(*portfolio_args(total))["value_size"]
+             for length, total in ((9, 1234.56), (11, 123456.78), (13, 1234567.89), (17, 12345678901234.5))}
+    assert sizes == {9: 34, 11: 26, 13: 22, 17: 18}
 
 
 def test_a_home_currency_without_a_rate_shows_the_overview_in_usd(monkeypatch):
