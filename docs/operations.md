@@ -79,9 +79,15 @@ Why rclone, not the Finnbot service account: a service account has no Drive stor
 **What is backed up** (`scripts/backup_filter.txt`):
 - the track record and API usage ledger;
 - `watchdog_state.json` and `digest_state.json`;
-- the alert log.
+- the alert log;
+- `idea_positions.json`: which holdings were bought from Finnbot's ideas (2026-10-22).
 
 Caches (`market_context_cache.json`, `fx_rates.json`, `ticker_data/`) are rebuilt on the next run, so they're left out. `.env` belongs in your password manager, not in Drive.
+
+**The run logs (added 2026-10-22)**, so you can read them on your phone. Each night, every file in `logs/` (`digest.log` and its rotated `digest.log.1` to `.5`, `watchdog.log`, `backup.log`, and the `.status` lines) is copied to a **`finnbot-logs`** folder in your Drive, with `.txt` added to each name so the Drive app opens it as text. Only the logs that changed since the night before are uploaded.
+- **To read them:** in the Google Drive app, search for `finnbot-logs` and open e.g. `digest.log.txt`. The newest lines are at the bottom. Since the backup runs at 02:30 UTC, they're up to the end of the previous day.
+- **Not encrypted:** the logs name users and show their holdings, and this copy is readable by anyone who can open your Drive. To encrypt it like the rest (then it's only readable through rclone, e.g. `rclone cat finnbot-backup:logs/digest.log.txt | tail -n 200`), set `FINNBOT_LOGS_REMOTE=finnbot-backup:logs` in `.env`. `FINNBOT_LOGS_REMOTE=none` leaves the logs out.
+- **If it fails:** the data backup still runs and its check stays green, but the status line under the check's *Events* ends with `LOGS COPY FAILED`, and `logs/backup.log` says why.
 
 **Layout on Drive:** `current/data/` holds the latest copy. Each night, the version a changed file replaced moves to `archive/<UTC time>/data/`, and archive folders older than `FINNBOT_BACKUP_KEEP_DAYS` (90) are deleted. Nothing is ever deleted from `current/`, so a wiped `data/` folder on the VM can't wipe the backup.
 

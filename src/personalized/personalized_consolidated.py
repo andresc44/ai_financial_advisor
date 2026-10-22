@@ -19,6 +19,7 @@ from src.personalized.add_metrics import cached_company_names
 from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.portfolio_review import review_portfolio
+from src.idea_positions import attach_idea_origins
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
 from src.personalized.user_settings import get_gemini_api_key, get_home_currency, wants_holding_news
 from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
@@ -211,6 +212,9 @@ def get_personal_content(user_name: str = "Andres"):
     # cooldown, so the same problem isn't sent twice), and include it in the payload for the email
     for issue in portfolio.holdings_issues:
         send_notice_now(user_name, holdings_issue_subject(issue), issue["reason"], holdings_issue_body(issue))
+    # Claude-authored (2026-10-22): holdings bought from Finnbot's ideas (the card's label, the plan in the AI review,
+    # target / stop alerts), before anything is evaluated (src/idea_positions.py)
+    portfolio.full_data = attach_idea_origins(user_name, portfolio.full_data, datetime.now(timezone.utc))
     # Claude-authored (2026-10-15): Gemini news only needs each stock's symbol and name, so it runs in a background
     # thread while market data and Claude run below. The portfolio review then waits for both. Evaluations the
     # watchdog made in the last hour are reused instead of calling Claude again.

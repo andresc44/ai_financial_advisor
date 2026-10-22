@@ -6,4 +6,6 @@
 + /watchdog_state.json
 + /digest_state.json
 + /alerts_sent/**
+# Claude-authored (2026-10-22): which holdings were bought from Finnbot's ideas (src/idea_positions.py)
++ /idea_positions.json
 - **

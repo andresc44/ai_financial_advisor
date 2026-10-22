@@ -12,10 +12,15 @@
 # Settings (.env, all optional):
 #   FINNBOT_BACKUP_REMOTE     rclone destination (default "finnbot-backup:", the encrypted remote from the setup)
 #   FINNBOT_BACKUP_KEEP_DAYS  days to keep the previous versions of changed files (default 90)
+#   FINNBOT_LOGS_REMOTE       where the run logs go (default "gdrive:finnbot-logs": readable in the Drive app, NOT
+#                             encrypted; "finnbot-backup:logs" encrypts them like the rest; "none" leaves them out)
 #
 # Layout on Drive:
 #   current/data/...                     the latest copy of each file in scripts/backup_filter.txt
 #   archive/<UTC timestamp>/data/...     the version each run replaced (rclone --backup-dir), deleted after KEEP_DAYS
+#   finnbot-logs/<name>.txt              Claude-authored (2026-10-22, at Andres's request, to read them on his phone):
+#                                        each file in logs/ (digest.log, its rotated digest.log.1-5, watchdog.log, the
+#                                        .status lines, ...) with ".txt" added so Drive previews it as text
 # Files are only ever added or replaced, never deleted from current/, so a wiped data/ folder can't wipe the backup.
 set -euo pipefail
 
@@ -31,6 +36,8 @@ REMOTE="${FINNBOT_BACKUP_REMOTE:-$(env_value FINNBOT_BACKUP_REMOTE)}"
 REMOTE="${REMOTE:-finnbot-backup:}"
 KEEP_DAYS="${FINNBOT_BACKUP_KEEP_DAYS:-$(env_value FINNBOT_BACKUP_KEEP_DAYS)}"
 KEEP_DAYS="${KEEP_DAYS:-90}"
+LOGS_REMOTE="${FINNBOT_LOGS_REMOTE:-$(env_value FINNBOT_LOGS_REMOTE)}"
+LOGS_REMOTE="${LOGS_REMOTE:-gdrive:finnbot-logs}"
 remote_path() {  # "finnbot-backup:" + "current" -> "finnbot-backup:current"; "gdrive:finnbot" -> "gdrive:finnbot/current"
   case "$REMOTE" in *:) echo "$REMOTE$1" ;; *) echo "${REMOTE%/}/$1" ;; esac
 }
@@ -57,7 +64,27 @@ CUTOFF="$(date -u -d "-$KEEP_DAYS days" +%Y-%m-%d)"
   fi
 done
 
+# The run logs, as text files Drive can preview. Copied with their times kept (cp -p), so rclone uploads only the logs
+# that changed since last night. A failure here is reported in the status line but doesn't fail the data backup.
+LOGS_NOTE="logs not copied (FINNBOT_LOGS_REMOTE=none)"
+if [ "$LOGS_REMOTE" != "none" ]; then
+  STAGE="$(mktemp -d)"
+  for file in logs/*; do
+    if [ -f "$file" ]; then
+      cp -p "$file" "$STAGE/$(basename "$file").txt"
+    fi
+  done
+  echo "$(date -u +%FT%TZ) Copying logs/ to $LOGS_REMOTE"
+  if rclone copy "$STAGE" "$LOGS_REMOTE" --stats-one-line --stats-log-level NOTICE; then
+    LOGS_NOTE="logs copied to $LOGS_REMOTE"
+  else
+    LOGS_NOTE="LOGS COPY FAILED (to $LOGS_REMOTE; see logs/backup.log)"
+  fi
+  rm -rf "$STAGE"
+fi
+
 SIZE="$(rclone size data --filter-from scripts/backup_filter.txt --json)"
 FILES="$(echo "$SIZE" | sed -E 's/.*"count":([0-9]+).*/\1/')"
 BYTES="$(echo "$SIZE" | sed -E 's/.*"bytes":([0-9]+).*/\1/')"
-echo "Backup finished: $FILES files, $((BYTES / 1024)) KiB; previous versions kept $KEEP_DAYS days." | tee "$STATUS_FILE"
+echo "Backup finished: $FILES files, $((BYTES / 1024)) KiB; previous versions kept $KEEP_DAYS days; $LOGS_NOTE." \
+  | tee "$STATUS_FILE"

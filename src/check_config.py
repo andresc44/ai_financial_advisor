@@ -53,6 +53,9 @@ SHARED_KEYS = {
     "HEALTHCHECKS_PING_KEY": (False, "healthchecks.io ping key; without it cron jobs run unmonitored"),
     "FINNBOT_BACKUP_REMOTE": (False, "rclone destination for the nightly backup (default finnbot-backup:)"),
     "FINNBOT_BACKUP_KEEP_DAYS": (False, "Days to keep replaced files in the backup (default 90)"),
+    # Claude-authored (2026-10-22): the run logs in the backup, readable in the Drive app (docs/operations.md)
+    "FINNBOT_LOGS_REMOTE": (False, "Where the backup copies logs/ (default gdrive:finnbot-logs, not encrypted; "
+                                   "finnbot-backup:logs to encrypt; none to leave them out)"),
 }
 
 HOLDINGS_SOURCES = ("SNAPTRADE", "SHEETS", "NO_HOLDINGS")

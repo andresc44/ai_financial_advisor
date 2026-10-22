@@ -540,6 +540,14 @@ Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py
 - **Every day:** it runs at weekends too, so a Monday-morning report is caught on Sunday.
 - **Code:** `src/telegram_alert/earnings_reminder.py`, called by `run_daily_digests`.
 
+**Holdings bought from Finnbot's ideas (added 2026-10-22).** When a user buys a stock Finnbot suggested, Finnbot remembers the idea and uses it (`src/idea_positions.py`, state in the gitignored `data/idea_positions.json`, which the Drive backup includes):
+- **What counts:** a new position (a symbol held now that wasn't at the user's previous digest or watchdog check; adding shares to a stock already held doesn't count), bought by the end of the next trading day after the idea. A purchase is only seen at the next check, so the test is that the previous check came before the NYSE close of the first trading day after the idea's date. The ideas are the track record's (`data/track_record/universal.jsonl`). A user's first check only remembers what they hold, so stocks owned before this existed are never linked.
+- **The holding card:** one grey line, e.g. "Swing idea · Oct 21 · entry $100.00 · stop $95.00 · target $112.00" ("· target reached" or "· stop hit" once the price gets there), or "Long-term idea · Oct 16 · score 93". About 0.26 KB per stock that has one.
+- **The AI review:** the stock's payload carries `opened_from_finnbot_idea` (list, date, score, what was paid, and a swing idea's entry, stop, and target), and the review's instructions say to weigh the plan without following it blindly.
+- **Target and stop alerts:** when a swing idea's position reaches its target or falls to its stop, a Telegram message, once each (users with a chat ID). Checked at every digest and watchdog check.
+- **"You hold this":** a small badge on a swing or long-term idea the user already holds.
+- **Monthly scorecard:** from the first cron digest run of a month, a Telegram message to each user who bought from ideas the month before: each position's change since it was bought (or until it was sold), and the average beside the S&P 500 over the same days. Nothing is sent to a user without such positions.
+
 **US market holidays (added 2026-10-21).** On a weekday the NYSE is closed, `OPS.ALERT_USERS` get one Telegram notice from the first digest run at or after `DIGEST.PRE_MARKET_TIME_ET` (07:10 ET under cron). It says:
 - the holiday, from the exchange calendar (e.g. "Thanksgiving"; "a special closure" for one-off closures);
 - when trading resumes, and whether that day closes early;

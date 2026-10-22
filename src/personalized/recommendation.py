@@ -42,6 +42,7 @@ if str(project_root) not in sys.path:
 
 from src import llm_models
 from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
+from src.idea_positions import prompt_view
 from src.market_session import market_phase
 from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error, verify_llm_key
@@ -76,6 +77,7 @@ EXCLUDED_POSITION_COLUMNS = {
     "last_close_usd",
     "account_name",
     "exchange",
+    "idea_origin",  # Claude-authored (2026-10-22): sent once per stock as opened_from_finnbot_idea
     "account_id",
     "instrument_id",
     "figi_code",
@@ -337,6 +339,10 @@ def build_holding_payloads(holdings_df: pd.DataFrame) -> Dict[str, Dict[str, Any
                 group["market_context"].iloc[0] if "market_context" in group.columns else None
             ),
         }
+        # Claude-authored (2026-10-22): the Finnbot idea the user bought it from, with a swing idea's plan
+        origin = prompt_view(group["idea_origin"].iloc[0]) if "idea_origin" in group.columns else None
+        if origin:
+            payloads[symbol]["opened_from_finnbot_idea"] = origin
     return payloads
 
 

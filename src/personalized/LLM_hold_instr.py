@@ -77,6 +77,7 @@ DATA PARSING & METRIC GUIDELINES:
 - Financial ratios such as `debt_to_equity` are scaled as percentages (e.g. 34.804 represents ~0.35 D/E).
 - `market_context` may be null or contain error entries when a data source failed. Decide from the data that is present, and never escalate to 'urgent_sell' because data is missing.
 - Judge the stock on its forward outlook. Cost basis and unrealized gain can inform 'profit_sell' and risk tolerance, but a loss alone is not a reason to sell and a gain alone is not a reason to hold.
+- `opened_from_finnbot_idea`, when present: the user bought this stock after Finnbot suggested it, as a 'swing' idea (with its plan: `entry_price`, `stop_loss`, `price_target`, and `reached` when the price got to one of them) or a 'long_term' idea (with its `score`). For a swing idea, weigh the plan: at or near `price_target`, consider 'profit_sell' unless the setup clearly has more room; below `stop_loss`, the setup has failed, so consider 'risky' (or 'urgent_sell' only if the rubric's urgency test is met). Re-judge the stock on today's data rather than following the plan blindly.
 
 MARKET SESSION:
 - The request states the current `market_session`: pre_market, regular, after_hours, overnight, or closed (weekend/holiday).

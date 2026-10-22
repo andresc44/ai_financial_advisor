@@ -252,6 +252,8 @@ data/ticker_data/
 data/track_record/
 data/digest_state.json
 data/fx_rates.json
+# Claude-authored (2026-10-22): holdings bought from Finnbot's ideas, per user (src/idea_positions.py)
+data/idea_positions.json
 logs/
 *.log
 test_output/

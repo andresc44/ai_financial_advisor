@@ -896,6 +896,7 @@ class PortfolioFetcher:
                 "daily_pnl_session",  # Date the daily P/L covers (pre-market: the previous trading day)
                 "daily_pnl_live",  # True when that session is still trading on the stock's exchange
                 "next_earnings_date",  # The next earnings date known, at any distance (None: no date known)
+                "idea_origin",  # 2026-10-22: the Finnbot idea the position was bought from (src/idea_positions.py)
                 "portfolio_weight_pct",  # Stock's share of the whole portfolio's market value
                 "last_close",  # Close before that session, in the listing's currency
                 "last_close_usd",  # Same in USD; previous portfolio value = sum(last_close_usd x shares)

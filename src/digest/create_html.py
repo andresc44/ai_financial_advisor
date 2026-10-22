@@ -37,6 +37,7 @@ if str(project_root) not in sys.path:
 
 from src.admins import contact_admin, is_admin, notice_text
 from src.fx_rates import CURRENCY_SYMBOLS, usd_rate_change, usd_rates
+from src.idea_positions import idea_label
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 from src.personalized.LLM_hold_instr import current_recommendation
@@ -673,6 +674,9 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         # Claude-authored (2026-10-21): said when no earnings date is known at all (often for listings outside the
         # US); a date past the cards' CATALYST_WINDOW_DAYS isn't shown or mentioned. Payloads from before
         # next_earnings_date existed say nothing.
+        # Claude-authored (2026-10-22): the Finnbot idea it was bought from, e.g. "Swing idea · Oct 21 · entry $100.00
+        # · stop $95.00 · target $112.00" (src/idea_positions.py); "" for the rest
+        "idea": idea_label(first.get("idea_origin")),
         "earnings_note": ("No earnings date available" if not catalysts and "next_earnings_date" in first
                           and not _text(first.get("next_earnings_date")) else ""),
         "rationale": _text(first.get("recommendation_rationale")) or "",
@@ -1441,8 +1445,11 @@ def build_view(payload: dict) -> dict:
     version += "pre" if _period(payload) == "Pre-Market" else "post"
     for card in cards:
         card["chart"] = _chart(card["symbol"], version) if card["us_listing"] else None
+    # Claude-authored (2026-10-22): an idea the user already holds says so
+    held = {str(h.get("symbol")).upper() for h in holdings if h.get("symbol")}
     for card in swing + long_term:
         card["chart"] = _chart(card["ticker"], version) if card["ticker"] else None
+        card["held"] = str(card["ticker"] or "").upper() in held
     # Claude-authored (2026-10-17): currencies the payload doesn't give are assumed USD, and listed for the run log.
     # The ideas and the market dashboard are always USD (see IDEAS_CURRENCY), so they aren't listed.
     currency_notes = []
@@ -1655,6 +1662,8 @@ def render_text(view: dict) -> str:
         for card in view["holdings"]:
             lines.append(f"{card['symbol']} - {card['signal']['text']} - {card['value']} ({card['weight']})")
             lines.append("  " + " | ".join(f"{s['label']} {s['value']} {s['sub']}".strip() for s in card["stats"]))
+            if card["idea"]:
+                lines.append(f"  From Finnbot's {card['idea']}")
             lines += [f"  {c['when']}: {c['text']}" for c in card["catalysts"]]
             if card["earnings_note"]:
                 lines.append(f"  {card['earnings_note']}")
@@ -1667,14 +1676,14 @@ def render_text(view: dict) -> str:
         lines.append(f"  No swing setups scored {view['min_swing_score']} or more today.")
     for card in view["swing"]:
         plan = " | ".join(f"{s['label']} {s['value']}" for s in card["plan"])
-        lines += [f"{card['ticker']} (score {card['score']}) {card['price']}  {plan}", f"  {card['thesis']}"]
+        lines += [f"{card['ticker']} (score {card['score']}) {card['price']}  {plan}" + ("  (you hold this)" if card.get("held") else ""), f"  {card['thesis']}"]
         if card["earnings_warning"]:
             lines.append(f"  {card['earnings_warning']}")
     lines += ["", "LONG-TERM IDEAS"]
     if not view["long_term"]:
         lines.append(f"  No long-term ideas scored {view['min_long_score']} or more today.")
     for card in view["long_term"]:
-        lines += [f"{card['ticker']} (score {card['score']}) {card['price']}", f"  {card['thesis']}"]
+        lines += [f"{card['ticker']} (score {card['score']}) {card['price']}" + ("  (you hold this)" if card.get("held") else ""), f"  {card['thesis']}"]
         if card["key_risk"]:
             lines.append(f"  Key risk: {card['key_risk']}")
     if view["screening"]:  # Claude-authored (2026-10-17)

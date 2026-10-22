@@ -30,6 +30,7 @@ from src.digest.digest_schedule import due_digest, ended_digests, record_sent, u
 from src.market_session import market_date
 from src.run_logging import name_thread, start_run_log, write_run_status
 from src.telegram_alert.earnings_reminder import send_earnings_reminders
+from src.idea_positions import send_idea_scorecards
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
 from src.import_signup import sync_signups
@@ -209,6 +210,7 @@ def run_daily_digests(
     if not (check_only or payload_only):
         send_holiday_notice(now)
         send_earnings_reminders(now)
+        send_idea_scorecards(now)  # Claude-authored (2026-10-22): once a month, on Telegram (src/idea_positions.py)
     missed = [] if payload_only else missed_digests(recipients, now, alert=not check_only)
     missed_note = f" Missed today: {'; '.join(missed)}." if missed else ""
 

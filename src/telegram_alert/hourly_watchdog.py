@@ -45,6 +45,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.idea_positions import attach_idea_origins
 from src.market_session import block_id, is_in_session, market_date, market_phase
 from src.parameters import params_dict
 from src.personalized.add_metrics import HoldingsDataFetcher
@@ -342,6 +343,8 @@ def check_user(
         print(f"{tag} [WARNING] No holdings returned (empty portfolio or data-source outage). Will retry next run.")
         return alert_logs
     fetcher.full_data = fetcher.add_session_prices(fetcher.full_data, phase)
+    if not dry_run:  # Claude-authored (2026-10-22): new positions from ideas, and target / stop alerts
+        fetcher.full_data = attach_idea_origins(user_name, fetcher.full_data, now)
     held_symbols = set(fetcher.full_data["symbol"].dropna())
 
     # Decide which stocks actually need Claude

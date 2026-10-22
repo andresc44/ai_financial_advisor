@@ -39,12 +39,14 @@ def isolated(tmp_path, monkeypatch):
     import yfinance
 
     import src.fx_rates as fx_rates
+    import src.idea_positions as idea_positions
     import src.personalized.add_metrics as add_metrics
     import src.telegram_alert.notices as notices
     import src.track_record as track_record
     import src.usage_tracking as usage_tracking
 
     monkeypatch.setattr(add_metrics, "CONTEXT_CACHE_PATH", tmp_path / "market_context_cache.json")
+    monkeypatch.setattr(idea_positions, "STATE_PATH", tmp_path / "idea_positions.json")  # 2026-10-22
     monkeypatch.setattr(notices, "CSV_DIR", tmp_path / "alerts_sent")
     monkeypatch.setattr(notices, "CSV_PATH", tmp_path / "alerts_sent" / "alerts.csv")
     monkeypatch.setattr(fx_rates, "CACHE_PATH", tmp_path / "fx_rates.json")
@@ -109,6 +111,7 @@ def isolated(tmp_path, monkeypatch):
     import src.digest.digest_payload as digest_payload
 
     monkeypatch.setattr(digest_payload, "send_earnings_reminders", lambda now: 0)
+    monkeypatch.setattr(digest_payload, "send_idea_scorecards", lambda now: 0)  # 2026-10-22: tested on its own
     return tmp_path
 
 
