@@ -3,12 +3,13 @@ params_dict = {
     # Claude-authored (2026-10-15): the users the digest and the watchdog run for, in this order. Each name needs a
     # profile in src/personalized/user_profiles.py. Their .env settings still decide what they get: the
     # pre-/post-market digest (Receive_*_Digest), and the watchdog (holdings source + Telegram chat ID, and
-    # watchdog_interval_hours > 0). Remove a name here to pause both for that user.
-    "ACTIVE_USERS": ["Andres", 
-                    # "Mauricio", 
-                    # "Steven"
-                    "Koby",  # Claude-authored (2026-10-21): ideas only (KOBY_HOLDINGS_SOURCE=NO_HOLDINGS)
-                    ],
+    # watchdog_interval_hours > 0).
+    # 2026-10-22: synced from the sign-up sheet at the start of every cron digest run (src/import_signup.py): the
+    # sheet's users with nothing required missing. Changes made here are replaced; change the sheet instead.
+    "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/import_signup.py): edit the sheet
+        "Andres",
+        "Steven",
+    ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
     "EARNINGS_FUTURE_LOOKAHEAD_DAYS": 100,
@@ -305,7 +306,11 @@ params_dict = {
     # tokens: the first full run (95 candidates) cost $0.28 instead of ~$0.11 and took 27 minutes instead of ~17.
     "LLM": {
         "UNIVERSAL": {"model": "deepseek-flash", "effort": "low"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
-        "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"},   # Default for holdings; each user's own key.
+        # Default for holdings; each user's own key. 2026-10-22: claude-haiku-5-5 (was claude-sonnet-5-5) at Andres's
+        # request: Sonnet's reviews averaged 342 output tokens at medium effort, so ~85% of its $0.027 per stock was the
+        # ~11.7K input tokens at Sonnet's price; Haiku is ~$0.0013 per stock and keeps users' data with Anthropic
+        # (a DeepSeek default would send it to DeepSeek without them choosing). Not yet compared on the same holdings.
+        "HOLDINGS": {"model": "claude-haiku-5-5", "effort": "medium"},
         # A user picks their own holdings model and effort with <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT
         # in .env; a DeepSeek model chosen without an effort gets DEEPSEEK_CONFIG["effort"]. UNIVERSAL_LLM_MODEL /
         # UNIVERSAL_LLM_EFFORT in .env override UNIVERSAL on one machine.

@@ -48,7 +48,7 @@ Both the watchdog and the digest process several users at once (`MAX_PARALLEL_US
 
 | Key | Default | Meaning |
 |---|---|---|
-| `ACTIVE_USERS` | `["Andres", "Mauricio", "Steven"]` | Users the digest **and** the watchdog run for. Each needs a profile in `user_profiles.py`; unknown names are skipped with a warning. Their `.env` settings still decide which digests they get and whether the watchdog runs for them. |
+| `ACTIVE_USERS` | Synced from the sign-up sheet (`src/import_signup.py`, 2026-10-22) | Users the digest **and** the watchdog run for. Each needs a profile in `user_profiles.py`; unknown names are skipped with a warning. Their `.env` settings still decide which digests they get and whether the watchdog runs for them. |
 | `WATCHDOG.SESSION` | `"regular"` | Default session for all users. |
 | `WATCHDOG.SESSIONS` | see file | `pre_open_minutes` / `post_close_minutes` are measured from each day's actual open and close. `extended` = 330 / 240, which is 4:00–20:00 ET on a full day. Set `pre_open_minutes` to 150 to start at 7:00. |
 | `WATCHDOG.EXCHANGE_CALENDARS` | `["XNYS", "XTSE"]` | A day counts as a trading day if **any** listed exchange trades, so US Thanksgiving is a trading day because the TSX is open. |
@@ -98,7 +98,6 @@ A user with `<NAME>_HOLDINGS_SOURCE=NO_HOLDINGS` has no holdings connected and g
 - **What they need in `.env`:** `<NAME>_EMAIL` and the two `<NAME>_RECEIVE_*_DIGEST` flags. `<NAME>_TIMEZONE` is optional and sets the greeting's time of day (US Eastern without it). No API keys: nothing is fetched or evaluated for them, so they add no cost.
 - **Their email:** no overview card, portfolio risk, or holdings. The glossary leaves out the holdings-only terms (the five signals, unrealized P/L, weight, flagged, volatility, leveraged ETFs).
 - **The watchdog** skips them, as it skips anyone without a holdings source.
-- **Koby** is the first one (`ACTIVE_USERS`).
 - **Code:** `personalized_consolidated.get_ideas_only_content`, called from `DigestPayload.personal_content`.
 
 The API keys are the only settings with no default: they never fall back to the shared `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` / `GEMINI_API_KEY` used for the universal content. If a user's LLM key is unset, their holdings get no recommendation; if their Gemini key is unset, their holding cards get no news bullets. Either way an `[ERROR]` line is printed and other users are unaffected.

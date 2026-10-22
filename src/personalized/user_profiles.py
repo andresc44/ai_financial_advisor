@@ -10,6 +10,7 @@ To add a user:
   3. Check nothing required is missing: venv/bin/python -m src.check_config
 Use PROFILE_OVERRIDES only for a user whose .env key names don't follow the pattern.
 """
+import os
 import re
 import sys
 from pathlib import Path
@@ -50,6 +51,18 @@ PROFILE_ENV_SUFFIXES = {
     "deepseek_api_key": "DEEPSEEK_API_KEY",
     "gemini_api_key": "GEMINI_API_KEY",
 }
+
+# Claude-authored (2026-10-22): the sign-up sync (src/import_signup.py) writes a required API key it found missing as
+# KEY=None, so the gap shows in .env; env_setting, which every reader of users' settings goes through, treats it
+# as unset
+MISSING_VALUE = "None"
+
+
+def env_setting(env_key: str | None) -> str | None:
+    """The stripped value of environment variable `env_key`, or None when it's unset, empty, or MISSING_VALUE."""
+    value = (os.environ.get(env_key) or "").strip() if env_key else ""
+    return value if value and value != MISSING_VALUE else None
+
 
 # {user: {profile key: .env key}} for users whose key names don't follow <PREFIX>_<SUFFIX>
 PROFILE_OVERRIDES: dict[str, dict[str, str]] = {}

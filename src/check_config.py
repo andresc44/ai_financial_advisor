@@ -24,7 +24,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.parameters import params_dict
-from src.personalized.user_profiles import PROFILE_ENV_SUFFIXES, build_profile
+from src.personalized.user_profiles import PROFILE_ENV_SUFFIXES, build_profile, env_setting
 from src import llm_models
 from src.personalized.user_settings import get_active_users, get_llm_settings
 
@@ -46,6 +46,9 @@ SHARED_KEYS = {
     "GOOGLE_APPLICATION_CREDENTIALS": (False, "Service-account JSON path; needed to read private Google Sheets"),
     "GEMINI_API_KEY": (False, "Gemini for the macro news (shared; only when headline news is enabled)"),
     "FRED_API_KEY": (False, "FRED yield curve (only when market indicators are enabled)"),
+    # Claude-authored (2026-10-22): src/import_signup.py, also run at the start of every cron digest run
+    "SIGNUP_FORM_SHEET_ID": (False, "The sign-up form's answers sheet, shared with the service account; without it "
+                                    "new sign-ups aren't imported"),
     # Claude-authored (2026-10-16): monitoring and backups, read by scripts/cron_job.sh and scripts/backup_to_drive.sh
     "HEALTHCHECKS_PING_KEY": (False, "healthchecks.io ping key; without it cron jobs run unmonitored"),
     "FINNBOT_BACKUP_REMOTE": (False, "rclone destination for the nightly backup (default finnbot-backup:)"),
@@ -125,8 +128,7 @@ VALUE_CHECKS: dict[str, tuple[Callable[[str], bool], str]] = {
 
 
 def _env(key: str) -> Optional[str]:
-    value = os.environ.get(key)
-    return value.strip() if value and value.strip() else None
+    return env_setting(key)  # 2026-10-22: the sign-up sync's KEY=None placeholder counts as missing too
 
 
 def _required(rule: str, source: Optional[str], provider: Optional[str] = None) -> bool:

@@ -32,6 +32,7 @@ from src.run_logging import name_thread, start_run_log, write_run_status
 from src.telegram_alert.earnings_reminder import send_earnings_reminders
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
+from src.import_signup import sync_signups
 import copy
 
 # Claude-authored (2026-10-16): where --payload-only writes each user's payload (test_output/ is gitignored, since the
@@ -347,6 +348,10 @@ if __name__ == "__main__":
     # Claude-authored (2026-10-15): everything goes to logs/digest.log; an unexpected crash also alerts the admins
     start_run_log("digest")
     reports_status = not (args.check or args.payload_only)  # Only cron runs feed the healthchecks.io heartbeat
+    # Claude-authored (2026-10-22): new or edited sign-up form answers go into .env first, and form users with
+    # nothing required missing into ACTIVE_USERS, before the users are read (src/import_signup.py). Cron runs only.
+    if reports_status:
+        sync_signups()
     try:
         ok, status = run_daily_digests(
             get_active_users(), now=args.now, check_only=args.check, payload_only=args.payload_only, period=args.period

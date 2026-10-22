@@ -34,7 +34,7 @@ if str(project_root) not in sys.path:
 from src import llm_models
 from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
-from src.personalized.user_profiles import USER_PROFILES
+from src.personalized.user_profiles import USER_PROFILES, env_setting
 
 load_dotenv(dotenv_path=project_root / ".env")
 
@@ -54,13 +54,11 @@ class WatchdogSettings:
 
 
 def _read_profile_env(user_name: str, profile_key: str) -> Optional[str]:
-    """Follows USER_PROFILES[user][profile_key] to its .env key and returns the stripped value, or None if unset."""
-    profile = USER_PROFILES.get(user_name, {})
-    env_key = profile.get(profile_key)
-    if not env_key:
-        return None
-    value = os.environ.get(env_key)
-    return value.strip() if value and value.strip() else None
+    """
+    Follows USER_PROFILES[user][profile_key] to its .env key and returns the stripped value, or None if unset.
+    2026-10-22: also None for the sign-up sync's KEY=None placeholder (user_profiles.env_setting).
+    """
+    return env_setting(USER_PROFILES.get(user_name, {}).get(profile_key))
 
 
 def _resolve(

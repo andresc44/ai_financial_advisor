@@ -1,0 +1,718 @@
+FINNBOT: GUIDE FOR NEW USERS
+Every choice you'll make when joining Finnbot, what each option costs, and how to get what it needs.
+Prices and features as of October 2026.
+
+
+CONTENTS
+  0. What Finnbot does
+  1. The basics (everyone)
+  2. The main decision: how Finnbot sees your holdings
+       2.1 Option A: SnapTrade (link your brokerage)
+       2.2 Option B: Google Sheets (type your holdings in a spreadsheet)
+       2.3 Option C: Ideas only (no holdings)
+  3. Settings for users with holdings
+       3.1  Brokerage name
+       3.2  Timezone
+       3.3  Home currency
+       3.4  The AI model that reviews your holdings
+       3.5  Effort level
+       3.6  API keys (Anthropic, DeepSeek, Gemini)
+       3.7  News for each holding
+       3.8  Telegram
+       3.9  The watchdog: how often, when, and the tripwire
+       3.10 What it all costs per month
+  4. Which choices make other settings unnecessary
+  5. What happens after you send your answers
+  6. Keeping your keys and data safe
+       6.1 Why an API key matters
+       6.2 Store every key safely the moment you create it
+       6.3 Be very careful how keys travel online
+       6.4 Limit the damage in advance
+       6.5 If you think a key has leaked
+       6.6 Where your data goes
+  7. Checklist: what to send Andres
+
+
+================================================================================
+0. WHAT FINNBOT DOES
+================================================================================
+
+Finnbot sends you a stock-market email (the "digest") on trading days, and optionally Telegram
+messages when something about your holdings needs attention.
+
+The digest can include:
+  - Markets and macro: graded market signals (trend, mood, breadth, rates, the dollar, oil) and
+    the day's top macro news.
+  - Swing ideas: US stocks set up for a move over the next few weeks, with an entry, stop, and
+    target.
+  - Long-term ideas: US businesses that look worth owning for years at today's price.
+  - Your portfolio (if you connect holdings): its value, the day's change, unrealized gain or
+    loss, which positions need attention, upcoming earnings, a review of risks across the whole
+    portfolio, and a card for each holding.
+
+Each holding gets one of five signals from an AI model:
+  Buy more     The stock has pulled back and the data suggests it will recover: a time to add.
+  Hold         Healthy. Give it time.
+  Risky        Something looks off and needs watching. Selling to be safe may make sense.
+  Profit sell  It has risen, but the indicators say the run may turn down soon.
+  Urgent sell  A specific, time-sensitive problem. The only signal that sends a Telegram alert.
+
+These signals are AI-generated opinions based on market data and news. They are not financial
+advice, and the same stock can occasionally get a different signal on two runs with the same data.
+Always make your own decisions.
+
+Who pays for what:
+  - The ideas, the market signals, and the macro news are shared by everyone. Andres covers them.
+  - Anything about YOUR holdings (the AI review of each stock, its news, and the portfolio review)
+    runs on YOUR OWN API keys, so those providers bill you directly. Section 3.10 shows the totals.
+  - An ideas-only user (section 2.3) pays nothing.
+
+
+================================================================================
+1. THE BASICS (EVERYONE)
+================================================================================
+
+1.1 Your name
+-------------
+What it is: the name Finnbot greets you with ("Good morning, Steven"). It's also the label Andres
+uses for your settings, so it must be different from every other user's.
+Format: your first name, letters only (a hyphen is fine).
+
+1.2 Your email address
+----------------------
+What it is: where the digest is sent.
+Recommendation: a Gmail address, read in the Gmail app. The email is designed for a phone, and its
+dropdowns and "jump to this stock" taps work best in the Gmail app. Other email apps show a
+standard version of the same content.
+
+1.3 Which digests you want
+--------------------------
+There are two digests each trading day (a day the US or Canadian stock market is open). Times are
+US Eastern time (ET, New York's time). Each takes about 20-30 minutes to build, so it arrives a
+little after it starts.
+
+  Pre-Market digest   Starts at 7:00 ET, before the US market opens at 9:30 ET.
+                      Covers the previous session's moves, and live moves on markets that are
+                      already open (for example London).
+  Post-Market digest  Starts at 4:10 PM ET, 10 minutes after the US market closes.
+                      Covers the full day that just ended.
+
+Your options:
+  Both          Pros: the most up to date; morning plan and evening wrap-up.
+                Cons: twice the AI cost for your holdings (section 3.10).
+  Pre-Market    Pros: arrives before the market opens, so you can plan the day.
+  only          Cons: US figures are from the previous day.
+  Post-Market   Pros: the day's final results.
+  only          Cons: arrives in the evening in North America, and overnight in Asia-Pacific
+                (for example about 4:40 AM in Perth).
+  Neither       Only useful with holdings and Telegram, to get the watchdog's alerts without
+                emails.
+
+Converting ET to your time (approximate; daylight saving shifts these by an hour for part of the
+year): Toronto and New York: same. Bogota: 1 hour earlier for most of the year. London: 5 hours
+later. Perth: 12 hours later (13 in the northern winter). Sydney: 14-16 hours later.
+
+
+================================================================================
+2. THE MAIN DECISION: HOW FINNBOT SEES YOUR HOLDINGS
+================================================================================
+
+Choose one of three options. This choice decides which of the later sections apply to you.
+
+  Option              Effort to set up   Stays up to date        Costs you
+  ------------------  -----------------  ----------------------  -------------------------------
+  A. SnapTrade        Medium             Automatically           AI costs (section 3.10)
+  B. Google Sheets    Low-medium         Only when you edit it   AI costs (section 3.10)
+  C. Ideas only       None               (no holdings)           Nothing
+
+2.1 Option A: SnapTrade (link your brokerage)
+---------------------------------------------
+What it is: SnapTrade is a service that connects to your brokerage account (for example Questrade
+or Wealthsimple) and lets Finnbot READ your positions: what you own, how many shares, in which
+accounts, and what you paid. Finnbot never places trades.
+
+Pros:
+  - Automatic: your holdings are always current, including trades you just made.
+  - Every account at the brokerage is included (TFSA, RRSP, margin, ...), with the names your
+    broker uses.
+  - Your average cost comes from your broker, so no typing and no typos.
+Cons:
+  - More steps to set up (below).
+  - A third party (SnapTrade) gets read access to your brokerage account.
+  - Brokerage connections occasionally expire and need you to log in again through SnapTrade.
+    Finnbot tells you when this happens (it also tells you if an account hasn't synced in 4 days).
+  - Not every brokerage is supported. Check SnapTrade's list of supported brokerages first.
+  - If your broker doesn't report what you paid for a position, its gain or loss shows as unknown.
+
+IMPORTANT, READ BEFORE CHOOSING SNAPTRADE:
+  SnapTrade's own guidance says a Personal API key "must not be distributed in an app or shared
+  with other people", and that it "can access your brokerage data and may be able to trade where
+  trading is enabled". Finnbot only ever reads your positions, but sending the key to anyone means
+  trusting them with that access. Talk to Andres before choosing this option. Google Sheets
+  (option B) avoids the issue entirely, because nothing is connected to your brokerage.
+
+Steps (from SnapTrade's documentation; the dashboard's exact wording may differ):
+  1. Go to snaptrade.com and sign up for a free Personal account.
+  2. Turn on two-factor authentication for your SnapTrade account (SnapTrade requires it for
+     Personal API keys, and it protects your brokerage link).
+  3. In the SnapTrade dashboard, connect your brokerage: choose your broker and log in to it in
+     SnapTrade's secure connection window. If you're offered read-only access, choose it: Finnbot
+     never needs to trade.
+  4. Open the dashboard's API Key page and create your Personal API key. You get two values: a
+     Client ID and a Consumer Key. The Consumer Key works like a password to your brokerage data:
+     store both right away as described in section 6.
+  5. Only after agreeing it with Andres, send them to him through the private channel he gives you
+     (section 6), never through the sign-up form, email, or a chat app's group.
+Cost: SnapTrade says Personal users are currently free. Finnbot adds no charge.
+
+2.2 Option B: Google Sheets (type your holdings in a spreadsheet)
+------------------------------------------------------------------
+What it is: you keep a Google Sheet listing your holdings, and Finnbot reads it at every digest
+and watchdog check. Live prices, company names, and exchange rates come from Yahoo Finance
+automatically; you only enter what you own and what you paid.
+
+Pros:
+  - Works with any brokerage, or several brokerages at once.
+  - Nothing is connected to your brokerage account.
+  - Full control over what Finnbot sees.
+Cons:
+  - Manual: after every buy or sell you must update the sheet, or Finnbot reviews old positions.
+  - The layout must be exact (below), or rows are skipped or misread.
+  - Only the exchanges listed below are fully supported.
+
+Steps:
+  1. Create a new Google Sheet (sheets.google.com, then Blank).
+  2. On the FIRST tab (the one the spreadsheet was created with), type the column names below in
+     row 1, exactly as written: lowercase, with underscores.
+  3. Add one row per position, starting in row 2.
+  4. Share the sheet so Finnbot can read it. Either:
+       a) Private (recommended): click Share, paste Finnbot's service-account email address
+          (finnbot-service@finnbot-504921.iam.gserviceaccount.com), set it to "Viewer", untick
+          "Notify people", and click Share. Only you and Finnbot can see the sheet.
+       b) By link: click Share, set "General access" to "Anyone with the link", role "Viewer".
+          Simpler, but anyone who gets the link can see your holdings.
+  5. Send Andres the sheet's ID. It's the long code in the sheet's web address, between "/d/" and
+     "/edit". For example, in
+       https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit#gid=0
+     the ID is 1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789
+     If you shared the sheet privately (4a), the ID alone opens nothing, so it can go in the sign-up
+     form. If you shared it by link (4b), anyone with the ID can see your holdings: send it
+     PRIVATELY, like a key (section 6.3).
+
+THE COLUMNS (row 1)
+
+  Column name          Required?  What to put in it
+  -------------------  ---------  -------------------------------------------------------------
+  symbol               Yes        The stock's symbol as Yahoo Finance writes it (see below).
+  shares_qty           Yes        How many shares you own. Fractions are fine (0.75, 312.4567).
+  avg_purchase_price   Yes        Your average price PER SHARE, in the currency the stock trades
+                                  in (see below). 0 or blank means "unknown": the stock is still
+                                  tracked, but its gain or loss shows as unknown.
+  account_name         No         Which account it's in, e.g. TFSA, RRSP, ISA, Margin. Shown on
+                                  the stock's card and used to total each account.
+  currency             No         Leave blank (recommended): Finnbot detects it. If you fill it
+                                  in, use a 3-letter code: USD, CAD, EUR, GBP, AUD, COP.
+
+  Any other column (for example "notes") is ignored, so you can keep your own notes beside them.
+
+SYMBOLS
+  - US stocks and ETFs: the plain symbol: AAPL, MSFT, VOO.
+  - Share classes use a hyphen, not a dot: BRK-B (not BRK.B).
+  - Other exchanges add a suffix after a dot:
+      Exchange                                Suffix(es)                  Currency
+      Toronto (TSX, Venture, NEO, CSE)        .TO  .V  .NE  .CN           CAD
+      London                                  .L                          GBP, priced in pence
+      Australia                               .AX                         AUD
+      Colombia                                .CL                         COP
+      Germany (Xetra, Frankfurt)              .DE  .F                     EUR
+      Paris, Amsterdam, Milan, Madrid         .PA  .AS  .MI  .MC          EUR
+      Brussels, Lisbon, Vienna, Helsinki,     .BR  .LS  .VI  .HE  .IR     EUR
+      Dublin
+    Examples: SHOP.TO, RY.TO, SHEL.L, BHP.AX, SAP.DE, ASML.AS, CIBEST.CL.
+  - Not sure? Search the company on finance.yahoo.com and copy the symbol it shows.
+  - Exchanges not listed (for example Switzerland's .SW) may load, but their daily changes and
+    currency handling aren't fully supported.
+
+PRICES
+  - Enter avg_purchase_price in the currency the stock trades in: US dollars for AAPL, Canadian
+    dollars for SHOP.TO, euros for SAP.DE, pesos for CIBEST.CL.
+  - London stocks (.L) are priced in PENCE. A share bought at £34.00 is 3400. Leave the currency
+    column blank for London stocks: writing GBP there makes them 100 times too large.
+  - Type plain numbers: 3400 or 185.50. No currency symbols ($, £), no thousands separators
+    (72,000), no spaces. Leave the cells' format as Automatic or plain Number: Google may pass
+    a formatted value like "72,000" to Finnbot as text, which would be read as unknown.
+
+SPECIAL CASES
+  - The same stock in several accounts: one row per account. Finnbot combines them on one card
+    (total shares, combined gain or loss) and lists the accounts.
+  - Several purchases in the same account: either one row with your average price, or one row per
+    purchase. Both give the same totals.
+  - The same company on two exchanges (for example SHOP and SHOP.TO): two separate rows and two
+    separate cards, since they trade separately.
+  - Sold a position completely? Delete its row (don't leave it with 0 shares).
+  - Don't leave empty rows in the middle of the list.
+
+EXAMPLE (row 1 is the column names)
+
+  symbol     shares_qty  avg_purchase_price  account_name   currency
+  AAPL       15          185.00              TFSA
+  AAPL       8           362.00              Margin
+  BRK-B      12          455.00              RRSP
+  SHOP.TO    35          150.00              TFSA
+  SHEL.L     120         3400                ISA
+  SAP.DE     15          255.00              Brokerage
+  BHP.AX     150         44.00               Brokerage
+  CIBEST.CL  40          72000               Brokerage
+
+2.3 Option C: Ideas only (no holdings)
+--------------------------------------
+What it is: you get the shared parts of the digest (market signals, macro news, swing and
+long-term ideas) without connecting any holdings.
+Pros: no setup beyond section 1, no API keys, no cost to you.
+Cons: no portfolio overview, no reviews of your stocks, no holdings news, no Telegram alerts or
+earnings reminders.
+If you choose this, skip to section 4. A timezone (3.2) is optional; it only sets whether the
+email says good morning, afternoon, or evening.
+
+
+================================================================================
+3. SETTINGS FOR USERS WITH HOLDINGS (OPTIONS A AND B)
+================================================================================
+
+3.1 Brokerage name
+------------------
+What it is: a label shown on your overview, for example "Questrade · 3 accounts · 12 positions".
+Required: yes. For a Google Sheet, use whatever name you like ("My portfolio", your broker's name).
+
+3.2 Timezone
+------------
+What it is: your local timezone, used to greet you by your time of day and to show when the
+digest was prepared in your time as well as New York's.
+Required: yes with holdings (optional for ideas only).
+Format: a city-based timezone name, for example America/Toronto, America/New_York,
+America/Bogota, Europe/London, Europe/Madrid, Australia/Perth, Australia/Sydney.
+
+3.3 Home currency
+-----------------
+What it is: the currency you think in. Finnbot converts your whole portfolio into it at the top
+of the email: the total value, the day's change, the unrealized gain or loss, each account's value,
+and the amounts in the portfolio-risk notes.
+Options: USD (default), CAD, EUR, GBP, AUD, COP.
+What else you see: when it isn't USD, a line under the total shows the value in US dollars, the
+exchange rate, and how your currency moved against the dollar this week, e.g.
+"$108,503.66 USD · 1 GBP = 1.339 USD · GBP +1.0% this week".
+Each holding's card stays in the stock's own currency (a Toronto stock in C$, a London stock in £
+with its price in pence). The ideas are always in USD, since they're US stocks.
+Cost: none.
+
+3.4 The AI model that reviews your holdings
+-------------------------------------------
+What it is: at every digest, an AI model reviews each of your holdings: its price trend,
+technical indicators, fundamentals, upcoming earnings, analyst views, and recent news. It then
+gives the stock one of the five signals (section 0) with its reasoning. The watchdog (3.9) uses the
+same model when it re-checks a stock.
+Required: no. The default is Claude Haiku 5.5 at medium effort.
+Which key you need: a Claude model needs an Anthropic key; a DeepSeek model needs a DeepSeek key
+(3.6).
+
+Cost per stock, per review (estimated from Finnbot's own measured usage, at the default effort):
+
+  Model               Provider   Per stock  Notes
+  ------------------  ---------  ---------  ----------------------------------------------------
+  DeepSeek Flash      DeepSeek   $0.002     Cheapest overall. Measured. Your holdings data goes to
+                                            DeepSeek's servers.
+  DeepSeek V4 Pro     DeepSeek   $0.007     DeepSeek's stronger model. Same data note.
+  Claude Haiku 5.5    Anthropic  $0.001     The default: the cheapest model of all, fast and
+                                            light, and your data stays with Anthropic.
+  Claude Sonnet 5.5   Anthropic  $0.027     A step up in nuance, about 20x Haiku. Measured.
+  Claude Sonnet 5     Anthropic  $0.027     The previous Sonnet, same price. Pick 5.5 instead.
+  Claude Opus 5.5     Anthropic  $0.054     Stronger reasoning, about 2x Sonnet.
+  Claude Opus 5       Anthropic  $0.067     Older and pricier than Opus 5.5.
+  Claude Opus 4.8     Anthropic  $0.067     Older and pricier than Opus 5.5.
+  Claude Fable 5.1    Anthropic  $0.134     The most capable, about 5x Sonnet.
+  Claude Fable 5      Anthropic  $0.134     The previous Fable, same price. Pick 5.1 instead.
+
+  The measured figures come from real Finnbot runs; the others apply each model's published prices
+  to the same amount of text. DeepSeek charges half price outside its peak hours, and Finnbot's
+  runs fall outside them, so these are off-peak prices.
+  Finnbot hasn't compared the models' accuracy against each other. More capable models generally
+  write more careful reasoning, but no model's signals are a guarantee.
+
+Pros and cons:
+  DeepSeek    Pros: very cheap (Flash costs about as little as Haiku); V4 Pro is a cheap step up.
+              Cons: your holdings data (symbols, share counts, prices) is sent to DeepSeek.
+  Claude      Pros: Anthropic's models; a range from the cheapest (Haiku, the default) to the most
+              capable (Fable).
+              Cons: the stronger models cost noticeably more for a large portfolio.
+  Why Haiku is the default: Finnbot's reviews read a lot of data but write little, so most of the
+  cost is the reading, and Haiku reads at a small fraction of Sonnet's price. If you want more
+  careful reasoning, Sonnet 5.5 or Opus 5.5 are the natural upgrades.
+
+3.5 Effort level
+----------------
+What it is: how long the model "thinks" before answering. More thinking can mean more careful
+analysis, but it takes longer and costs more, because thinking is billed like written output.
+Options:
+  Claude:   low, medium (default), high, xhigh, max
+  DeepSeek: none (no thinking), low (default), high, max
+Cost: the prices in 3.4 are at the default effort. Each extra 1,000 words-worth of thinking
+("tokens") per stock adds about:
+  Claude Haiku $0.0005 · Sonnet $0.01 · Opus 5.5 $0.02 · Opus 5 / 4.8 $0.025 · Fable $0.05
+  DeepSeek Flash $0.0006 · V4 Pro $0.002
+Higher efforts can think several thousand tokens per stock, so on Opus or Fable a high effort can
+double the cost per stock. Recommendation: keep the default unless you have a reason not to.
+
+3.6 API keys (Anthropic, DeepSeek, Gemini)
+------------------------------------------
+What they are: an API key is a private code that lets Finnbot use an AI provider on your account,
+so the provider bills you directly for your holdings' reviews. You need:
+
+  Key        When you need it                          Used for
+  ---------  ----------------------------------------  -------------------------------------------
+  Anthropic  Your model is Claude (including the       Reviewing each holding
+             default, if you don't choose a model)
+  DeepSeek   Your model is DeepSeek                    Reviewing each holding
+  Gemini     Always, with holdings                     News for each holding, and the
+                                                       portfolio-risk review
+
+You never need both Anthropic and DeepSeek: only the one for your chosen model.
+
+Before you start: have a safe place ready to store each key the moment you create it (section 6).
+Anthropic and DeepSeek show a key only once; if you lose it, you have to create a new one.
+
+GETTING AN ANTHROPIC KEY (for Claude models, including the default)
+  1. Go to platform.claude.com and sign in, or click to create an account (email or Google
+     sign-in). This is Anthropic's developer console, separate from a claude.ai chat subscription:
+     a Claude Pro or Max plan does NOT include API use.
+  2. Add credit: open Billing (in Settings), add a payment card, and buy prepaid credit. For 10
+     holdings on the default Haiku, the Anthropic part is under $1 a month (3.10), so $5 lasts
+     months. On Sonnet 5.5 it's about $14 a month.
+  3. Recommended: in the console's limits settings, set a monthly spend limit, so a mistake or a
+     leaked key can never cost more than you chose.
+  4. Open Settings, then API keys, and click "Create key".
+       - Name: Finnbot
+       - Expiration: none, or a date you'll remember to renew (an expired key stops your reviews
+         until you send a new one)
+       - Linked account: yourself
+  5. Copy the key (it starts with sk-ant-) and save it immediately in your password manager. The
+     console never shows it again.
+
+GETTING A DEEPSEEK KEY (for DeepSeek models)
+  1. Go to platform.deepseek.com and sign up (email or phone, depending on your country).
+  2. Add credit: open "Top up" (or Billing) and add a small balance. For 10 holdings on DeepSeek
+     Flash, DeepSeek's part is about $1 a month, so $5 lasts months. New accounts sometimes get a
+     small free grant that's used first. With no balance left, reviews stop until you top up.
+  3. Open "API keys" in the left sidebar and click "Create new API key". Name it Finnbot.
+  4. Copy the key (it starts with sk-) and save it immediately. DeepSeek never shows it again.
+
+GETTING A GEMINI KEY (everyone with holdings)
+  1. Go to aistudio.google.com and sign in with a Google account.
+  2. Click "Get API key" in the sidebar, then "Create API key". Choose an existing Google Cloud
+     project or let it create one (any name is fine, e.g. Finnbot).
+  3. Turn on billing for that project: AI Studio links to it, or go to console.cloud.google.com,
+     open Billing, and attach a payment card to the project. For 10 holdings with news on and both
+     digests, Google's part is about $6 a month.
+     Google also has a free tier with tight request limits on some models. Finnbot may work with it,
+     but your holdings' news can be slower or cut short, and Google's terms for free-tier data
+     differ, so check them before relying on it.
+  4. Recommended: in Google Cloud's Billing, set a budget alert so you're emailed if costs rise.
+  5. Copy the key (it usually starts with AIza) and save it in your password manager.
+  Each Gemini key includes 5,000 free web searches a month, far more than Finnbot uses, so you pay
+  only for the text.
+
+Tips for all three:
+  - Create a key used ONLY for Finnbot. If it ever leaks, you can delete it without affecting
+    anything else you use the provider for.
+  - Check your usage page after the first week to confirm costs match section 3.10.
+  - If a key stops working (expired, out of credit), the top of your email says so, and the rest
+    of your digest still arrives. Create a new key or top up, and send Andres the new key.
+
+3.7 News for each holding
+-------------------------
+What it is: for each holding, Gemini searches the web for its most important recent news and
+writes up to 2 short summaries (medium priority or higher), each with a link to its source. They
+appear on the stock's card and feed the portfolio review.
+Options: on (default) or off.
+Cost: about $0.012 per stock per digest. This is usually the largest part of the bill with a
+cheap model: with DeepSeek Flash it's around 80% of the total.
+Pros (on): explains WHY a stock is moving, with sources; the reviews can weigh real events.
+Cons (on): costs more; with 20 or more holdings the email nears Gmail's size limit and Finnbot
+shortens the news to fit.
+Turning it off does NOT remove the need for a Gemini key: the portfolio review still uses it
+(about $0.017 per digest).
+Note: Google has announced that this model's prices double on January 1, 2027, which roughly
+doubles the news and review costs from then on.
+
+3.8 Telegram
+------------
+What it is: Telegram is a free messaging app. Finnbot's Telegram bot sends you:
+  - Urgent sell alerts from the watchdog (3.9), at most once per stock per day.
+  - Earnings reminders: about 24 hours before a stock you hold reports earnings, once per report,
+    with Finnbot's latest call on it.
+  - Notices when your holdings can't be read, for example the sheet isn't shared with Finnbot or
+    your brokerage connection expired. (Problems with an API key show in the email instead.)
+Required: no. Without Telegram you get none of the above; the watchdog doesn't run, and urgent
+sells appear only in the email.
+Cost: free.
+
+Steps:
+  1. Install Telegram (phone or desktop) and create an account.
+  2. Open Finnbot's bot (Andres will send you the link) and press Start. A bot can't message you
+     until you've done this.
+  3. Find your chat ID: send any message to @userinfobot in Telegram; it replies with your ID, a
+     number like 123456789. (Or tell Andres once you've pressed Start, and he can find it.)
+  4. Send Andres the number.
+
+3.9 The watchdog: how often, when, and the tripwire
+---------------------------------------------------
+What it is: between digests, the watchdog re-checks your holdings during the day and sends an
+urgent sell alert on Telegram if one is needed. It needs Telegram (3.8).
+
+How a check works, and why it stays cheap: each check first looks at prices without any AI.
+Only stocks that need it get a new AI review:
+  - the price moved about one average day's range since the stock's last review, or
+  - it reports earnings within 7 days, or
+  - its last review is more than 24 hours old.
+Every other stock keeps its latest signal. There is also a hard cap of 40 AI reviews per day for
+your watchdog, whatever happens.
+
+A) How often (hours between checks)
+   Options: 1 to 168 hours, or 0 to turn the watchdog off. Default: 4.
+     1 hour     Fastest reaction to news. More checks, so more reviews (still capped).
+     4 hours    The default: about two checks during a regular trading day.
+     24 hours   One check a day.
+     0          Off. No urgent sell alerts by Telegram; earnings reminders and notices still come
+                if you have Telegram.
+
+B) When it runs (session)
+     Regular (default)  9:30 AM-4:00 PM ET on trading days (shorter on half-days).
+     Extended           4:00 AM-8:00 PM ET on trading days, including pre-market and after-hours,
+                        when many companies release earnings. More checks, so a bit more cost.
+     Around the clock   Every hour, every day, weekends and holidays included. Stocks barely
+                        trade then, so this mostly adds checks without adding much.
+
+C) The tripwire
+   What it is: a quick price check every hour between scheduled checks. If a stock moves about
+   twice its average daily range, it gets an AI review right away instead of waiting for the next
+   scheduled check.
+   Options: on (default) or off.
+   Cost: nothing unless a big move triggers a review.
+
+Watchdog cost per month (21 trading days). The watchdog hasn't run on a schedule for long enough
+to measure, so the first two columns are estimates; the last is the hard maximum.
+
+  Model               Quiet (~5 reviews/day)  Busy (~12/day)  Maximum (40/day cap)
+  ------------------  ----------------------  --------------  --------------------
+  DeepSeek Flash      $0.20                   $0.50           $1.60
+  DeepSeek V4 Pro     $0.75                   $1.80           $5.95
+  Claude Haiku 5.5    $0.15                   $0.35           $1.15
+  Claude Sonnet 5.5   $2.80                   $6.75           $22.55
+  Claude Opus 5.5     $5.65                   $13.50          $45.10
+  Claude Opus 5/4.8   $7.05                   $16.90          $56.35
+  Claude Fable 5.1    $14.10                  $33.80          $112.70
+
+  "Quiet" is roughly 10 holdings checked every 4 hours on a normal day; hourly checks, extended
+  hours, earnings season, or a volatile market push it toward "busy".
+
+3.10 What it all costs per month
+--------------------------------
+Your bill = digests + watchdog. Ideas, market signals, and macro news are covered by Andres.
+
+Per digest:
+  (number of holdings) x (model cost per stock from 3.4  +  $0.012 if holding news is on)
+  + $0.017 for the portfolio review
+
+Per month with BOTH digests (2 a day, 21 trading days). With ONE digest a day, halve these.
+
+  Holdings  Model               News on   News off
+  --------  ------------------  --------  --------
+  5         DeepSeek Flash      $3.60     $1.10
+  5         DeepSeek V4 Pro     $4.65     $2.20
+  5         Claude Haiku 5.5    $3.45     $1.00
+  5         Claude Sonnet 5.5   $8.80     $6.35
+  5         Claude Opus 5.5     $14.45    $12.00
+  5         Claude Fable 5.1    $31.35    $28.90
+
+  10        DeepSeek Flash      $6.45     $1.50
+  10        DeepSeek V4 Pro     $8.65     $3.70
+  10        Claude Haiku 5.5    $6.25     $1.25
+  10        Claude Sonnet 5.5   $16.95    $12.00
+  10        Claude Opus 5.5     $28.20    $23.25
+  10        Claude Fable 5.1    $62.00    $57.05
+
+  20        DeepSeek Flash      $12.20    $2.30
+  20        DeepSeek V4 Pro     $16.55    $6.65
+  20        Claude Haiku 5.5    $11.75    $1.85
+  20        Claude Sonnet 5.5   $33.15    $23.25
+  20        Claude Opus 5.5     $55.70    $45.80
+  20        Claude Fable 5.1    $123.30   $113.40
+
+  (Opus 5 and Opus 4.8 cost about 20% more than Opus 5.5.)
+
+Then add the watchdog from 3.9.
+
+Examples:
+  - 10 holdings, the defaults (Claude Haiku 5.5, news on, both digests, watchdog every 4 hours):
+      about $6.25 + $0.15 = roughly $6.50 a month (Anthropic about $0.70, Google about $5.70).
+  - 10 holdings, DeepSeek Flash, news on, both digests, watchdog every 4 hours:
+      about $6.45 + $0.20 = roughly $6.50 a month (DeepSeek about $1, Google about $5.70).
+  - 10 holdings, upgraded to Claude Sonnet 5.5 (news on, both digests, watchdog every 4 hours):
+      about $16.95 + $2.80 = roughly $20 a month.
+  - 10 holdings, DeepSeek Flash, news off, Pre-Market only, watchdog off:
+      about $0.75 a month.
+
+Who bills you: Anthropic or DeepSeek for the reviews of your holdings (including the watchdog's),
+and Google for the news and the portfolio review. From January 1, 2027, Google's part roughly
+doubles (3.7).
+All figures are estimates at October 2026 prices; your real costs depend on market activity and
+on how much the models write.
+
+
+================================================================================
+4. WHICH CHOICES MAKE OTHER SETTINGS UNNECESSARY
+================================================================================
+
+  If you choose...                You can skip...
+  ------------------------------  ------------------------------------------------------------
+  Ideas only (2.3)                All of section 3: brokerage name, home currency, model,
+                                  effort, every API key, news, Telegram, watchdog. Timezone is
+                                  optional.
+  SnapTrade (2.1, check with      The Google Sheet.
+  Andres first)
+  Google Sheets (2.2)             The SnapTrade Client ID and Consumer Key.
+  A Claude model, or no model     The DeepSeek key.
+  choice (the default is Claude)
+  A DeepSeek model                The Anthropic key.
+  No Telegram                     All watchdog settings (it can't run without Telegram).
+  Watchdog off (0 hours)          The watchdog's session and tripwire. Earnings reminders and
+                                  notices still come by Telegram.
+  Home currency USD               Nothing extra; it's the default.
+
+Things that are still needed even though you might expect otherwise:
+  - News off: you still need a Gemini key, for the portfolio review.
+  - Neither digest: you still give an email address.
+
+
+================================================================================
+5. WHAT HAPPENS AFTER YOU SEND YOUR ANSWERS
+================================================================================
+
+  1. Andres adds you as a user and enters your settings and keys.
+  2. He runs Finnbot's settings check, which confirms nothing required is missing or invalid.
+  3. With Google Sheets, he confirms Finnbot can read your sheet.
+  4. Your first digest arrives at the next scheduled time on a trading day.
+  5. If something goes wrong later (a key runs out, a connection expires, the sheet can't be
+     read), the top of your email tells you what happened (sheet and brokerage problems also come
+     by Telegram) and says "Contact Andres to address this issue." Andres is the only admin.
+
+To change a setting later (another model, news off, a different watchdog interval), just ask
+Andres. Changes apply from the next run.
+
+
+================================================================================
+6. KEEPING YOUR KEYS AND DATA SAFE
+================================================================================
+
+6.1 Why an API key matters
+--------------------------
+An API key is like a password and a credit card in one. Anyone who has your key can:
+  - Anthropic, DeepSeek, Gemini keys: run as many AI requests as they like, billed to YOU, until
+    your credit or spend limit runs out. Leaked keys are found and abused within minutes; there are
+    automated programs that search the internet for them all day.
+  - SnapTrade Consumer Key: read all of your brokerage positions and balances, and possibly place
+    trades where trading is enabled.
+The providers can't tell a thief's requests from yours, and generally won't refund them.
+
+6.2 Store every key safely the moment you create it
+---------------------------------------------------
+Anthropic, DeepSeek, and SnapTrade show a key only once. If you don't save it right away, you'll
+have to create a new one.
+  - Best: a password manager (for example Bitwarden, 1Password, or the one built into your
+    iPhone, Android, or browser). Save each key as its own entry, e.g. "Finnbot - Anthropic key",
+    with the date you created it.
+  - Acceptable: a note on your own device that's locked with a passcode, or an encrypted file.
+  - Not safe: a plain text file in a shared or synced folder, an email to yourself, a photo or
+    screenshot, a sticky note, a shared document, or any chat message you send to yourself.
+Keep your copy even after you've sent it to Andres: you'll need it to check usage, and you can
+recognise which key is yours if you ever have to delete it.
+
+6.3 Be very careful how keys travel online
+------------------------------------------
+Every place a key is pasted is a place it can leak from. Never put a key in:
+  - The Finnbot sign-up form (it asks you NOT to; its answers are stored in a spreadsheet).
+  - A group chat, a public post, a forum, a comment, or a support ticket.
+  - An ordinary email or text message (they're stored in plain text on several servers and
+    backed up indefinitely).
+  - A screenshot or screen share (images of keys are read by the same automated programs).
+  - A shared document or spreadsheet, or a code repository (for example GitHub).
+  - An AI chatbot or assistant.
+How to send your keys to Andres:
+  - Only through the private channel Andres tells you to use, for example an end-to-end encrypted
+    messenger such as Signal, or your password manager's secure-sharing feature.
+  - Send them directly to Andres, one-to-one. Never to a group, even a private one.
+  - Double-check the recipient before you send.
+  - Delete the message on your side once Andres confirms he has them.
+  - Never send a key to anyone who asks for it "on behalf of Finnbot": Andres will never ask
+    you to send keys anywhere else, and nobody else is entitled to them.
+
+6.4 Limit the damage in advance
+-------------------------------
+  - Create a key used only for Finnbot, so you can delete it without affecting anything else.
+  - Set a monthly spend limit (Anthropic) or a budget alert (Google), or keep only a small prepaid
+    balance (DeepSeek), so a leak can never cost much.
+  - Turn on two-factor authentication for each provider account and for SnapTrade.
+  - Look at each provider's usage page now and then. Usage you don't recognise is the first sign of
+    a leak.
+
+6.5 If you think a key has leaked
+---------------------------------
+  1. Delete (revoke) it immediately on the provider's website: the key stops working at once.
+  2. Create a new key and save it safely (6.2).
+  3. Send the new key to Andres privately (6.3) and tell him what happened.
+  4. Check the provider's usage and billing pages for charges you don't recognise, and contact the
+     provider's support if you find any.
+
+6.6 Where your data goes
+------------------------
+  - Your holdings (symbols, share counts, prices paid) are sent to the AI provider of your chosen
+    model (Anthropic or DeepSeek), and to Google (Gemini) with your account names for the
+    portfolio review. Gemini's news searches use only the symbols and company names.
+  - With SnapTrade, SnapTrade can read your brokerage positions.
+  - With Google Sheets, only you, Finnbot's service account, and anyone you shared the sheet with
+    can see it.
+
+
+================================================================================
+7. CHECKLIST: WHAT TO SEND ANDRES
+================================================================================
+
+Most answers go in Finnbot's sign-up form. Everything marked (PRIVATELY) never goes in the form:
+get it ready first, then send it through the private channel Andres gives you (section 6.3).
+
+Everyone:
+  [ ] Your first name
+  [ ] Your email address
+  [ ] Which digests: Pre-Market, Post-Market, both, or neither
+  [ ] Holdings: SnapTrade, Google Sheets, or ideas only
+
+SnapTrade only:
+  [ ] SnapTrade Client ID and Consumer Key (PRIVATELY, and only after agreeing it with Andres)
+
+Google Sheets only:
+  [ ] The sheet's ID: in the form if shared only with Finnbot's service account; PRIVATELY if
+      shared by link
+
+With holdings (SnapTrade or Google Sheets):
+  [ ] Brokerage name (any label for a sheet)
+  [ ] Timezone, e.g. America/Toronto
+  [ ] Home currency: USD, CAD, EUR, GBP, AUD, or COP (default USD)
+  [ ] AI model and effort (default Claude Haiku 5.5, medium)
+  [ ] Anthropic key (Claude model) OR DeepSeek key (DeepSeek model) (PRIVATELY)
+  [ ] Gemini key (PRIVATELY)
+  [ ] News for each holding: on or off (default on)
+  [ ] Telegram chat ID (optional, PRIVATELY)
+  [ ] Watchdog, if you use Telegram: hours between checks (default 4, 0 = off), session (regular,
+      extended, or around the clock; default regular), tripwire on or off (default on)
+
+Ideas only, optionally:
+  [ ] Timezone, for the greeting

@@ -24,7 +24,7 @@ if str(project_root) not in sys.path:
 
 from src.admins import notice_text
 from src.parameters import params_dict
-from src.personalized.user_profiles import USER_PROFILES
+from src.personalized.user_profiles import USER_PROFILES, env_setting
 from src.personalized.add_metrics import add_metrics_to_holdings
 from src.personalized.recommendation import add_recommendations
 from src.personalized.user_settings import get_llm_settings
@@ -102,7 +102,7 @@ class PortfolioFetcher:
                     f"SnapTrade client ID for user '{user_name}' is not configured"
                     " in USER_PROFILES."
                 )
-            client_id = os.environ.get(snap_client_id_value)
+            client_id = env_setting(snap_client_id_value)  # 2026-10-22: KEY=None (the sign-up sync's) counts as unset
 
             snap_consumer_key_value = user_profile.get("snaptrade_consumer_key")
             if snap_consumer_key_value is None:
@@ -110,7 +110,7 @@ class PortfolioFetcher:
                     f"SnapTrade consumer key for user '{user_name}' is not"
                     " configured in USER_PROFILES."
                 )
-            consumer_key = os.environ.get(snap_consumer_key_value)
+            consumer_key = env_setting(snap_consumer_key_value)
 
             if not client_id or not consumer_key:
                 raise ValueError(
@@ -127,7 +127,7 @@ class PortfolioFetcher:
             self.full_data = self.get_holdings_df()
         elif self.holdings_source == "SHEETS":
             sheets_id_key = user_profile.get("google_sheets_id")
-            sheets_id = os.environ.get(sheets_id_key)
+            sheets_id = env_setting(sheets_id_key)
             
             if not sheets_id:
                 raise ValueError(
