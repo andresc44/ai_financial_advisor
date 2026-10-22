@@ -560,6 +560,7 @@ params_dict = {
             "return_on_equity": "valuation_and_fundamentals.return_on_equity",
             "debt_to_equity": "valuation_and_fundamentals.debt_to_equity",
             "free_cash_flow": "valuation_and_fundamentals.free_cash_flow",
+            "rsi_14": "technical_indicators.rsi_14_1day.0.rsi",  # 2026-10-23, Andres: momentum on the card
         },
         # Where the trade stands technically, to judge the entry, stop, and target Claude gives
         "top_swing": {

@@ -6,6 +6,7 @@ Prices and features as of October 2026.
 CONTENTS
   0. What Finnbot does
   1. The basics (everyone)
+       1.4 Make the email's dropdowns work in Gmail (dynamic email)
   2. The main decision: how Finnbot sees your holdings
        2.1 Option A: SnapTrade (link your brokerage)
        2.2 Option B: Google Sheets (type your holdings in a spreadsheet)
@@ -31,6 +32,8 @@ CONTENTS
        6.5 If you think a key has leaked
        6.6 Where your data goes
   7. Checklist: what to send Andres
+  8. How Finnbot finds its ideas
+  9. How Finnbot assesses your holdings
 
 
 ================================================================================
@@ -48,7 +51,8 @@ The digest can include:
   - Long-term ideas: US businesses that look worth owning for years at today's price.
   - Your portfolio (if you connect holdings): its value, the day's change, unrealized gain or
     loss, which positions need attention, upcoming earnings, a review of risks across the whole
-    portfolio, and a card for each holding.
+    portfolio, and a card for each holding (its price, your average purchase price, gain or loss,
+    signal, reasoning, and news).
 
 Each holding gets one of five signals from an AI model:
   Buy more     The stock has pulled back and the data suggests it will recover: a time to add.
@@ -59,7 +63,8 @@ Each holding gets one of five signals from an AI model:
 
 These signals are AI-generated opinions based on market data and news. They are not financial
 advice, and the same stock can occasionally get a different signal on two runs with the same data.
-Always make your own decisions.
+Always make your own decisions. Sections 8 and 9 explain how the ideas are found and how your
+holdings are assessed.
 
 Who pays for what:
   - The ideas, the market signals, and the macro news are shared by everyone. Andres covers them.
@@ -82,8 +87,8 @@ Format: your first name, letters only (a hyphen is fine).
 ----------------------
 What it is: where the digest is sent.
 Recommendation: a Gmail address, read in the Gmail app. The email is designed for a phone, and its
-dropdowns and "jump to this stock" taps work best in the Gmail app. Other email apps show a
-standard version of the same content.
+dropdowns and "jump to this stock" taps work in Gmail once you allow them (1.4). Other email apps
+show a standard version of the same content.
 
 1.3 Which digests you want
 --------------------------
@@ -99,7 +104,8 @@ little after it starts.
 
 Your options:
   Both          Pros: the most up to date; morning plan and evening wrap-up.
-                Cons: twice the AI cost for your holdings (section 3.10).
+                Cons: about twice the AI cost for your holdings (a bit less with news on, since
+                the evening reuses the morning's news; section 3.10).
   Pre-Market    Pros: arrives before the market opens, so you can plan the day.
   only          Cons: US figures are from the previous day.
   Post-Market   Pros: the day's final results.
@@ -111,6 +117,25 @@ Your options:
 Converting ET to your time (approximate; daylight saving shifts these by an hour for part of the
 year): Toronto and New York: same. Bogota: 1 hour earlier for most of the year. London: 5 hours
 later. Perth: 12 hours later (13 in the northern winter). Sydney: 14-16 hours later.
+
+1.4 Make the email's dropdowns work in Gmail (dynamic email)
+-------------------------------------------------------------
+What it is: the digest is mostly dropdowns (each section, each stock), so you can open only what
+you want. Gmail shows these working dropdowns ("dynamic email") only for senders you have allowed.
+Without this step, Gmail shows a plainer version with everything already open.
+Who it's for: Gmail users. Other email apps always show the plainer version.
+Steps (once, on a computer; the Gmail app has no such setting, but it follows your account's
+choice):
+  1. Open Gmail in a web browser (mail.google.com), signed in to the account the digest goes to.
+  2. Click the gear icon at the top right, then "See all settings".
+  3. On the General tab, scroll to "Dynamic email" and tick "Enable dynamic email".
+  4. Click "Developer settings" next to it, add Finnbot's sending address:
+       finnbot107@gmail.com
+     and click OK.
+  5. Scroll to the bottom of the General tab and click "Save Changes".
+After this, the next digest opens with its dropdowns working, in the Gmail app too. Digests older
+than 30 days go back to the plainer version (a Gmail rule).
+Cost: none.
 
 
 ================================================================================
@@ -311,7 +336,8 @@ What it is: at every digest, an AI model reviews each of your holdings: its pric
 technical indicators, fundamentals, upcoming earnings, analyst views, and recent news. It then
 gives the stock one of the five signals (section 0) with its reasoning. The watchdog (3.9) uses the
 same model when it re-checks a stock.
-Nothing to choose: every user's holdings are reviewed by Claude Haiku 5.5, at low effort.
+Nothing to choose: you don't pick a model. Every user's holdings are reviewed by Claude Haiku 5.5,
+from Anthropic, at low effort, and the same model writes your portfolio review.
 Which key you need: an Anthropic key (3.6).
 Cost: about $0.002 per stock, per review.
 Why Haiku: in October 2026 Andres compared ten AI models and effort levels on the same holdings,
@@ -322,7 +348,7 @@ stays with Anthropic. No model's signals are a guarantee.
 3.5 Effort level
 ----------------
 What it is: how long the model "thinks" before answering.
-Nothing to choose: low, for everyone. It is already included in the cost in 3.4.
+Nothing to choose: low, for everyone, as tested in 3.4. It is already included in the cost in 3.4.
 
 3.6 API keys (Anthropic, Gemini)
 --------------------------------
@@ -397,10 +423,14 @@ doubles the news cost from then on.
 ------------
 What it is: Telegram is a free messaging app. Finnbot's Telegram bot sends you:
   - Urgent sell alerts from the watchdog (3.9), at most once per stock per day.
+  - If you buy a stock from one of Finnbot's swing ideas (by the end of the next trading day), an
+    alert when it reaches the idea's stop or target, and a monthly scorecard of how the ideas you
+    bought did against the S&P 500. (Section 9 explains how Finnbot notices the purchase.)
   - Earnings reminders: about 24 hours before a stock you hold reports earnings, once per report,
     with Finnbot's latest call on it.
   - Notices when your holdings can't be read, for example the sheet isn't shared with Finnbot or
     your brokerage connection expired. (Problems with an API key show in the email instead.)
+Only the sell alerts and the stop or target alerts are marked urgent.
 Required: no. Without Telegram you get none of the above; the watchdog doesn't run, and urgent
 sells appear only in the email.
 Cost: free.
@@ -460,33 +490,42 @@ to measure, so the first two columns are estimates; the last is the hard maximum
 
 3.10 What it all costs per month
 --------------------------------
-Your bill = digests + watchdog. Ideas, market signals, and macro news are covered by Andres.
+Your bill = digests + watchdog (3.9). Ideas, market signals, and macro news are covered by Andres.
 
-Per digest:
-  (number of holdings) x ($0.002 for the AI review (3.4)  +  $0.002 if holding news is on*)
-  + $0.002 for the portfolio review
-  * The Post-Market digest reuses most of the morning's news (3.7), so its news costs much less.
+What each digest costs you:
+  - The AI review: about $0.002 per holding (Claude Haiku 5.5, 3.4).
+  - News, if on: about $0.002 per holding. With both digests, the Post-Market one reuses most of
+    the morning's news (3.7), so its news costs much less.
+  - The portfolio review: about $0.0015 per digest, however many holdings you have.
 
-Per month with BOTH digests (2 a day, 21 trading days). With ONE digest a day, about 60% of these.
+Estimates for 21 trading days a month. "Per stock per run" is the cost of one digest divided by
+your number of holdings, the portfolio review included, which is why it falls a little as the
+portfolio grows.
 
-  Holdings  News on   News off
-  --------  --------  --------
-  5         $0.75     $0.50
-  10        $1.45     $0.90
-  20        $2.80     $1.75
+  Digests  Holdings  NEWS OFF                      NEWS ON
+  a day              per stock    per month        per stock    per month
+                     per run                       per run
+  -------  --------  -----------  ---------        -----------  ---------
+  1        1         $0.0035      $0.07            $0.0055      $0.12
+  1        10        $0.0022      $0.45            $0.0042      $0.87
+  1        20        $0.0021      $0.87            $0.0041      $1.71
+  2        1         $0.0035      $0.15            $0.0048      $0.20
+  2        10        $0.0022      $0.90            $0.0034      $1.43
+  2        20        $0.0021      $1.74            $0.0033      $2.79
 
-Then add the watchdog from 3.9.
+Then add the watchdog from 3.9 (typically $0.20-0.50 a month for 10 holdings, at most $1.70).
 
 Examples:
   - 10 holdings, news on, both digests, watchdog every 4 hours:
-      about $1.45 + $0.20 = roughly $1.65 a month (Anthropic about $1.10, Google about $0.55).
+      about $1.43 + $0.20 = roughly $1.65 a month (Anthropic about $1.10, Google about $0.55).
   - 10 holdings, news off, Pre-Market only, watchdog off:
       about $0.45 a month.
 
 Who bills you: Anthropic for the reviews of your holdings (including the watchdog's) and the
-portfolio review, and Google for the news. From January 1, 2027, Google's part roughly doubles (3.7).
+portfolio review, and Google for the news. From January 1, 2027, Google's part roughly doubles
+(3.7): for example 10 holdings, news on, both digests, goes from about $1.43 to about $1.95.
 All figures are estimates at October 2026 prices; your real costs depend on market activity and
-on how much the models write.
+on how much the models write. The news figures are the least certain.
 
 
 ================================================================================
@@ -611,6 +650,7 @@ Everyone:
   [ ] Your email address
   [ ] Which digests: Pre-Market, Post-Market, both, or neither
   [ ] Holdings: SnapTrade, Google Sheets, or ideas only
+  [ ] Gmail: allow Finnbot's dynamic email (1.4), so the dropdowns work
 
 SnapTrade only:
   [ ] SnapTrade Client ID and Consumer Key (PRIVATELY, and only after agreeing it with Andres)
@@ -624,11 +664,133 @@ With holdings (SnapTrade or Google Sheets):
   [ ] Timezone, e.g. America/Toronto
   [ ] Home currency: USD, CAD, EUR, GBP, AUD, or COP (default USD)
   [ ] Anthropic key (PRIVATELY)
-  [ ] Gemini key (PRIVATELY)
   [ ] News for each holding: on or off (default on)
+  [ ] Gemini key (PRIVATELY; only with news on)
   [ ] Telegram chat ID (optional, PRIVATELY)
   [ ] Watchdog, if you use Telegram: hours between checks (default 4, 0 = off), session (regular,
       extended, or around the clock; default regular), tripwire on or off (default on)
 
 Ideas only, optionally:
   [ ] Timezone, for the greeting
+
+
+================================================================================
+8. HOW FINNBOT FINDS ITS IDEAS
+================================================================================
+
+Both lists start every digest from the same place: every US-listed stock (NYSE, Nasdaq, NYSE
+American) that is large (currently $9 billion in market value and up), trades at least 1 million
+shares a day, and costs at least $30 a share. That is about 600 stocks. Two screens then narrow
+them down, the survivors are scored by an AI model, and the best scores become the ideas. The
+scoring model is DeepSeek V4.1 Flash, chosen in a comparison against stronger models; Andres pays
+for it.
+
+8.1 Long-term ideas: businesses worth owning for years
+  1. Quality screen (Yahoo Finance): at least 8 analysts follow it and their average rating leans
+     Buy (2.4 or better, on a scale where 1 is Strong Buy and 3 is Hold); expected to be profitable
+     over the next year, at a forward P/E of 35 or less; a net
+     profit margin of at least 7%; revenue up at least 5% on a year ago; a return on equity of at
+     least 12%.
+  2. Confirmation (Finnhub, over the last 12 months): revenue up at least 9%, earnings per share
+     growing, debt at most 1.75 times equity, and a P/E between 0 and 65.
+  3. Not overheated: a trend-strength reading (ADX) of 45 or less.
+  4. Scoring: the model scores each survivor out of 100 on valuation, financial health, growth,
+     and competitive advantage (its "moat"). A score within 5 points of the pass mark is scored
+     twice more and the middle score kept, so one unlucky run can't decide a close call.
+  5. Picking: up to 3 ideas scoring 85 or more, highest first, each from a different sector, with
+     two exceptions: at most 2 of the 3 may be tech (Technology or Communication Services), and
+     those two may share a sector; and at least 1 must be outside tech, which may score from 80.
+     On a day few stocks reach 85, the list is shorter.
+Each card shows the score and its four parts, the model's thesis and key risk, the forward P/E,
+PEG, revenue growth, profit margin, and two momentum readings: RSI (overbought at 70+, oversold at
+30 or less) and the 12-month price return.
+
+8.2 Swing ideas: trades over the next few weeks
+  1. A looser quality screen: at least 3 analysts, a consensus of Hold or better, profitable now and
+     expected to stay so (forward P/E up to 60), and revenue at most 5% below a year ago.
+  2. A setup in the daily prices, one of two kinds:
+       - A pullback: at least 1.5 normal days' ranges (ATR) below its recent high, but not more
+         than 30% down, and at most 5% below its 200-day average, so the longer trend is intact.
+       - A new uptrend: its 9-day average crossed above its 21-day average in the last 5 sessions.
+     Either way: at least $10 a share and $20 million traded a day, an RSI between 20 and 65, not
+     still falling, and no earnings report within 5 trading days.
+  3. A trade plan worked out by Finnbot itself, the same way for every stock: the stop just under
+     the nearest support (and at least 1.5 normal days' ranges below the entry), the target at the
+     nearest resistance above it (a recent high, a moving average, or the upper Bollinger Band),
+     1.5 to 8 ranges up. A plan with less than 1.5
+     times as much to gain as to lose is dropped. The best 40 plans go on to scoring.
+  4. Scoring: the model scores out of 100 on the technical setup, the plan's reward against its
+     risk (worked out by Finnbot, not the model), momentum and volume, and catalysts and sentiment.
+     Close calls are scored again, as above.
+  5. Picking: up to 5 ideas scoring 75 or more that are still early in their move (not already run
+     up from their recent low, RSI 70 or less, not above the upper Bollinger Band), with more than
+     half of them from different sectors.
+Each card shows the plan (entry, stop, target, and the ratio of gain to risk), what the stop and
+target are based on, and the technical readings behind the setup.
+
+Both lists are US stocks, priced in US dollars. They are AI-scored ideas from public data, not
+advice: always do your own research before buying.
+
+
+================================================================================
+9. HOW FINNBOT ASSESSES YOUR HOLDINGS
+================================================================================
+
+At every digest (and at each watchdog check, 3.9), each of your holdings gets one of the five
+signals (section 0) and a short reason, from Claude Haiku 5.5 on your Anthropic key.
+
+9.1 What the model sees, per holding
+  - The price path: the last 21 daily prices and volumes, and technical indicators (RSI, 9- and
+    21-day averages, Bollinger Bands, Parabolic SAR, beta).
+  - The business: fundamentals, analysts' ratings and targets, insider buying and selling, recent
+    headlines, the next earnings date, and past earnings surprises.
+  - Your position: shares, what you paid, the gain or loss, and its share of your portfolio.
+  - If you bought it from a Finnbot swing idea: the idea's plan (entry, stop, target).
+
+9.2 Facts worked out first, by Finnbot itself
+So that every review reads the chart the same way, Finnbot computes these before the model sees
+the stock, and the model applies them as given:
+  - The long-term trend: intact (above its 200-day average, with the 50-day above the 200-day),
+    mixed, or weak.
+  - A pullback (at least 1.5 normal days' ranges below its 20-day high), or a recent run (up 15% or
+    more, or 4 ranges, from its 20-day low).
+  - Signs the selling is ending (0 to 4): RSI rising, heavier volume on up days, a higher low, and a
+    close above its 9-day average (or its stop-and-reverse level below the price).
+  - Stretched (RSI 70+ or above the upper Bollinger Band), trading days to the next earnings report,
+    and whether it's a fund or a leveraged ETF.
+
+9.3 The rules, checked in this order (the first that applies wins)
+  1. Urgent sell: a specific, recent event that can't wait for the next digest, such as fraud,
+     bankruptcy risk, a guidance collapse, or a failed key product; or a sharp breakdown through
+     support on heavy volume. Never for slow drift, valuation alone, or a normal-sized move.
+  2. Profit sell: a real recent run plus at least two signs it's tiring (stretched, RSI falling
+     from a high, at the analysts' target or a prior high, momentum fading, or valuation stretched).
+  3. Risky: one serious warning (missed earnings twice or cut guidance, two analyst downgrades,
+     news that damages the reason to own it, or a broken trend that's still falling), or two
+     lesser ones (a short-term downtrend with no sign of a turn, earnings within about 5 trading
+     days, one downgrade, heavy insider selling, shrinking margins, an unexplained move twice its
+     normal size). An upcoming earnings report alone is not enough.
+  4. Buy more: a pullback in an intact or mixed long-term trend, with at least 2 of the 4 signs the
+     selling is ending, not stretched, no warning from rule 3, and the business unchanged.
+  5. Hold: everything else.
+Funds and ETFs (leveraged ones included) are judged on their price trend alone, since they have no
+earnings or analysts of their own.
+Note: buy more means "it dipped, and now is a good time to add". A stock you just bought from a
+swing idea that started a new uptrend usually shows hold: keep it, and follow the idea's plan.
+
+9.4 Second looks
+An urgent sell or profit sell is reviewed twice more, and the majority wins (the milder signal on a
+tie), so a one-off reading can't send you an alert. The model also rates its overall outlook on
+the stock (bullish, neutral, or bearish), separately from the signal.
+
+9.5 The rest of the holdings section
+  - News (3.7): up to 2 stories per holding from Gemini, with links, shown on its card.
+  - The portfolio review: up to 5 notes on the portfolio as a whole (concentration in a stock,
+    sector, or currency; stocks likely to move together; overall market sensitivity; earnings
+    dates close together; how much is flagged risky), written by Claude Haiku from the figures in
+    your digest.
+  - Reuse: a review the watchdog made in the last hour, for a stock that hasn't moved since, is
+    reused instead of asking the model again.
+  - Bought from an idea: Finnbot notices a new position in a stock it suggested the day before (by
+    the end of the next trading day), labels its card with the idea, gives the model the idea's
+    plan, and sends the alerts in 3.8.

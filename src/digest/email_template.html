@@ -87,7 +87,8 @@
 {#- Figure boxes: up to three side by side; four as a 2x2 grid, so figures like "-$1,107.47" never push the card
     wider than a phone screen. -#}
 {%- macro stats(items) -%}
-{% set per_row = 2 if items|length == 4 else items|length %}
+{# 2026-10-23: 4 or 6 tiles go 2 a row, which fits a phone (6 long-term tiles since RSI and the 12-month return) #}
+{% set per_row = 2 if items|length in (4, 6) else items|length %}
 <table {{ T }} class="sg">
 {% for line in items|batch(per_row) %}
 {% set later_row = not loop.first %}

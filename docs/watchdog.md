@@ -382,7 +382,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
    Every level is in `params_dict["MARKET_SIGNALS"]`, and the glossary quotes them from there. The Nasdaq-100 and the Dow share a row, since one leading the other is the signal for both.
 6. **Your holdings:** most urgent signal first, then largest position. A stock held in several accounts gets one row.
 7. **Swing ideas.**
-8. **Long-term ideas.**
+8. **Long-term ideas.** Each card's tiles: forward P/E, PEG, revenue growth, net margin, and since 2026-10-23 (Andres) momentum: RSI 14 (overbought at 70+, oversold at 30 or less, as on the holding cards) and the 12-month price return (Yahoo's 52-week change; `RECOMMENDATION_FIELDS.top_long_term.rsi_14`, `all.52_week_change_percent`). Six tiles go two a row, like the four on a holding card.
 9. **Glossary** (added 2026-10-17): a collapsed card with five category rows: signals and ideas, your portfolio, technical indicators, valuation and fundamentals, and market indicators. Each row lists the terms, abbreviations and indicators the email uses, and how to read them. The text is static, in `src/digest/glossary.py`.
 10. **Footer:** "About this digest", showing what it cost, which model scored the ideas, and how many stocks were left after each screening stage (added 2026-10-17; see `screening` below).
 

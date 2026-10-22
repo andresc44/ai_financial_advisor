@@ -286,6 +286,14 @@ def _stat(label: str, value: str, tone: str = "ink", sub: str = "", sub_tone: st
     return {"label": label, "value": value, "tone": tone, "sub": sub, "sub_tone": sub_tone}
 
 
+def _rsi_stat(rsi: Optional[float]) -> dict:
+    """The RSI 14 tile, as on the holding cards: overbought at 70+, oversold at 30 or less (Claude-authored, 2026-10-23)."""
+    return _stat("RSI 14", _fixed(rsi, 0),
+                 sub="Overbought" if rsi is not None and rsi >= 70 else "Oversold" if rsi is not None and rsi <= 30
+                 else "Neutral" if rsi is not None else "",
+                 sub_tone="warn" if rsi is not None and (rsi >= 70 or rsi <= 30) else "muted")
+
+
 def _badge(text: str, fg: str, bg: str) -> dict:
     return {"text": text, "fg": fg, "bg": bg}
 
@@ -624,10 +632,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
               sub=f"{_signed_pct(daily_pct, 2)} {day}" if daily_pct is not None else "", sub_tone=_tone(daily_pct)),
         _stat(f"Unrealized · {currency}", _card_money(gain / usd_per_unit if gain is not None else None, currency,
                                                       signed=True), _tone(gain), _signed_pct(gain_pct), _tone(gain)),
-        _stat("RSI 14", _fixed(rsi, 0),
-              sub="Overbought" if rsi is not None and rsi >= 70 else "Oversold" if rsi is not None and rsi <= 30
-              else "Neutral" if rsi is not None else "",
-              sub_tone="warn" if rsi is not None and (rsi >= 70 or rsi <= 30) else "muted"),
+        _rsi_stat(rsi),
     ]
     # digest_fields._ma_status: "Above 21 EMA (+1.2%)", or the 50-day average when there was no EMA, or "N/A"
     trend = re.match(r"^(Above|Below) (.+?) \(([+-]?[\d.]+)%\)$", str(first.get("ma_status") or ""))
@@ -1331,6 +1336,11 @@ def _long_term_card(pick: dict, today: Optional[date]) -> dict:
         _stat("Revenue", _fraction_pct(pick.get("revenue_growth_yoy"), 0, signed=True), _tone(pick.get("revenue_growth_yoy")),
               "growth YoY"),
         _stat("Margin", _fraction_pct(pick.get("profit_margin"), 0), sub="net profit"),
+        # Claude-authored (2026-10-23, Andres): momentum, RSI 14 and the 12-month price return (the classic long-term
+        # momentum measure; Yahoo's 52-week change, a fraction)
+        _rsi_stat(_num(pick.get("rsi_14"))),
+        _stat("12-month", _fraction_pct(pick.get("52_week_change_percent"), 0, signed=True),
+              _tone(pick.get("52_week_change_percent")), "price return"),
     ]
     card["range"] = _range(pick)
     earnings, _ = _earnings(pick, today)

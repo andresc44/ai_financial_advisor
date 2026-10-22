@@ -192,7 +192,10 @@ def sanitize_ticker_payload(ticker_symbol, raw_data):
             "day_high": yahoo.get("dayHigh"),
             "52_week_low": yahoo.get("fiftyTwoWeekLow"),
             "52_week_high": yahoo.get("fiftyTwoWeekHigh"),
-            "52_week_change_percent": yahoo.get("52WeekChange") or fh_basic.get("52WeekPriceReturnDaily"),
+            # Claude-authored (2026-10-23): a fraction (0.25 = 25%), like Yahoo's; Finnhub's fallback is in percent
+            "52_week_change_percent": yahoo.get("52WeekChange") if yahoo.get("52WeekChange") is not None else (
+                fh_basic["52WeekPriceReturnDaily"] / 100
+                if isinstance(fh_basic.get("52WeekPriceReturnDaily"), (int, float)) else None),
             "50_day_average": yahoo.get("fiftyDayAverage"),
             "200_day_average": yahoo.get("twoHundredDayAverage"),
             "volume": yahoo.get("volume"),

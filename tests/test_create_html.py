@@ -196,7 +196,13 @@ def test_swing_card_names_its_setup_and_what_the_plan_rests_on():
 
 def test_long_term_card_figures():
     card = ch.build_view(payload())["long_term"][0]
-    assert [stat["value"] for stat in card["stats"]] == ["18.0", "0.90", "+30%", "25%"]
+    # 2026-10-23 (Andres): RSI 14 and the 12-month return too; this pick has neither
+    assert [stat["value"] for stat in card["stats"]] == ["18.0", "0.90", "+30%", "25%", "—", "—"]
+    momentum = ch.build_view(payload(recommendations={"top_long_term": [
+        long_pick(rsi_14=72.4, **{"52_week_change_percent": 0.4553})], "top_swing": []}))["long_term"][0]["stats"][4:]
+    assert [(s["label"], s["value"], s["sub"], s["tone"]) for s in momentum] == [
+        ("RSI 14", "72", "Overbought", "ink"), ("12-month", "+46%", "price return", "pos")]
+    assert render(payload())[1].count('class="st w2') >= 6  # Six tiles, two a row
     assert card["analyst"] == "Analysts: Buy (25 analysts) · target $130.00 (+30%)"
     assert card["range"]["note"] == "17% below its 52-week high"
     assert ("Debt / equity", "40%") in card["details"]
