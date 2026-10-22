@@ -360,9 +360,11 @@ if __name__ == "__main__":
     reports_status = not (args.check or args.payload_only)  # Only cron runs feed the healthchecks.io heartbeat
     # Claude-authored (2026-10-22): new or edited sign-up form answers go into .env first, and form users with
     # nothing required missing into ACTIVE_USERS, before the users are read (src/import_signup.py). Cron runs only.
-    # 2026-10-23: before that, the settings changed in the spreadsheet's Parameters tab (src/remote_settings.py)
-    if reports_status:
+    # 2026-10-23: before that, the settings changed in the spreadsheet's Parameters tab (src/remote_settings.py), on
+    # every run that builds a digest, manual ones included (Andres); not for --check, which builds nothing
+    if not args.check:
         sync_settings()
+    if reports_status:
         sync_signups()
     try:
         ok, status = run_daily_digests(

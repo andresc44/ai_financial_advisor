@@ -605,10 +605,10 @@ def test_the_non_tech_pick_may_score_from_80(monkeypatch):
         return [p["ticker"] for p in scorer.select_top_candidates(inputs, long_n=3, swing_n=5, min_long_score=85,
                                                                    swing_setups={})["top_long_term"]]
 
-    # Only tech reaches 85 (one per sector): NBIX, the best non-tech from 80, is added
-    assert picks({"TSM": 94, "NVDA": 93, "GOOGL": 86, "NBIX": 83, "VRT": 82}) == ["TSM", "GOOGL", "NBIX"]
+    # Only tech reaches 85: two tech picks (2026-10-23: LONG_TERM_MAX_TECH_PICKS), then NBIX, the best non-tech from 80
+    assert picks({"TSM": 94, "NVDA": 93, "GOOGL": 86, "NBIX": 83, "VRT": 82}) == ["TSM", "NVDA", "NBIX"]
     # The best non-tech is under 80: no third pick
-    assert picks({"TSM": 94, "NVDA": 93, "GOOGL": 86, "NBIX": 79, "VRT": 78}) == ["TSM", "GOOGL"]
+    assert picks({"TSM": 94, "NVDA": 93, "GOOGL": 86, "NBIX": 79, "VRT": 78}) == ["TSM", "NVDA"]
     # A non-tech stock already reached 85: nothing changes
     assert picks({"TSM": 94, "NBIX": 88, "VRT": 83}) == ["TSM", "NBIX"]
 
@@ -647,6 +647,38 @@ def fake_scores(scores):
         key, index = ("longScore", 0) if horizon == "long_term" else ("swingScore", 1)
         return {t: {key: scores[t][index], "sub_scores": {}} for t in sanitized_inputs if t in scores}
     return run
+
+
+def test_with_three_or_more_long_term_picks_at_most_two_are_tech(monkeypatch, caplog):
+    # 2026-10-23, Andres's rule: tech stocks may share a sector, but at most LONG_TERM_MAX_TECH_PICKS (2) are picked
+    import logging
+
+    import src.universal.recommendations.scorer as scorer
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setitem(scorer.params_dict, "PICK_SECTOR_RULES", {"LONG_TERM": "all_different", "SWING": "any"})
+    monkeypatch.setitem(scorer.params_dict, "LONG_TERM_MAX_TECH_PICKS", 2)
+    monkeypatch.setitem(scorer.params_dict, "TECH_SECTORS", ["Technology", "Communication Services"])
+    sectors = {"TSM": "Technology", "NVDA": "Technology", "RDDT": "Communication Services", "JPM": "Financial Services",
+               "BAM": "Financial Services", "VRT": "Industrials", "NBIX": "Healthcare"}
+    inputs = {t: {"profile": {"sector": sector}} for t, sector in sectors.items()}
+
+    def picks(scores, n=3):
+        monkeypatch.setattr(scorer, "run_llm_evaluation", fake_scores({t: (s, 0) for t, s in scores.items()}))
+        return [p["ticker"] for p in scorer.select_top_candidates(inputs, long_n=n, swing_n=5, min_long_score=85,
+                                                                   swing_setups={})["top_long_term"]]
+
+    # Two tech picks may share a sector; the third tech waits, and the best other sector fills the list
+    assert picks({"TSM": 95, "NVDA": 94, "RDDT": 93, "JPM": 88, "BAM": 87, "VRT": 86}) == ["TSM", "NVDA", "JPM"]
+    assert "[RDDT] Left out of the long-term picks" in caplog.text and "LONG_TERM_MAX_TECH_PICKS 2" in caplog.text
+    # Other sectors still follow the sector rule (BAM shares JPM's), and five picks still hold at most two tech
+    assert picks({"TSM": 95, "NVDA": 94, "RDDT": 93, "JPM": 88, "BAM": 87, "VRT": 86, "NBIX": 85.5}, n=5) == [
+        "TSM", "NVDA", "JPM", "VRT", "NBIX"]
+    # Two picks: the limit doesn't apply, and the non-tech rule makes one of them non-tech
+    assert picks({"TSM": 95, "NVDA": 94, "JPM": 88}, n=2) == ["TSM", "JPM"]
+    # None: tech follows the sector rule like any other sector (one Technology pick)
+    monkeypatch.setitem(scorer.params_dict, "LONG_TERM_MAX_TECH_PICKS", None)
+    assert picks({"TSM": 95, "NVDA": 94, "RDDT": 93, "JPM": 88}) == ["TSM", "RDDT", "JPM"]
 
 
 def test_configured_sector_rules_are_known():

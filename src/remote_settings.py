@@ -8,11 +8,13 @@ parameters.py, one per row:
 
     Parameter | Value | Default (parameters.py) | Finnbot status | What it does
 
-Each cron digest run reads it first (sync_settings, before the sign-up sync) and:
+Every digest run reads it first (sync_settings; cron runs and manual ones, since 2026-10-23) and:
 - checks every Value that differs from its Default (type, allowed values, ranges). A valid one replaces parameters.py's
   value from that run on, in every Finnbot process (src/settings_overrides.py, data/remote_settings.json);
-- a blank Value, or one still equal to the Default Finnbot last wrote, follows parameters.py, so a later change of the
-  default there applies too (and the Value is updated to it);
+- a blank Value, or one equal to the Default, follows parameters.py;
+- 2026-10-23 (Andres): when parameters.py's default changes (by Andres or Claude), the newest change wins: the sheet's
+  Value becomes the new default even if it had been changed there, and the admins are told. The Default column Finnbot
+  last wrote is how a change in parameters.py is noticed;
 - a Value that isn't valid isn't applied: its status says why, and the value accepted before (or the default) stays;
 - writes back the Default, Finnbot status, and What it does columns (src/parameter_notes.py), and adds a row for each
   new setting. A row that isn't a setting is kept, marked as ignored;
@@ -271,6 +273,14 @@ def _sheet_rows(values: list[list[str]]) -> tuple[dict[str, SheetRow], list[Shee
     return rows, extra
 
 
+def _changed_in_code(written: str, default: Any) -> bool:
+    """Whether parameters.py's default differs from the one Finnbot last wrote in the Default column (`written`)."""
+    try:
+        return parse_value(written, default) != default
+    except ValueError:  # The default changed type, or the cell was edited
+        return written.strip() != format_value(default)
+
+
 def plan_sync(values: list[list[str]], previous: dict, now: datetime) -> SyncPlan:
     """
     What the sheet's rows (`values`, header included) mean: the accepted values, each row's status, and the table to
@@ -293,11 +303,17 @@ def plan_sync(values: list[list[str]], previous: dict, now: datetime) -> SyncPla
     status: dict[tuple, str] = {}
     wanted: dict[tuple, Any] = {}   # Values that differ from the default, before the checks
     problems: dict[tuple, str] = {}
+    code_changed: dict[tuple, str] = {}  # Settings whose parameters.py default changed: the Default the sheet had
     for path in paths:
         name, default = _name(path), store.get_path(defaults, path)
         row = rows.get(name)
         if path in store.READ_ONLY:
             shown[path], status[path] = format_value(store.get_path(params_dict, path)), READ_ONLY_STATUS
+            continue
+        # 2026-10-23 (Andres): parameters.py changed this default since the last sync, so it wins over the sheet
+        if row and row.written_default.strip() and _changed_in_code(row.written_default, default):
+            code_changed[path] = row.written_default.strip()
+            shown[path], status[path] = format_value(default), f"Default (changed in parameters.py, {now_text})"
             continue
         text = row.value.strip() if row else ""
         if not text:
@@ -309,11 +325,7 @@ def plan_sync(values: list[list[str]], previous: dict, now: datetime) -> SyncPla
         except ValueError as e:
             problems[path] = str(e)
             continue
-        try:
-            written = parse_value(row.written_default, default) if row.written_default.strip() else default
-        except ValueError:
-            written = default
-        if value == default or value == written:  # Unchanged: follows parameters.py, even when its default changed
+        if value == default:  # Follows parameters.py
             shown[path], status[path] = format_value(default), DEFAULT_STATUS
         else:
             wanted[path] = value
@@ -357,8 +369,14 @@ def plan_sync(values: list[list[str]], previous: dict, now: datetime) -> SyncPla
     for path in paths:
         if path in store.READ_ONLY:
             continue
-        old = before[path][0] if path in before else store.get_path(defaults, path)
         new = plan.overrides.get(path, store.get_path(defaults, path))
+        if path in code_changed:  # From the sheet's value, or the old default when it had none
+            old_text = format_value(before[path][0]) if path in before else code_changed[path]
+            if old_text != format_value(new):
+                plan.changes.append(f"{_name(path)}: {_short(old_text, 50)} → {_short(format_value(new), 50)} "
+                                    f"(changed in parameters.py)")
+            continue
+        old = before[path][0] if path in before else store.get_path(defaults, path)
         if old != new:
             back = " (the default)" if path not in plan.overrides else ""
             plan.changes.append(f"{_name(path)}: {_short(format_value(old), 50)} → {_short(format_value(new), 50)}{back}")

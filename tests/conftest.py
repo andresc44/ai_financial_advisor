@@ -29,12 +29,14 @@ if str(PROJECT_ROOT) not in sys.path:
 class TelegramRecorder:
     def __init__(self):
         self.messages: list[tuple[str, str]] = []
+        self.urgent: list[bool] = []
         self.fail = False
 
-    def __call__(self, user_name: str, body: str) -> bool:
+    def __call__(self, user_name: str, body: str, urgent: bool = False) -> bool:
         if self.fail:
             raise ValueError("Telegram unavailable (test)")
         self.messages.append((user_name, body))
+        self.urgent.append(urgent)  # 2026-10-23: whether it starts with "Urgent alert for <user>"
         return True
 
 

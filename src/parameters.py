@@ -393,6 +393,11 @@ params_dict = {
     # 2026-10-22, Andres: the non-tech pick may score from 80, under MIN_LONG_SCORE (85). On that day only chipmakers
     # reached 85, and the best non-tech candidates scored 82-84
     "LONG_TERM_NON_TECH_MIN_SCORE": 80.0,
+    # Claude-authored (2026-10-23, Andres's rule): with 3 or more long-term picks, at most this many are tech stocks
+    # (TECH_SECTORS), and tech stocks may share a sector with each other; PICK_SECTOR_RULES still applies to the rest.
+    # On 2026-10-22 all 9 candidates at 85+ were Technology, and "all_different" let only one in, so the list had 2
+    # picks (TSM, and BAM from the non-tech rule) instead of 3. None = tech follows PICK_SECTOR_RULES like the rest
+    "LONG_TERM_MAX_TECH_PICKS": 2,
     "TECH_SECTORS": ["Technology", "Communication Services"],
     # Claude-authored (2026-10-18): a swing pick must still be early in its move. A stock past any of these is left
     # out however it scores (scorer.too_far_along): more than MAX_RUN_ATR normal days' ranges (14-day ATR) above
@@ -777,8 +782,9 @@ params_dict = {
         # Gemini; this caps its answer, thinking included (5 notes are ~400 tokens)
         "PORTFOLIO_REVIEW_MAX_TOKENS": 8000,
         # Claude-authored (2026-10-23): this many holdings share one Gemini news request (was one request each). A
-        # stock the answer leaves out is asked for again on its own
-        "SYMBOL_NEWS_BATCH_SIZE": 5,
+        # stock the answer leaves out is asked for again on its own. 3 (Andres, was 5): on his 10 holdings, 5 per
+        # request kept 11 stories against 13 for one each, at about half the cost ($0.012 against $0.022)
+        "SYMBOL_NEWS_BATCH_SIZE": 3,
         # Claude-authored (2026-10-23): a holding's news fetched earlier the same US Eastern day (the Pre-Market
         # digest's) is shown again in a later digest instead of asking Gemini, unless its price moved more than
         # MAX_MOVE_NATR normal days' ranges (its NATR) since, its signal changed, or it reported earnings

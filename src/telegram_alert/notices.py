@@ -147,17 +147,19 @@ def send_user_notice(
     body: str,
     alert_logs: pd.DataFrame,
     cooldown_hours: int = COOLDOWN_HOURS,
+    urgent: bool = False,
 ) -> pd.DataFrame:
     """
     Sends `body` (Telegram HTML) to the user, at most once per cooldown for each (subject, reason), and returns the
     alert log with the new row. A failed send is only a warning and isn't logged, so it is retried next run.
+    2026-10-23: `urgent` (only for something urgent and time-sensitive) starts it with "Urgent alert for <user>".
     """
     key = alert_key(subject, reason)
     if is_alert_suppressed(alert_logs, user_name, key, cooldown_hours=cooldown_hours):
         print(f"[SUPPRESSED] {subject} notice ({reason}) already sent to {user_name} within {cooldown_hours}h.")
         return alert_logs
     try:
-        send_telegram_message(user_name, body)
+        send_telegram_message(user_name, body, urgent=urgent)
     except (ValueError, requests.RequestException) as e:
         print(f"[WARNING] Could not send the {subject} notice to {user_name}: {e}")
         return alert_logs
@@ -167,12 +169,12 @@ def send_user_notice(
 
 
 def send_notice_now(
-    user_name: str, subject: str, reason: str, body: str, cooldown_hours: int = COOLDOWN_HOURS
+    user_name: str, subject: str, reason: str, body: str, cooldown_hours: int = COOLDOWN_HOURS, urgent: bool = False
 ) -> bool:
     """Like send_user_notice, but reads and saves the alert log file right away. Returns True if it was sent."""
     with _LOG_LOCK:
         alert_logs = load_and_prune_alert_logs(CSV_PATH)
-        updated = send_user_notice(user_name, subject, reason, body, alert_logs, cooldown_hours)
+        updated = send_user_notice(user_name, subject, reason, body, alert_logs, cooldown_hours, urgent=urgent)
         if len(updated) == len(alert_logs):
             return False
         _save(updated)

@@ -74,9 +74,24 @@ def test_an_empty_tab_gets_every_setting_with_its_default_and_a_note(sheet):
     names = [row[0] for row in rows]
     assert names == [".".join(path) for path in store.leaf_paths(store.defaults())]
     batch = sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")
-    assert batch[1] == batch[2] == "5" and batch[3] == "Default" and batch[4]
+    assert batch[1] == batch[2] == "3" and batch[3] == "Default" and batch[4]
     assert sheet.row("ACTIVE_USERS")[3].startswith("🔒")
     assert json.loads(store.OVERRIDES_PATH.read_text(encoding="utf-8"))["overrides"] == []
+
+
+def test_only_urgent_telegram_messages_say_so(monkeypatch):
+    # 2026-10-23 (Andres): "Urgent alert for <user>" only on something urgent and time-sensitive
+    import src.telegram_alert.send_telegram as send_telegram
+
+    sent = []
+    monkeypatch.setitem(send_telegram.USER_PROFILES, "Andres", {"telegram_chat_id": "ANDRES_TELEGRAM_CHAT_ID"})
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("ANDRES_TELEGRAM_CHAT_ID", "1")
+    monkeypatch.setattr(send_telegram.requests, "post", lambda url, json, timeout: sent.append(json["text"]) or
+                        type("Ok", (), {"raise_for_status": lambda self: None})())
+    send_telegram.send_telegram_message("Andres", "Settings changed.")
+    send_telegram.send_telegram_message("Andres", "SWK fell to its stop.", urgent=True)
+    assert sent == ["Settings changed.", "<b>\U0001f6a8 Urgent alert for Andres:</b>\n\nSWK fell to its stop."]
 
 
 def test_every_setting_has_a_note_of_its_own_and_survives_the_round_trip():
@@ -88,18 +103,19 @@ def test_every_setting_has_a_note_of_its_own_and_survives_the_round_trip():
 
 def test_a_changed_value_applies_to_this_run_and_to_every_later_process(sheet, telegram):
     digest = params_dict["DIGEST"]  # Modules keep references like this one
-    sheet.edit("DIGEST.SYMBOL_NEWS_BATCH_SIZE", "3")
+    sheet.edit("DIGEST.SYMBOL_NEWS_BATCH_SIZE", "4")
     sheet.edit("GEMINI_CONFIG.effort", "minimal")
     plan = rs.sync_settings(sheet, now=NOW)
-    assert digest["SYMBOL_NEWS_BATCH_SIZE"] == 3 and params_dict["GEMINI_CONFIG"]["effort"] == "minimal"
+    assert digest["SYMBOL_NEWS_BATCH_SIZE"] == 4 and params_dict["GEMINI_CONFIG"]["effort"] == "minimal"
     assert sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[3] == "✅ Applied since 2026-10-23 16:10 ET"
-    assert sorted(plan.changes) == ["DIGEST.SYMBOL_NEWS_BATCH_SIZE: 5 → 3", "GEMINI_CONFIG.effort: low → minimal"]
-    assert len(telegram.messages) == 1 and "SYMBOL_NEWS_BATCH_SIZE: 5 → 3" in telegram.messages[0][1]
+    assert sorted(plan.changes) == ["DIGEST.SYMBOL_NEWS_BATCH_SIZE: 3 → 4", "GEMINI_CONFIG.effort: low → minimal"]
+    assert len(telegram.messages) == 1 and "SYMBOL_NEWS_BATCH_SIZE: 3 → 4" in telegram.messages[0][1]
+    assert telegram.urgent == [False]  # 2026-10-23: not urgent, so no "Urgent alert" line
     # A new process: parameters.py's values, then the saved file
     fresh = json.loads(json.dumps(store.defaults()))
-    fresh["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] = 5
+    fresh["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] = 3
     store.apply_overrides(fresh, store.load_overrides())
-    assert fresh["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] == 3
+    assert fresh["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] == 4
     # The next read changes nothing, keeps the time it was applied, and sends no second notice
     rs.sync_settings(sheet, now=LATER)
     assert sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[3] == "✅ Applied since 2026-10-23 16:10 ET"
@@ -148,10 +164,29 @@ def test_clearing_a_value_goes_back_to_the_default(sheet, telegram):
 
 
 def test_an_untouched_value_follows_a_new_default_in_parameters_py(sheet):
-    # The sheet still shows the old default (4) in both columns: parameters.py's 5 is used and shown
-    sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[1:3] = ["4", "4"]
+    # The sheet still shows the old default (5) in both columns: parameters.py's 3 is used and shown
+    sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[1:3] = ["5", "5"]
     plan = rs.sync_settings(sheet, now=NOW)
-    assert plan.overrides == {} and sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[1:3] == ["5", "5"]
+    assert plan.overrides == {} and sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[1:3] == ["3", "3"]
+    assert plan.changes == ["DIGEST.SYMBOL_NEWS_BATCH_SIZE: 5 → 3 (changed in parameters.py)"]
+
+
+def test_a_change_in_parameters_py_replaces_the_sheets_value(sheet, telegram, monkeypatch):
+    # 2026-10-23 (Andres): the newest change wins, even over a value set in the sheet
+    sheet.edit("MIN_SWING_SCORE", "70")
+    rs.sync_settings(sheet, now=NOW)
+    assert params_dict["MIN_SWING_SCORE"] == 70.0
+    monkeypatch.setattr(store, "_defaults", {**store.defaults(), "MIN_SWING_SCORE": 72.0,
+                                             "DIGEST": {**store.defaults()["DIGEST"], "SYMBOL_NEWS_BATCH_SIZE": 4}})
+    plan = rs.sync_settings(sheet, now=LATER)
+    assert params_dict["MIN_SWING_SCORE"] == 72.0 and params_dict["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] == 4
+    assert sheet.row("MIN_SWING_SCORE")[1:3] == ["72.0", "72.0"]
+    assert sheet.row("MIN_SWING_SCORE")[3].startswith("Default (changed in parameters.py")
+    assert sorted(plan.changes) == ["DIGEST.SYMBOL_NEWS_BATCH_SIZE: 3 → 4 (changed in parameters.py)",
+                                    "MIN_SWING_SCORE: 70.0 → 72.0 (changed in parameters.py)"]
+    assert "changed in parameters.py" in telegram.messages[-1][1]
+    # The next sync sees nothing new
+    assert rs.sync_settings(sheet, now=LATER).changes == [] and sheet.row("MIN_SWING_SCORE")[3] == "Default"
 
 
 def test_active_users_and_unknown_rows_are_left_alone(sheet):

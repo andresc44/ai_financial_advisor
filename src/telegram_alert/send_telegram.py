@@ -60,8 +60,13 @@ def send_telegram_column(
 
     print(f"✅ Telegram message containing column '{column_name}' sent successfully.")
 
-def send_telegram_message(user_name: str, message: str) -> bool:
-    """Sends a custom message to the user's Telegram chat."""
+def send_telegram_message(user_name: str, message: str, urgent: bool = False) -> bool:
+    """
+    Sends a custom message to the user's Telegram chat.
+    Claude-authored (2026-10-23, Andres): only an `urgent` message starts with "Urgent alert for <user>" (a swing idea's
+    position reaching its stop or target). Every message used to, notices about settings, sign-ups, and scorecards
+    included; each has its own heading, and the watchdog's sell alerts their own "ACTION REQUIRED" line.
+    """
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
 
     user_profile = USER_PROFILES.get(user_name)
@@ -81,8 +86,7 @@ def send_telegram_message(user_name: str, message: str) -> bool:
             "Missing credentials. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env"
         )
 
-    # Format message with user name
-    formatted_message = f"<b>Urgent Alert for {user_name}:</b>\n\n{message}"
+    formatted_message = f"<b>🚨 Urgent alert for {user_name}:</b>\n\n{message}" if urgent else message
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {

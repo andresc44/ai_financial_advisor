@@ -224,8 +224,9 @@ def send_hit_alerts(user_name: str, hits: list[dict]) -> int:
     sent = 0
     for link in hits:
         try:
+            # 2026-10-23: urgent (the only notices that are): the position reached its stop or target
             if send_notice_now(user_name, "idea plan", f"{link['symbol']} {link['idea_at'][:10]} {link['hit']}",
-                               hit_text(link), cooldown_hours=NOTICE_COOLDOWN_HOURS):
+                               hit_text(link), cooldown_hours=NOTICE_COOLDOWN_HOURS, urgent=True):
                 sent += 1
         except Exception as e:
             print(f"[WARNING] {user_name}: the {link['symbol']} {link['hit']} alert failed: {e}")

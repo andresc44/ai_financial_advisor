@@ -8,7 +8,7 @@ document explains how the models were compared on 2026-10-22, what the results w
 | Job | Setting chosen | Why |
 |---|---|---|
 | Long-term and swing ideas | **DeepSeek Flash 4.1, high effort** (`LLM.UNIVERSAL`: `deepseek-flash`, `high`) | Ranks stocks almost as well as the best Claude models for under a tenth of the price: about $0.23 a run, ~$10 a month |
-| Long-term picks | Pass mark **85**, **3** picks, at least **1 outside tech** (which may score from 80) | Flash 4.1 scores long-term ideas ~2 points above the reference, so 85 plays the role 83 would for it; the pick count and the non-tech rule are Andres's choices |
+| Long-term picks | Pass mark **85**, **3** picks, at least **1 outside tech** (which may score from 80), at most **2 tech** (2026-10-23) | Flash 4.1 scores long-term ideas ~2 points above the reference, so 85 plays the role 83 would for it; the pick count and the non-tech rule are Andres's choices |
 | Swing picks | Pass mark **75** (set earlier the same day) | — |
 | Holdings | **Claude Haiku 5.5, low effort** (`LLM.HOLDINGS`), for every user, with a clearer rubric worked from facts computed in code | With the new rubric it gives Opus's label for 93% of holdings, for about $0.05 a run against Opus's $2.04, and keeps users' data with Anthropic |
 

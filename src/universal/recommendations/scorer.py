@@ -77,30 +77,41 @@ def too_far_along(context: Optional[Dict[str, Any]]) -> Optional[str]:
 
 
 def pick_with_sector_rule(
-    ranked: List[Tuple[str, Dict[str, Any]]], n: int, sector_of: Callable[[str], str], rule: str, label: str
+    ranked: List[Tuple[str, Dict[str, Any]]], n: int, sector_of: Callable[[str], str], rule: str, label: str,
+    capped: Optional[Callable[[str], bool]] = None, cap: int = 0, cap_name: str = "",
 ) -> List[Tuple[str, Dict[str, Any]]]:
     """
     Claude-authored (2026-10-17): up to n of `ranked` ((ticker, scores), best first) whose sectors follow `rule`
     (SECTOR_RULES). Highest scores win wherever the rule allows: a stock from a sector already in the list waits,
     and joins as soon as enough other sectors have joined to allow it ("majority_different"). Returns the picks
     best first; stocks left out are logged.
+    2026-10-23 (Andres): stocks `capped` says are in a group (tech, for the long-term list) skip the sector rule, so
+    they may share a sector, but at most `cap` of them are picked (`cap_name` names the setting in the log).
     """
     if rule not in SECTOR_RULES:
         logger.warning(f"Unknown PICK_SECTOR_RULES value {rule!r} for {label} picks; using 'any'.")
         rule = "any"
     allow_repeat = SECTOR_RULES[rule]
+    in_group = capped or (lambda ticker: False)
     picked: List[Tuple[str, Dict[str, Any]]] = []
     waiting: List[Tuple[str, Dict[str, Any]]] = []
-    sectors: Counter = Counter()
+    over_cap: List[str] = []
+    sectors: Counter = Counter()  # Sectors of the picks outside the group
 
     def room_for_repeat() -> bool:
-        return len(picked) < n and allow_repeat(len(sectors), len(picked) - len(sectors))
+        ruled = sum(1 for ticker, _ in picked if not in_group(ticker))
+        return len(picked) < n and allow_repeat(len(sectors), ruled - len(sectors))
 
     for item in ranked:
         if len(picked) >= n:
             break
         sector = sector_of(item[0])
-        if sectors[sector] == 0:
+        if in_group(item[0]):
+            if sum(1 for ticker, _ in picked if in_group(ticker)) < cap:
+                picked.append(item)
+            else:
+                over_cap.append(item[0])
+        elif sectors[sector] == 0:
             picked.append(item)
             sectors[sector] += 1
             while waiting and room_for_repeat():  # A new sector can make room for better stocks that waited
@@ -115,6 +126,9 @@ def pick_with_sector_rule(
     for ticker, _ in waiting:
         logger.info(f"[{ticker}] Left out of the {label} picks: another pick is already from {sector_of(ticker)} "
                     f"(PICK_SECTOR_RULES {rule!r}).")
+    for ticker in over_cap:
+        logger.info(f"[{ticker}] Left out of the {label} picks: {cap} pick(s) are already from {sector_of(ticker)} or "
+                    f"its group ({cap_name} {cap}).")
     rank = {ticker: position for position, (ticker, _) in enumerate(ranked)}
     return sorted(picked, key=lambda item: rank[item[0]])
 
@@ -361,8 +375,15 @@ def select_top_candidates(
     # Claude-authored (2026-10-17): the sector rule decides among the stocks that cleared the bar
     sector_rules = params_dict.get("PICK_SECTOR_RULES") or {}
     sector_of = lambda ticker: candidate_sector(ticker, sanitized_inputs)  # noqa: E731
+    # 2026-10-23, Andres's rule: with 3 or more long-term picks, at most LONG_TERM_MAX_TECH_PICKS (2) are tech, and tech
+    # stocks may share a sector (only chipmakers reached 85 on 2026-10-22, so "all_different" left one tech pick)
+    tech = set(params_dict.get("TECH_SECTORS") or [])
+    max_tech = params_dict.get("LONG_TERM_MAX_TECH_PICKS")
+    tech_cap = {} if max_tech is None else {
+        "capped": lambda ticker: sector_of(ticker) in tech, "cap": int(max_tech) if long_n >= 3 else long_n,
+        "cap_name": "LONG_TERM_MAX_TECH_PICKS"}
     top_long_tuples = pick_with_sector_rule(
-        sorted_by_long, long_n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term")
+        sorted_by_long, long_n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term", **tech_cap)
     # 2026-10-22: at least one pick outside tech, which may score from LONG_TERM_NON_TECH_MIN_SCORE
     non_tech_floor = params_dict.get("LONG_TERM_NON_TECH_MIN_SCORE", min_long_score)
     non_tech_pool = sorted(((t, s) for t, s in long_scores.items() if s.get("longScore", 0.0) >= min(non_tech_floor, min_long_score)),

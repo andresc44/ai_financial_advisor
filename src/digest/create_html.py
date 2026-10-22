@@ -555,6 +555,22 @@ def _own_price(holding: dict, code: str) -> str:
     return _card_money(price, code)
 
 
+def _avg_cost(lots: list[dict], code: str, usd_per_unit: float, pence: bool) -> str:
+    """
+    Claude-authored (2026-10-23, Andres): the average price paid per share, in the card's currency (pence for a London
+    listing, like its price), over the lots with a known cost basis (a 0.0 one wasn't reported); "" when none is
+    known. The cost basis is in USD at the same rate the card converts back at, so this is the price as paid.
+    """
+    known = [lot for lot in lots if (_num(lot.get("total_cost_basis")) or 0.0) > 0 and (_num(lot.get("shares")) or 0.0) > 0]
+    shares = sum(_num(lot.get("shares")) for lot in known)
+    if not known or shares <= 0:
+        return ""
+    per_share = sum(_num(lot.get("total_cost_basis")) for lot in known) / shares / usd_per_unit
+    if pence:
+        return f"{per_share * 100:,.2f}".rstrip("0").rstrip(".") + "p"
+    return _card_money(per_share, code)
+
+
 def _day_label(holding: dict, today: Optional[date], period_day: str) -> str:
     """
     Claude-authored (2026-10-21): what a holding's daily change covers on its own exchange (pull_holdings_data
@@ -601,6 +617,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     weight = _num(first.get("portfolio_weight_pct"))
     rsi = _num(first.get("rsi"))
     pence = _text(first.get("listed_currency")) == "GBX"
+    avg_cost = _avg_cost(lots, currency, usd_per_unit, pence)  # 2026-10-23, Andres: the average price paid
 
     stats = [
         _stat(f"Price · {'pence' if pence else currency}", _own_price(first, currency),
@@ -658,7 +675,8 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         "day": {"text": _signed_pct(daily_pct, 2) if daily_pct is not None else "", "tone": _tone(daily_pct),
                 "label": day, "session": _text(first.get("daily_pnl_session"))},
         "weight_pct": weight or 0.0,
-        "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"] + accounts),
+        "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"]
+                           + ([f"avg cost {avg_cost}"] if avg_cost else []) + accounts),
         "signal": _badge(label, fg, bg),
         "signal_key": recommendation if recommendation in SIGNALS else None,
         "signal_bar": bar,

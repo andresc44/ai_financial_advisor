@@ -385,7 +385,7 @@ Options: on (default) or off.
 Cost: about $0.002 per stock for a digest's news. The Post-Market digest shows the morning's news
 again for stocks that haven't moved much, kept their signal, and haven't reported earnings since, so
 most of its news costs nothing. (Until October 23, 2026 it was about $0.012 per stock per digest,
-85% of the bill; Gemini now thinks less and covers 5 stocks per request.)
+85% of the bill; Gemini now thinks less and covers 3 stocks per request.)
 Pros (on): explains WHY a stock is moving, with sources; the reviews can weigh real events.
 Cons (on): costs more; with 20 or more holdings the email nears Gmail's size limit and Finnbot
 shortens the news to fit.

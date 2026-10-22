@@ -82,7 +82,7 @@ def test_target_and_stop_alerts_go_once_and_sales_are_kept(tmp_path, monkeypatch
     assert telegram.messages == []
     monkeypatch.setattr(ip, "_ideas", lambda: idea_rows)
     ip.attach_idea_origins("Tess", held(("AAPL", 1, 1, 1), ("SWK", 10, 101.2, 112.4)), THU_POST, path)
-    assert len(telegram.messages) == 1
+    assert len(telegram.messages) == 1 and telegram.urgent == [True]  # 2026-10-23: one of the few urgent notices
     assert "SWK reached the $112.00 target of Finnbot's Oct 21 swing idea (now $112.40)" in telegram.messages[0][1]
     assert "+11.1%" in telegram.messages[0][1]
     ip.attach_idea_origins("Tess", held(("AAPL", 1, 1, 1), ("SWK", 10, 101.2, 113)), FRI_POST, path)

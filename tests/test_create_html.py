@@ -129,7 +129,8 @@ def test_holdings_most_urgent_first_with_each_stock_on_one_card():
     assert [card["symbol"] for card in view["holdings"]] == ["CCC", "AAA", "EEE", "DDD", "BBB", "FFF"]
     merged = view["holdings"][1]
     assert merged["value"] == "$2,000.00"
-    assert merged["meta"] == "20 shares · Individual RRSP · Individual TFSA"
+    # 2026-10-23, Andres: the average price paid ($900 of cost per 10-share lot)
+    assert merged["meta"] == "20 shares · avg cost $90.00 · Individual RRSP · Individual TFSA"
     assert view["holdings"][-1]["signal"]["text"] == "Not evaluated"
     assert {row["name"]: row["positions"] for row in view["account"]["accounts"]} == {
         "Individual TFSA": "6 positions", "Individual RRSP": "1 position"}
@@ -753,6 +754,8 @@ def test_holdings_in_other_currencies_show_their_own_currency_and_add_up_in_usd(
     # converted at: $700 at 0.70 is C$1,000
     assert (enb["value"], enb["stats"][0]["label"], enb["stats"][0]["value"]) == ("C$1,000.00", "Price · CAD", "C$50.00")
     assert "Listed in" not in enb["meta"] and enb["chart"] is None
+    # 2026-10-23: the average price paid, as paid: C$900 for 10 shares (a London one in pence, like its price)
+    assert enb["meta"].startswith("10 shares · avg cost C$90.00 · ") and "avg cost 720p" in vod["meta"]
     assert (bhp["value"], bhp["stats"][0]["value"]) == ("A$100.00", "A$40.00")  # The payload's own AUD
     # London: the price in pence as quoted, the value and P/L in pounds
     assert (vod["value"], vod["stats"][0]["label"], vod["stats"][0]["value"]) == ("£80.00", "Price · pence", "80p")
