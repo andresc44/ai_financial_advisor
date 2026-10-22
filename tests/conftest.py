@@ -84,6 +84,10 @@ def isolated(tmp_path, monkeypatch):
     import src.llm_models as llm_models
 
     monkeypatch.setattr(llm_models, "ENV_OVERRIDES", {})  # .env's UNIVERSAL_LLM_MODEL / _EFFORT too
+    # 2026-10-22: no extra LLM requests for borderline idea scores or for urgent / profit sells, so tests that count
+    # requests keep testing what they were written for; tests/test_rechecks.py switches them on
+    monkeypatch.setitem(params_dict, "IDEA_RESCORE", {**params_dict["IDEA_RESCORE"], "EXTRA_RUNS": 0})
+    monkeypatch.setitem(params_dict, "HOLDINGS_RECHECK", {**params_dict["HOLDINGS_RECHECK"], "EXTRA_REVIEWS": 0})
     real_init = deepseek_client.DeepSeekClient.__init__
 
     def refuse(request):

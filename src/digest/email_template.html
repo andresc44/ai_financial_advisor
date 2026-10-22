@@ -43,8 +43,19 @@
     version. The HTML version keeps role="presentation" for screen readers. -#}
 {%- set T %}{% if amp %}width="100%"{% else %}role="presentation" width="100%"{% endif %}{% endset -%}
 
+{#- 2026-10-22: a badge names its colour class (create_html.style_classes) instead of repeating its colours inline;
+    a colour pair without a class keeps the inline style -#}
+{%- macro badge_attrs(b) -%}
+{% set cls = badge_classes.get((b.bg, b.fg)) %}class="bd{% if cls %} {{ cls }}{% endif %}"{% if not cls %} style="background-color:{{ b.bg }};color:{{ b.fg }};"{% endif %}
+{%- endmacro -%}
+
 {%- macro badge(b) -%}
-<span class="bd" style="background-color:{{ b.bg }};color:{{ b.fg }};">{{ b.text }}</span>
+<span {{ badge_attrs(b) }}>{{ b.text }}</span>
+{%- endmacro -%}
+
+{#- 2026-10-22: a coloured dot, by its colour class like the badges -#}
+{%- macro dot_span(color) -%}
+{% set cls = dot_classes.get(color) %}<span class="dot{% if cls %} {{ cls }}{% endif %}"{% if not cls %} style="background-color:{{ color }};"{% endif %}></span>
 {%- endmacro -%}
 
 {#- A holding's chip in the overview. In the AMP version it is a button: tapping it opens Your holdings and the
@@ -57,7 +68,7 @@
     the top, the page jumped ~650px up to it. Those dropdowns now handle their own expand event (focusing their
     own header, which is on screen since it was just tapped), so it stops there. -#}
 {%- macro jump(b) -%}
-{% if amp %}<button type="button" class="bd jp" style="background-color:{{ b.bg }};color:{{ b.fg }};" on="tap:acc-s-holdings.expand,acc-{{ b.anchor }}.collapse,acc-{{ b.anchor }}.expand">{{ b.text }}</button>{% else %}{{ badge(b) }}{% endif %}
+{% if amp %}{% set cls = badge_classes.get((b.bg, b.fg)) %}<button type="button" class="bd jp{% if cls %} {{ cls }}{% endif %}"{% if not cls %} style="background-color:{{ b.bg }};color:{{ b.fg }};"{% endif %} on="tap:acc-s-holdings.expand,acc-{{ b.anchor }}.collapse,acc-{{ b.anchor }}.expand">{{ b.text }}</button>{% else %}{{ badge(b) }}{% endif %}
 {%- endmacro -%}
 
 {%- macro label(text, color=MUTED, top="0") -%}
@@ -70,7 +81,7 @@
 {#- 2026-10-21: a part marked whole (create_html._part: 18 characters or fewer, unless that added a line) is kept on one line, so a wrap moves it whole (longer ones still
     wrap, as the summary line is narrow), and the dot between parts stays at the end of the line before. -#}
 {%- macro parts(items) -%}
-{% for p in items %}{% if not loop.first %}<span class="sep">&nbsp;&middot; </span>{% endif %}{% set whole = p.whole %}{% if whole %}<span class="nw">{% endif %}{% if p.dot %}<span class="dot" style="background-color:{{ p.dot }};"></span>&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b class="{{ TC[p.tone] }}">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}{{ p.suffix }}{% if whole %}</span>{% endif %}{% endfor %}
+{% for p in items %}{% if not loop.first %}<span class="sep">&nbsp;&middot; </span>{% endif %}{% set whole = p.whole %}{% if whole %}<span class="nw">{% endif %}{% if p.dot %}{{ dot_span(p.dot) }}&nbsp;{% endif %}{{ p.prefix }}{% if p.tone %}<b class="{{ TC[p.tone] }}">{{ p.text }}</b>{% else %}{{ p.text }}{% endif %}{{ p.suffix }}{% if whole %}</span>{% endif %}{% endfor %}
 {%- endmacro -%}
 
 {#- Figure boxes: up to three side by side; four as a 2x2 grid, so figures like "-$1,107.47" never push the card
@@ -82,7 +93,7 @@
 {% set later_row = not loop.first %}
 <tr>
 {% for s in line %}
-<td width="{{ 100 // per_row }}%" class="st{{ '' if loop.first else ' sb' }}{{ ' sh' if later_row else '' }}"><div class="sl">{{ s.label }}</div><div class="sv{% if s.tone != 'ink' %} {{ TC[s.tone] }}{% endif %}">{{ s.value }}</div>{% if s.sub %}<div class="ss{% if s.sub_tone != 'muted' %} {{ TC[s.sub_tone] }}{% endif %}">{{ s.sub }}</div>{% endif %}</td>
+<td class="st w{{ per_row }}{{ '' if loop.first else ' sb' }}{{ ' sh' if later_row else '' }}"><div class="sl">{{ s.label }}</div><div class="sv{% if s.tone != 'ink' %} {{ TC[s.tone] }}{% endif %}">{{ s.value }}</div>{% if s.sub %}<div class="ss{% if s.sub_tone != 'muted' %} {{ TC[s.sub_tone] }}{% endif %}">{{ s.sub }}</div>{% endif %}</td>
 {% endfor %}
 </tr>
 {% endfor %}
@@ -151,7 +162,7 @@
 
 {#- Any other row: an optional coloured dot, a title, and an optional line under it. -#}
 {%- macro item_header(title, sub="", dot="", cls="rt") -%}
-<td valign="top"><div class="{{ cls }}">{% if dot %}<span class="dot" style="background-color:{{ dot }};"></span>&nbsp; {% endif %}{{ title }}</div>{% if sub %}<div class="xs mu t2">{{ sub }}</div>{% endif %}</td>
+<td valign="top"><div class="{{ cls }}">{% if dot %}{{ dot_span(dot) }}&nbsp; {% endif %}{{ title }}</div>{% if sub %}<div class="xs mu t2">{{ sub }}</div>{% endif %}</td>
 {%- endmacro -%}
 
 {%- macro chart(ch) -%}
@@ -315,6 +326,10 @@ a{text-decoration:none;}
 .nw{white-space:nowrap;}
 .ow{overflow-wrap:anywhere;}
 .sep{color:#CBD5E1;}
+.w1{width:100%;}.w2{width:50%;}.w3{width:33%;}.w4{width:25%;}.w5{width:20%;}.w6{width:16%;}
+{#- 2026-10-22: one rule per badge colour pair and dot colour this email uses (create_html.style_classes) -#}
+{% for (bg, fg), cls in badge_classes.items() %}.{{ cls }}{background-color:{{ bg }};color:{{ fg }};}{% endfor %}
+{% for color, cls in dot_classes.items() %}.{{ cls }}{background-color:{{ color }};}{% endfor %}
 /* Tones (TC) last, so they win over the colours of the classes above */
 .pos{color:#15803D;}
 .neg{color:#B91C1C;}
@@ -406,7 +421,7 @@ u + .body .cv{display:none;}
 {% for m in risk.mix %}<td width="{{ m.width }}%" class="rg" style="background-color:{{ m.color }};">&nbsp;</td>{% endfor %}
 </tr></table>
 <div class="xs t8" style="line-height:22px;">
-{% for m in risk.mix %}<span class="nw"><span class="dot" style="background-color:{{ m.color }};"></span>&nbsp;<b class="ink">{{ m.label }}</b> {{ m.count }} &middot; {{ m.pct }}</span>&nbsp;&nbsp;&nbsp; {% endfor %}
+{% for m in risk.mix %}<span class="nw">{{ dot_span(m.color) }}&nbsp;<b class="ink">{{ m.label }}</b> {{ m.count }} &middot; {{ m.pct }}</span>&nbsp;&nbsp;&nbsp; {% endfor %}
 </div>
 {% if risk.largest %}<div class="sm t4">Largest position: <b class="ink">{{ risk.largest }}</b></div>{% endif %}
 {% endif %}
@@ -486,7 +501,7 @@ u + .body .cv{display:none;}
 {% call fold("News (" ~ h.news|length ~ ")", anchor=h.anchor ~ "-news", focus_on_open=true) %}
 <table {{ T }}>
 {% for n in h.news %}
-<tr><td class="nd"><span class="dot" style="background-color:{{ n.dot }};"></span></td><td class="nt">{{ n.text }}{% if n.url %} <a href="{{ n.url }}" class="lk">Source</a>{% endif %}</td></tr>
+<tr><td class="nd">{{ dot_span(n.dot) }}</td><td class="nt">{{ n.text }}{% if n.url %} <a href="{{ n.url }}" class="lk">Source</a>{% endif %}</td></tr>
 {% endfor %}
 </table>
 {% endcall %}

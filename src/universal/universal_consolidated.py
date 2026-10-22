@@ -219,6 +219,8 @@ def _get_recommendations() -> dict:
 
             # print(f"✓ Saved output to {output_filename}")
         print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
+        # Claude-authored (2026-10-22): the swing candidates' facts from their Finnhub data (earnings beats, insiders)
+        swing_screen.add_report_facts(swing_setups, sanitized_LLM_inputs)
 
     # Claude-authored (2026-10-16): rate limits / rejected keys seen while fetching, and sources missing for too many
     # tickers, which used to only print [DEBUG] lines

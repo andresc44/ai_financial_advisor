@@ -209,7 +209,7 @@ def test_digest_without_personal_or_macro_content():
     ))
     assert view["portfolio"] is None and view["risk"] is None and view["account"] is None and view["market"] is None
     assert "Hello, Test" in html
-    assert "No setups scored 80+ today" in html and "No ideas scored 80+ today" in html
+    assert "No setups scored 75+ today" in html and "No ideas scored 80+ today" in html  # Swing's minimum: 75
     # Empty sections are plain cards, with nothing to open; the only dropdowns left are the glossary's
     assert html.count("<details>") == 1 + len(view["glossary"])
 
@@ -354,8 +354,8 @@ def test_charts_for_every_stock_except_non_us_holdings():
 def test_amp_version_uses_amp_markup_only():
     view = ch.build_view(payload())
     amp = ch.render_amp(view, TEMPLATE_DIR)
-    assert amp.startswith("<!DOCTYPE html>\n<html amp4email data-css-strict")
-    assert '<meta charset="utf-8">\n<script async src="https://cdn.ampproject.org/v0.js"></script>' in amp
+    assert amp.startswith("<!DOCTYPE html><html amp4email data-css-strict")  # 2026-10-22: no line breaks before block tags
+    assert '<meta charset="utf-8"><script async src="https://cdn.ampproject.org/v0.js"></script>' in amp
     assert "<style amp4email-boilerplate>body{visibility:hidden}</style>" in amp
     assert amp.count("<amp-accordion") == html_folds(view) and "<amp-img" in amp  # Same dropdowns as the HTML
     for disallowed in ("<details", "<summary", "<img", "!important", "<!--[if", "mso-", "<meta name="):
@@ -435,9 +435,9 @@ def test_four_figure_boxes_form_a_2x2_grid():
     row_start = html.rfind("<details>", 0, html.index(">AAA<"))
     grid = html[html.index('<table role="presentation" width="100%" class="sg">', row_start):]
     grid = grid[:grid.index("</table>")]
-    assert grid.count("<tr>") == 2 and grid.count('width="50%"') == 4
+    assert grid.count("<tr>") == 2 and grid.count('class="st w2') == 4  # 2026-10-22: widths as classes (w2 = 50%)
     overview = html[html.index("Your portfolio"):html.index(">Portfolio risk<")]
-    assert overview.count('width="33%"') == 3
+    assert overview.count('class="st w3') == 3
 
 
 def test_a_stocks_chart_shows_as_soon_as_its_row_opens():

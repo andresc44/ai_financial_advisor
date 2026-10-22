@@ -41,7 +41,7 @@ from src.idea_positions import idea_label
 from src.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 from src.personalized.LLM_hold_instr import current_recommendation
-from src.digest.glossary import GLOSSARY, HOLDINGS_ONLY_TERMS, IDEAS_ONLY_CATEGORY_NAMES
+from src.digest.glossary import GLOSSARY, HOLDINGS_ONLY_TERMS, IDEAS_ONLY_CATEGORY_NAMES, terms_in_use, visible_text
 from src.personalized.portfolio_review import build_portfolio_summary
 
 TEMPLATE_NAME = "email_template.html"
@@ -690,6 +690,22 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         # Claude-authored (2026-10-17): the row's id in the AMP version, so the overview's chips can open it
         "anchor": "h-" + re.sub(r"[^a-z0-9]", "-", symbol.lower()),
     }
+
+
+def _scale_news(cards: list[dict]) -> None:
+    """
+    Claude-authored (2026-10-22, Andres's rule): with more holdings than DIGEST.NEWS_FULL_UP_TO_HOLDINGS, each card
+    keeps its NEWS_LARGE_PORTFOLIO_BULLETS most important stories (they come highest priority first), except the
+    stocks flagged NEWS_FULL_SIGNALS (urgent sell, risky), which keep all of theirs. A planned cut, so a big
+    portfolio fits Gmail's size limit before fit_for_gmail has to drop more.
+    """
+    digest = params_dict["DIGEST"]
+    if len(cards) <= digest.get("NEWS_FULL_UP_TO_HOLDINGS", 10):
+        return
+    keep, full = digest.get("NEWS_LARGE_PORTFOLIO_BULLETS", 1), set(digest.get("NEWS_FULL_SIGNALS") or [])
+    for card in cards:
+        if card["signal_key"] not in full:
+            card["news"] = card["news"][:keep]
 
 
 def _holding_cards(holdings: list[dict], day: str, today: Optional[date] = None) -> list[dict]:
@@ -1421,6 +1437,7 @@ def build_view(payload: dict) -> dict:
     # that is the previous trading day, so the pre-market digest labels it "Prev. day"; the post-market one, "Day".
     day = "prev. day" if _period(payload) == "Pre-Market" else "day"
     cards = _holding_cards(holdings, day, today)  # 2026-10-21: each card's label by its own market's session
+    _scale_news(cards)  # 2026-10-22: fewer stories per stock in a big portfolio
     swing = [_swing_card(pick, today) for pick in recommendations.get("top_swing") or []]
     long_term = [_long_term_card(pick, today) for pick in recommendations.get("top_long_term") or []]
     portfolio = _portfolio(holdings, payload.get("portfolio_beta"), cards, (len(long_term), len(swing)), day, home,
@@ -1534,10 +1551,48 @@ def build_environment(template_dir: Path) -> Environment:
     return env
 
 
+# Claude-authored (2026-10-22): badge and dot colours the template writes itself (the view carries the rest)
+TEMPLATE_BADGE_COLOURS = {("#E0F2FE", "#075985")}  # An event's "In 5 days" and "You hold this"
+TEMPLATE_DOT_COLOURS = {"#F97316", "#38BDF8"}        # The risk notes' dots (notes() in the template)
+# Line breaks right before a block-level tag never show on the page, so render_html drops them
+_BLOCK_BREAKS = re.compile(r"\n+(?=</?(?:div|table|tr|td|th|tbody|section|details|summary|header|amp-accordion|"
+                           r"style|head|meta|script|title|html|body|link)\b)")
+
+
+def style_classes(view: dict) -> tuple[dict, dict]:
+    """
+    Claude-authored (2026-10-22): a short class for every badge colour pair ((background, text) -> "b0") and dot
+    colour ("#DC2626" -> "k0") this email uses, so each badge and dot names its class instead of repeating its
+    colours inline (about 45 bytes each, hundreds per email). The template writes the classes' rules into its
+    <style> block; a colour without a class keeps its inline style, so nothing can lose its colour.
+    """
+    badges, dots = set(TEMPLATE_BADGE_COLOURS), set(TEMPLATE_DOT_COLOURS)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            if isinstance(value.get("bg"), str) and isinstance(value.get("fg"), str):
+                badges.add((value["bg"], value["fg"]))
+            for key in ("dot", "color"):
+                if isinstance(value.get(key), str) and value[key].startswith("#"):
+                    dots.add(value[key])
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                walk(item)
+
+    walk(view)
+    return ({pair: f"b{i}" for i, pair in enumerate(sorted(badges))},
+            {color: f"k{i}" for i, color in enumerate(sorted(dots))})
+
+
 def render_html(view: dict, template_dir: Path, amp: bool = False) -> str:
     """The email as HTML, or with amp=True as AMP for Email (the template's dropdowns become amp-accordion)."""
-    html = build_environment(template_dir).get_template(TEMPLATE_NAME).render(**view, amp=amp)
-    return re.sub(r"\n[ \t]+", "\n", html)  # Leading indentation only adds bytes toward Gmail's clipping limit
+    badge_classes, dot_classes = style_classes(view)
+    html = build_environment(template_dir).get_template(TEMPLATE_NAME).render(
+        **view, amp=amp, badge_classes=badge_classes, dot_classes=dot_classes)
+    html = re.sub(r"\n[ \t]+", "\n", html)  # Leading indentation only adds bytes toward Gmail's clipping limit
+    return _BLOCK_BREAKS.sub("", html)  # 2026-10-22: so do line breaks before block-level tags
 
 
 def render_amp(view: dict, template_dir: Path) -> Optional[str]:
@@ -1580,14 +1635,23 @@ def _drop_hold_news(view: dict) -> None:
 
 
 def _top_news_only(view: dict) -> None:
+    """2026-10-22: the stocks flagged NEWS_FULL_SIGNALS (urgent sell, risky) keep theirs until _flagged_top_news_only."""
+    full = set(params_dict["DIGEST"].get("NEWS_FULL_SIGNALS") or [])
     for card in view["holdings"]:
-        card["news"] = card["news"][:1]
+        if card["signal_key"] not in full:
+            card["news"] = card["news"][:1]
 
 
 def _no_hold_news(view: dict) -> None:
     for card in view["holdings"]:
         if card["signal_key"] == "hold":
             card["news"] = []
+
+
+def _flagged_top_news_only(view: dict) -> None:
+    """Claude-authored (2026-10-22): the urgent-sell and risky stocks too, once every other card is cut."""
+    for card in view["holdings"]:
+        card["news"] = card["news"][:1]
 
 
 def _no_news(view: dict) -> None:
@@ -1598,7 +1662,9 @@ def _no_news(view: dict) -> None:
 # Applied in order until the HTML fits, least useful content first. Holding news arrives highest priority first.
 # Each holding's signal, figures, and reasoning are never dropped.
 # 2026-10-21: "About this digest" goes first, then the glossary (Andres's order)
+# 2026-10-22: the urgent-sell and risky stocks keep their news longest (Andres's rule, as in _scale_news)
 TRIM_STEPS = (_drop_about, _drop_glossary, _drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news,
+              _flagged_top_news_only,
               _no_news)
 
 
@@ -1611,6 +1677,10 @@ def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
     "View entire message" link shows the rest. With amp=True, the same for the AMP version, toward AMP_TARGET_BYTES.
     """
     limit = AMP_TARGET_BYTES if amp else GMAIL_CLIP_BYTES
+    # Claude-authored (2026-10-22, at Andres's request): the glossary keeps only the terms this digest uses
+    if view.get("glossary"):
+        view["glossary"] = terms_in_use(view["glossary"], visible_text(render_html({**view, "glossary": []},
+                                                                                 template_dir)))
     html = render_html(view, template_dir, amp=amp)
     for step in TRIM_STEPS:
         if len(html.encode("utf-8")) <= limit:

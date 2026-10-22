@@ -21,6 +21,16 @@ target (the noisiest part of the swing score, up to 9 of 30 points between ident
 the facts it rests on, so the same stock scores the same way more often. The bar for a pick is unchanged, and
 earnings within 5 trading days cap the catalyst score at 10: the first run credited CSX and UNP, reporting 2 and 3
 days later, with a catalyst.
+
+2026-10-22 (Claude-authored, at Andres's request): less left to the model's judgment, without raising the bar's
+reach. The checks a fact can settle are worked out in code (swing_screen.rubric_checks) and given with the stock:
+the technical score starts from 30 less WEAKNESS_POINTS per weakness in the facts, and the model only takes off up
+to CHART_POINTS for how the chart looks; the four signs of a turn are checked in code and their count sets the
+momentum band (TURN_SIGN_BANDS); and the catalyst score is three parts with named evidence (a temporary dip 0-8,
+something to lift it 0-8 at LIFT_POINTS per sign, no red flags 0-4). Each new band sits where the old band for the
+same case did (e.g. one weakness: 24 less the chart, against 18-24 before), so scores aren't raised. The old bands
+also contradicted each other: "below the 200-day average but the 50-day still above it" was one weakness (18-24),
+while "below both the 50- and 200-day averages", the same chart, was stretched (12-17); the trend is now one fact.
 """
 import sys
 from pathlib import Path
@@ -28,6 +38,24 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
+
+# Claude-authored (2026-10-22): the swing rubric's numbers, shared by the prompt below and the checks the swing screen
+# works out in code (swing_screen.rubric_checks), so the two can't drift apart
+WEAKNESS_POINTS = 6.0       # Off the technical score per weakness the facts show (twice that for a double one)
+CHART_POINTS = 5.0          # The most the model takes off on top for how the chart looks (orderly or erratic)
+ORDERLY_PULLBACK_ATR = (1.5, 6.0)   # A pullback this deep from its recent high is orderly
+FRESH_CROSS_SESSIONS = 4    # A new uptrend whose cross is this many sessions old or more has a weakness
+MAX_RUN_FROM_LOW_ATR = 2.0  # ...as has one this many ATRs above its 10-day low
+SUPPORT_NEAR_ATR, SUPPORT_FAR_ATR = 1.0, 2.0  # Above the support the stop sits under: one weakness past near, two past far
+TURN_SIGN_RSI_BELOW = 55    # Sign (a): RSI higher than 5 sessions ago and below this
+TURN_SIGN_UP_VOLUME = 1.2   # Sign (b): volume on up days over volume on down days, 10 sessions, at least this
+TURN_SIGN_LOW_HELD = 2      # Sign (c): no new 10-day low for this many sessions...
+TURN_SIGN_OFF_LOW_ATR = 0.5 # ...and the price at least this many ATRs above it
+TURN_SIGN_BANDS = {4: (19.0, 20.0), 3: (16.0, 18.0), 2: (11.0, 15.0), 1: (6.0, 10.0), 0: (0.0, 5.0)}  # Momentum band by signs
+LIFT_POINTS = 2.0           # Catalyst points per sign that something can lift the price within 2-8 weeks
+EARNINGS_LIFT_SESSIONS = (6, 40)  # Earnings this many trading days away (after the 5-day event risk, within ~8 weeks)...
+EARNINGS_LIFT_BEATS = 3     # ...after beating the estimate in at least this many of the last 4 reports
+ANALYST_LIFT_UPSIDE_PCT = 15.0  # The analysts' mean target at least this far above the price
 
 # Field descriptions for Pydantic sub-score schema fields
 # Long-Term Sub-score Descriptions
@@ -53,8 +81,8 @@ COMPETITIVE_MOAT_SCORE_DESCRIPTION = (
 
 # Swing Trade Sub-score Descriptions (the model scores three; risk/reward is scored in code from the fixed plan)
 TECHNICAL_SETUP_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 30.0 of how good an entry the chart offers now, by the SWING RUBRIC's bands: high for a "
-    "pullback that has reached the support its stop sits under in an intact trend, or a turn up only a few days old."
+    "Rating from 0.0 to 30.0 of how good an entry the chart offers now, by the SWING RUBRIC: `checks.technical_start` "
+    "(30 less the weaknesses in the facts), less up to 5 for how the chart looks."
 )
 
 RISK_REWARD_SCORE_DESCRIPTION = (
@@ -63,14 +91,12 @@ RISK_REWARD_SCORE_DESCRIPTION = (
 )
 
 MOMENTUM_VOLUME_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 20.0 of how many signs of a turn the data shows, by the SWING RUBRIC's checklist: RSI rising, "
-    "volume heavier on up days, a higher low or bounce off support, a close above EMA 9 or the SAR flipped below."
+    "Rating from 0.0 to 20.0 within the SWING RUBRIC's band for how many of the four `checks.turn_signs` hold."
 )
 
 CATALYST_SENTIMENT_SCORE_DESCRIPTION = (
-    "Rating from 0.0 to 20.0 of whether the dip looks temporary and something can lift the price in 2-8 weeks: "
-    "an overreaction that doesn't change the business, upcoming earnings with a record of beats, analyst targets "
-    "well above the price, insider buying; low for news that breaks the thesis."
+    "Rating from 0.0 to 20.0, the SWING RUBRIC's three parts: the dip looks temporary (0-8), something can lift the "
+    "price within 2-8 weeks (0-8), and no red flags (0-4)."
 )
 
 # Claude-authored (2026-10-16): written fields shown to the reader in the digest, so a pick says why it was made
@@ -159,35 +185,43 @@ THE IDEAL SWING TRADE buys a decent business early, while it is temporarily chea
 
 WHAT YOU ARE GIVEN:
 - The stock passed a swing screen: a profitable, liquid, analyst-covered business in one of two setups, `swing_setup.setup`: "pullback" (a dip in a healthy longer trend) or "new_uptrend" (its 9-day average crossed above its 21-day average within the last few sessions).
-- `swing_setup.facts` were computed from the daily bars. Distances are in ATRs, a normal day's range (`atr`): `pullback_atr` / `pullback_pct` from the recent high close, `run_from_low_atr` from the 10-day low, `pct_vs_sma_200`, `rsi` and `rsi_5_days_ago`, `up_vs_down_volume_10d` (volume on up days over volume on down days, last 10 sessions), `ema_9_crossed_above_ema_21_days_ago`. Use them as given; don't recompute them.
-- `swing_setup.plan` is the trade plan, set by fixed rules for every stock: the entry is the latest close, the stop sits below the nearest support under the price (`stop_basis`), and the target is the nearest overhead level (`target_basis`). Its reward-to-risk is scored separately in code, worth up to 30 points; you don't set or score the levels.
+- `swing_setup.facts` were computed from the daily bars. Distances are in ATRs, a normal day's range (`atr`): `pullback_atr` / `pullback_pct` from the recent high close, `run_from_low_atr` from the 10-day low and `days_since_low_10d` since it (0 = a new low today), `pct_vs_sma_200` and `trend`, `rsi` and `rsi_5_days_ago`, `up_vs_down_volume_10d` (volume on up days over volume on down days, last 10 sessions), `ema_9_crossed_above_ema_21_days_ago`, and `spy_change_since_high_pct` (the S&P 500's move over the same days as the stock's drop from its recent high). Use them as given; don't recompute them.
+- `swing_setup.catalyst_facts`: the next earnings (`next_earnings_date`, `sessions_to_earnings` trading days away), `earnings_beats_last_4` (how many of the last 4 reports beat the estimate), `analyst_target_upside_pct` (the analysts' mean target against the price), and `insider_mspr_3m` (insiders' net buying over the last 3 months, from -100 all selling to 100 all buying). Null means unknown.
+- `swing_setup.checks` are this rubric's checks, worked out in code from those facts: `technical_start` with the `weaknesses` behind it, the four `turn_signs`, and the `lifts` the data shows. Apply them as given; don't re-judge them.
+- `swing_setup.plan` is the trade plan, set by fixed rules for every stock: the entry is the latest close, the stop sits below the nearest support under the price (`stop_basis`; the price is `above_support_atr` above that support), and the target is the nearest overhead level (`target_basis`). Its reward-to-risk is scored separately in code, worth up to 30 points; you don't set or score the levels.
 - `daily_bars` (most recent first, unadjusted; the newest may be a session still in progress) and `technical_indicators` (daily RSI 14, EMA 9/21, Bollinger Bands 20, Parabolic SAR; weekly beta to the S&P 500) show the price path the facts summarize. `key_fundamentals`, analyst data, earnings, and headlines show whether the dip changes the business.
 
 {DATA_GUIDELINES}
 
 ### SWING RUBRIC (your three sub-scores, 70 points; with the plan's reward-to-risk, 100)
 1. technical_setup_score (0.0 - 30.0): is this the ideal entry right now?
-   - 25.0 - 30.0: The ideal entry. A pullback in an intact trend (above its 200-day average with the 50-day above the 200-day), down an orderly 1.5-6 ATRs from its recent high (no gap through support on heavy volume), now within about 1 ATR of the support the stop sits under. Or a new uptrend whose cross is at most 3 sessions old, closing above EMA 21, off a higher low or a base, still within about 2 ATRs of its 10-day low.
-   - 18.0 - 24.0: A valid setup with one weakness: a mixed trend (below the 200-day average but the 50-day still above it, or the reverse), the price 1-2 ATRs above the support, or a cross 3-4 sessions old.
-   - 12.0 - 17.0: A valid setup that is stretched or messy: 2 or more ATRs above the support, wide erratic swings, or below both the 50- and 200-day averages.
-   - 0.0 - 11.0: The data contradicts the setup: breaking below the support the plan relies on, a gap down on heavy volume through support, or new lows with no sign of a floor.
+   - Start from `checks.technical_start`: 30, less {WEAKNESS_POINTS:g} for each weakness the facts show (listed in `checks.weaknesses`):
+     - the trend (`facts.trend`): "intact" (above its 200-day average, with the 50-day above the 200-day) loses nothing, "mixed" (one of the two) loses {WEAKNESS_POINTS:g}, and "weak" (neither) loses {2 * WEAKNESS_POINTS:g};
+     - the price {SUPPORT_NEAR_ATR:g}-{SUPPORT_FAR_ATR:g} ATRs above the support the stop sits under (`plan.above_support_atr`) loses {WEAKNESS_POINTS:g}, and more than {SUPPORT_FAR_ATR:g} loses {2 * WEAKNESS_POINTS:g};
+     - a pullback of less than {ORDERLY_PULLBACK_ATR[0]:g} or more than {ORDERLY_PULLBACK_ATR[1]:g} ATRs from its recent high loses {WEAKNESS_POINTS:g};
+     - a new uptrend loses {WEAKNESS_POINTS:g} for each of: a cross {FRESH_CROSS_SESSIONS} or more sessions old, a close below EMA 21, and a price more than {MAX_RUN_FROM_LOW_ATR:g} ATRs above its 10-day low.
+   - Then take off up to {CHART_POINTS:g} for how the chart looks in `daily_bars`: nothing for an orderly move (a pullback drifting down on lighter volume with small candles, or a steady climb off a higher low or a base), up to {CHART_POINTS:g} for wide erratic swings, big down days on heavy volume, or gaps.
+   - Score at most 11.0, whatever the start, when the bars contradict the setup: a gap down through a support (EMA 21, the 50- or 200-day average) on heavy volume in the last 5 sessions, or new lows day after day with no sign of a floor.
 
-2. momentum_volume_score (0.0 - 20.0): count the signs of a turn:
-   (a) RSI higher than five sessions ago (`rsi` > `rsi_5_days_ago`) and below about 55;
-   (b) volume heavier on up days than down days (`up_vs_down_volume_10d` of 1.2 or more);
-   (c) a higher low or a bounce off support in the latest `daily_bars`;
-   (d) a close above EMA 9, or the Parabolic SAR flipped below the price.
-   - 16.0 - 20.0: three or four signs.
-   - 11.0 - 15.0: two signs.
-   - 6.0 - 10.0: one sign.
-   - 0.0 - 5.0: none, or RSI still falling to new lows.
+2. momentum_volume_score (0.0 - 20.0): the signs of a turn, checked in code (`checks.turn_signs`):
+   (a) `rsi_rising`: RSI higher than five sessions ago, and below {TURN_SIGN_RSI_BELOW};
+   (b) `volume_on_up_days`: volume heavier on up days than down days (`up_vs_down_volume_10d` of {TURN_SIGN_UP_VOLUME:g} or more);
+   (c) `higher_low`: no new 10-day low for {TURN_SIGN_LOW_HELD} sessions, and the price at least {TURN_SIGN_OFF_LOW_ATR:g} ATR above it;
+   (d) `above_ema_9_or_sar`: a close above EMA 9, or the Parabolic SAR below the price.
+   - How many hold sets the band: four {TURN_SIGN_BANDS[4][0]:.1f} - {TURN_SIGN_BANDS[4][1]:.1f}, three {TURN_SIGN_BANDS[3][0]:.1f} - {TURN_SIGN_BANDS[3][1]:.1f}, two {TURN_SIGN_BANDS[2][0]:.1f} - {TURN_SIGN_BANDS[2][1]:.1f}, one {TURN_SIGN_BANDS[1][0]:.1f} - {TURN_SIGN_BANDS[1][1]:.1f}, none {TURN_SIGN_BANDS[0][0]:.1f} - {TURN_SIGN_BANDS[0][1]:.1f}.
+   - Within the band, score higher the clearer the signs (RSI up 5 or more points, up/down volume of 1.5 or more, a close well above EMA 9) and lower when they only just qualify.
+   - Score at most 5.0 when RSI is at its lowest in 10 sessions (`facts.rsi_at_10_day_low`): it is still falling.
 
-3. catalyst_sentiment_score (0.0 - 20.0): does the dip look temporary, and can something lift the price soon?
-   - 16.0 - 20.0: Both: the dip looks like market-wide selling or an overreaction to news that doesn't change the business, AND something can lift it soon (earnings 1-4 weeks out with a record of beats, analyst targets well above the price, insider buying, a product event).
-   - 11.0 - 15.0: One of the two, or both but weaker.
-   - 6.0 - 10.0: Nothing clear either way; mixed news or coverage.
-   - 0.0 - 5.0: News that breaks the thesis (guidance cut, downgrades, regulatory trouble), heavy insider selling, or an imminent risk that could extend the drop.
-   - Earnings within the next 5 trading days (`catalysts_and_earnings.upcoming_earnings`) are event risk, not a catalyst: score this at most 10.0, whatever else the data shows.
+3. catalyst_sentiment_score (0.0 - 20.0): the sum of three parts.
+   (a) Does the dip look temporary? 0 - 8 (for a new uptrend, the decline it is turning up from):
+       - 8: the market fell with it (the S&P 500's drop over the same days, `facts.spy_change_since_high_pct`, is at least a third of the stock's own, `facts.pullback_pct`), or the headlines show an overreaction to news that doesn't change the business;
+       - 4: nothing in the data explains the drop, and nothing suggests the business changed;
+       - 0: the drop has a business cause (a guidance cut, a lost customer, falling sales or margins);
+       - 2 or 6 when the evidence is partial.
+   (b) Can something lift it within 2-8 weeks? 0 - 8: {LIFT_POINTS:g} for each of `checks.lifts` that holds (`earnings_after_beats`: earnings {EARNINGS_LIFT_SESSIONS[0]}-{EARNINGS_LIFT_SESSIONS[1]} trading days away, after beating the estimate in at least {EARNINGS_LIFT_BEATS} of the last 4 reports; `analyst_upside`: the mean target at least {ANALYST_LIFT_UPSIDE_PCT:g}% above the price; `insider_buying`: net insider buying over the last 3 months), and {LIFT_POINTS:g} more for a dated event within the window in the headlines (a product launch, investor day, approval decision, or index inclusion).
+   (c) No red flags? 0 - 4: 4 when the headlines and data show none; 2 for a minor one (a single downgrade amid mostly positive coverage); 0 for a guidance cut, several downgrades, regulatory or legal trouble, a share offering, or an accounting issue.
+   - News that breaks the thesis caps this score at 5.0.
+   - Earnings within the next 5 trading days (`catalyst_facts.sessions_to_earnings` of 5 or less, or `catalysts_and_earnings.upcoming_earnings`) are event risk, not a catalyst: score this at most 10.0, whatever else the data shows.
 
 ### WRITTEN FIELDS (shown to the reader in their daily digest)
 - sentiment: your read on the share price over the next 2-8 weeks.

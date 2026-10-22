@@ -45,10 +45,10 @@ def setup(entry, stop, target, kind="pullback"):
 # 2026-10-20: each horizon has its own call; the swing risk/reward sub-score comes from the screen's plan
 LONG = {"AAA": long_term((22, 21, 20, 20)), "BBB": long_term((10, 10, 15, 15)),    # AAA long 83: the long-term pick
         "CCC": long_term((12, 12, 12, 12))}
-SWING = {"AAA": swing((26, 17, 17)),     # 4:1 plan: 26 + 28.8 + 17 + 17 = 88.8, a swing pick too
+SWING = {"AAA": swing((26, 17, 17)),     # 4:1 plan: 26 + 30 + 17 + 17 = 90, a swing pick too
          "BBB": swing((26, 17, 17)),     # Stop above the entry: risk/reward 0, swing 60
-         "CCC": swing((25, 16, 16)),     # 4:1 plan: 85.8
-         "DDD": swing((24, 16, 16))}     # 4:1 plan: 84.8 (a swing candidate only)
+         "CCC": swing((25, 16, 16)),     # 4:1 plan: 87
+         "DDD": swing((24, 16, 16))}     # 4:1 plan: 86 (a swing candidate only)
 SETUPS = {"AAA": setup(200, 190, 240), "BBB": setup(100, 104, 120), "CCC": setup(100, 96, 116), "DDD": setup(50, 48, 58)}
 INPUTS = {symbol: {"symbol": symbol} for symbol in ("AAA", "BBB", "CCC", "DDD")}
 
@@ -80,7 +80,7 @@ def test_picks_carry_claudes_reasoning_and_sane_levels(claude_scores):
     picks = select_top_candidates(INPUTS, long_n=2, swing_n=5, long_tickers=["AAA", "BBB", "CCC"], swing_setups=SETUPS)
 
     [long_pick] = picks["top_long_term"]
-    assert long_pick["ticker"] == "AAA" and long_pick["longScore"] == 83 and long_pick["swingScore"] == 88.8
+    assert long_pick["ticker"] == "AAA" and long_pick["longScore"] == 83 and long_pick["swingScore"] == 90.0
     assert long_pick["sentiment"] == "Bullish" and long_pick["thesis"].startswith("Cheap")
     assert long_pick["key_risk"].startswith("Rising debt")
     assert long_pick["sub_scores"] == {"valuation_score": 22, "financial_health_score": 21,
@@ -91,7 +91,7 @@ def test_picks_carry_claudes_reasoning_and_sane_levels(claude_scores):
     assert [p["ticker"] for p in picks["top_swing"]] == ["AAA", "CCC", "DDD"]
     good = picks["top_swing"][1]
     assert good["sentiment"] == "Neutral" and good["thesis"] and good["setup"] == "pullback"
-    assert good["swingScore"] == 85.8 and good["sub_scores"]["risk_reward_ratio_score"] == 28.8
+    assert good["swingScore"] == 87.0 and good["sub_scores"]["risk_reward_ratio_score"] == 30.0
     assert (good["entry_price"], good["stop_loss"], good["price_target"], good["risk_reward"]) == (100, 96, 116, 4.0)
     assert good["stop_basis"] == "0.5 ATR below the EMA 21" and picks["top_swing"][2]["longScore"] is None
     from src.universal.recommendations.scorer import swing_reasoning
@@ -121,15 +121,15 @@ def test_each_horizon_gets_its_own_call_and_data(claude_scores):
 def test_risk_reward_is_scored_from_the_plan_by_the_rubric_bands():
     from src.universal.recommendations.LLM_recommendation import plan_risk_reward_score as score
 
-    # Top band from 2.5:1 (3:1 until 2026-10-18)
-    assert [score(100, 95, 100 + 5 * ratio) for ratio in (0.5, 1, 1.5, 2, 2.5, 3.5, 4.5, 8)] == [
-        0.0, 5.5, 12.0, 18.0, 25.0, 27.5, 30.0, 30.0]
+    # 2026-10-22: straight lines between SWING_SCREEN.RISK_REWARD_POINTS (full marks from 4:1; no jump at 2.5:1)
+    assert [score(100, 95, 100 + 5 * ratio) for ratio in (0.5, 1, 1.5, 2, 2.4, 2.5, 3.5, 4, 4.5, 8)] == [
+        0.0, 6.0, 12.0, 18.0, 21.6, 22.5, 28.5, 30.0, 30.0, 30.0]
     assert score(100, 104, 120) == 0.0 and score(100, 95, 99) == 0.0 and score(None, 95, 110) == 0.0  # Inconsistent
-    assert score(100, 99.9, 102.5) == score(100, 99, 102.5) == 25.0  # A stop under 1% away counts as 1%: 2.5:1
+    assert score(100, 99.9, 102.5) == score(100, 99, 102.5) == 22.5  # A stop under 1% away counts as 1%: 2.5:1
     # A stop tighter than a normal day's range counts as one ATR away: APH on 2026-10-16, still falling, with its stop
     # 1.1 under the entry, scores the full 30 (5.5:1); with its ~2.4 ATR it is 2.1:1
-    assert score(79.4, 78.3, 84.5) == 30.0 and score(79.4, 78.3, 84.5, atr=2.4) == 19.5
-    assert score(100, 90, 125, atr=2.0) == 25.0  # A stop wider than the ATR is used as it is: 2.5:1
+    assert score(79.4, 78.3, 84.5) == 30.0 and score(79.4, 78.3, 84.5, atr=2.4) == 19.1
+    assert score(100, 90, 125, atr=2.0) == 22.5  # A stop wider than the ATR is used as it is: 2.5:1
 
 
 def test_daily_atr_is_a_normal_days_range():
@@ -445,7 +445,7 @@ def test_scorer_reports_how_many_were_scored_and_cleared_each_bar(claude_scores)
     stats = {}
     select_top_candidates(INPUTS, long_n=2, swing_n=1, min_long_score=80, min_swing_score=80, stats=stats,
                           long_tickers=["AAA", "BBB", "CCC"], swing_setups=SETUPS)
-    # AAA is long 83; AAA, CCC, and DDD swing 88.8, 85.8, and 84.8 (BBB 60): all three count, though only one is picked
+    # AAA is long 83; AAA, CCC, and DDD swing 90, 87, and 86 (BBB 60): all three count, though only one is picked
     assert stats == {"sent": 3, "scored": 3, "long_qualified": 1, "swing_sent": 4, "swing_scored": 4,
                      "swing_qualified": 3, "swing_early": 3}
     empty = {}

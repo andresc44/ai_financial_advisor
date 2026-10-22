@@ -24,6 +24,7 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   whichever provider their model needs (formerly resolve_anthropic_key), and the error is self.llm_key_error.
 """
 import asyncio
+from collections import Counter
 import json
 import logging
 import sys
@@ -107,6 +108,23 @@ EVALUATION_TOOL_SPEC = {
     "strict": True,
     "input_schema": HoldingEvaluation.model_json_schema(),
 }
+
+
+# Claude-authored (2026-10-22): how cautious each label is, for breaking a tie between reviews (majority_review)
+SEVERITY = {"buy_more": 0, "hold": 1, "profit_sell": 2, "risky": 3, "urgent_sell": 4}
+
+
+def majority_review(reviews: List[HoldingEvaluation]) -> HoldingEvaluation:
+    """
+    Claude-authored (2026-10-22): the label most reviews gave. A tie goes to the milder side: of two labels the
+    milder one, of three different ones the middle one. Returns the first review with that label, so its sentiment
+    and rationale match it.
+    """
+    votes = Counter(review.recommendation for review in reviews)
+    most = max(votes.values())
+    tied = sorted((label for label, count in votes.items() if count == most), key=lambda label: SEVERITY.get(label, 1))
+    winner = tied[(len(tied) - 1) // 2]
+    return next(review for review in reviews if review.recommendation == winner)
 
 
 class ParallelHoldingEvaluator:
@@ -198,60 +216,82 @@ class ParallelHoldingEvaluator:
             user_prompt = format_user_prompt(
                 symbol, self.evaluated_at, holding_prompt_data, market_session=self.market_session
             )
+            return await self._confirmed(symbol, user_prompt, await self._review(symbol, user_prompt))
 
-            try:
-                if self.deepseek is not None:
-                    return await self._evaluate_with_deepseek(symbol, user_prompt)
-                response = await self._create_message(user_prompt)
-                # Claude-authored (2026-10-16): every answered request is billed, refusals and truncations included
-                record_anthropic_response(self.user_name, self.source, response)
+    async def _confirmed(
+        self, symbol: str, user_prompt: str, first: Optional[HoldingEvaluation]
+    ) -> Optional[HoldingEvaluation]:
+        """
+        Claude-authored (2026-10-22, at Andres's request): a first review saying one of HOLDINGS_RECHECK's SIGNALS
+        (urgent_sell, profit_sell) gets EXTRA_REVIEWS more, and the majority's label wins (majority_review), so a
+        one-off urgent sell can't send a Telegram alert. Any other first review stands as it is.
+        """
+        recheck = params_dict.get("HOLDINGS_RECHECK") or {}
+        extra_reviews = recheck.get("EXTRA_REVIEWS", 0)
+        if first is None or first.recommendation not in recheck.get("SIGNALS", []) or extra_reviews <= 0:
+            return first
+        extra = await asyncio.gather(*(self._review(symbol, user_prompt) for _ in range(extra_reviews)))
+        reviews = [first] + [review for review in extra if review is not None]
+        chosen = majority_review(reviews)
+        logger.info(f"[{symbol}] First review said {first.recommendation}; reviewed {len(reviews)} times: "
+                    f"{[review.recommendation for review in reviews]} -> {chosen.recommendation}")
+        return chosen
 
-                if response.stop_reason == "refusal":
-                    category = getattr(response.stop_details, "category", None)
-                    logger.error(f"[{symbol}] Request declined by safety classifier ({category}).")
-                    return None
-                if response.stop_reason == "max_tokens":
-                    logger.error(
-                        f"[{symbol}] Response truncated at max_tokens "
-                        f"({self.config['max_tokens']}); raise max_tokens or lower effort."
-                    )
-                    return None
-                iterations = getattr(response.usage, "iterations", None) or []
-                if any(getattr(entry, "type", None) == "fallback_message" for entry in iterations):
-                    logger.info(f"[{symbol}] Served by fallback model {response.model} after a refusal.")
+    async def _review(self, symbol: str, user_prompt: str) -> Optional[HoldingEvaluation]:
+        """One review of one holding (2026-10-22: its own method, so _confirmed can ask again)."""
+        try:
+            if self.deepseek is not None:
+                return await self._evaluate_with_deepseek(symbol, user_prompt)
+            response = await self._create_message(user_prompt)
+            # Claude-authored (2026-10-16): every answered request is billed, refusals and truncations included
+            record_anthropic_response(self.user_name, self.source, response)
 
-                tool_block = next(
-                    (
-                        b for b in response.content
-                        if b.type == "tool_use" and b.name == EVALUATION_TOOL_NAME
-                    ),
-                    None,
-                )
-                if not tool_block:
-                    logger.error(
-                        f"[{symbol}] Model did not call {EVALUATION_TOOL_NAME}; no recommendation recorded."
-                    )
-                    return None
-
-                evaluation = HoldingEvaluation(**tool_block.input)
-                logger.info(f"[{symbol}] Evaluated -> {evaluation.recommendation}")
-                return evaluation
-
-            except (APIError, DeepSeekError) as e:
-                key_error = (deepseek_key_error if isinstance(e, DeepSeekError) else anthropic_key_error)(e, self.user_name)
-                if key_error is None:
-                    logger.error(f"[{symbol}] {self.provider} API Error: {e.message}")
-                elif self.key_error is None:
-                    self.key_error = key_error
-                    logger.error(f"[{symbol}] {key_error}")
-            except ValidationError as e:
-                logger.error(f"[{symbol}] The model's answer didn't match the expected fields: {e}")
-            except Exception as e:
+            if response.stop_reason == "refusal":
+                category = getattr(response.stop_details, "category", None)
+                logger.error(f"[{symbol}] Request declined by safety classifier ({category}).")
+                return None
+            if response.stop_reason == "max_tokens":
                 logger.error(
-                    f"[{symbol}] Unexpected Error during evaluation: {str(e)}"
+                    f"[{symbol}] Response truncated at max_tokens "
+                    f"({self.config['max_tokens']}); raise max_tokens or lower effort."
                 )
+                return None
+            iterations = getattr(response.usage, "iterations", None) or []
+            if any(getattr(entry, "type", None) == "fallback_message" for entry in iterations):
+                logger.info(f"[{symbol}] Served by fallback model {response.model} after a refusal.")
 
-            return None
+            tool_block = next(
+                (
+                    b for b in response.content
+                    if b.type == "tool_use" and b.name == EVALUATION_TOOL_NAME
+                ),
+                None,
+            )
+            if not tool_block:
+                logger.error(
+                    f"[{symbol}] Model did not call {EVALUATION_TOOL_NAME}; no recommendation recorded."
+                )
+                return None
+
+            evaluation = HoldingEvaluation(**tool_block.input)
+            logger.info(f"[{symbol}] Evaluated -> {evaluation.recommendation}")
+            return evaluation
+
+        except (APIError, DeepSeekError) as e:
+            key_error = (deepseek_key_error if isinstance(e, DeepSeekError) else anthropic_key_error)(e, self.user_name)
+            if key_error is None:
+                logger.error(f"[{symbol}] {self.provider} API Error: {e.message}")
+            elif self.key_error is None:
+                self.key_error = key_error
+                logger.error(f"[{symbol}] {key_error}")
+        except ValidationError as e:
+            logger.error(f"[{symbol}] The model's answer didn't match the expected fields: {e}")
+        except Exception as e:
+            logger.error(
+                f"[{symbol}] Unexpected Error during evaluation: {str(e)}"
+            )
+
+        return None
 
     async def evaluate_holdings(
         self, holding_payloads: Dict[str, Dict[str, Any]]

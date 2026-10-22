@@ -14,6 +14,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-21: the market indicators follow Andres's "Global Macro Pulse" table, one entry each, with the levels
   of their signal dots taken from params_dict["MARKET_SIGNALS"], so the two can't disagree.
 """
+import html
+import re
 import sys
 from pathlib import Path
 
@@ -147,3 +149,69 @@ GLOSSARY = [
 HOLDINGS_ONLY_TERMS = {"Buy more", "Hold", "Risky", "Profit sell", "Urgent sell", "Unrealized P/L", "Weight",
                        "Flagged", "Volatility", "Leveraged ETF (2x, 3x)"}
 IDEAS_ONLY_CATEGORY_NAMES = {"Your portfolio": "Price moves & risk"}
+
+# Claude-authored (2026-10-22, at Andres's request): the glossary shows only the terms its digest uses
+# (terms_in_use). A term counts as used when any of its markers is in the email's text: a string as written (case
+# matters), or a pattern. A term without markers here is looked for as written.
+USAGE_MARKERS: dict[str, tuple] = {
+    "Hold": (re.compile(r"\bHold\b"),),
+    "Sentiment": ("Bullish", "Bearish", "Neutral"),
+    "Swing idea": ("Swing idea",),
+    "Long-term idea": ("Long-term idea",),
+    "Prev. day / Day": ("prev. day", "Prev. day", "% day", "Day ·", "Day =", "today"),
+    "Unrealized P/L": ("Unrealized",),
+    "Weight": ("weight", "Weight"),
+    "Leveraged ETF (2x, 3x)": ("2x", "3x", "2X", "3X", "Leveraged", "leveraged"),
+    "RSI 14": ("RSI",),
+    "EMA 9 / 21": ("EMA",),
+    "50 / 200-day average": ("50-day", "200-day"),
+    "Bollinger bands": ("Bollinger",),
+    "Parabolic SAR": ("SAR",),
+    "Volume vs 3-month avg": ("Volume", "3-month"),
+    "52-week range": ("52-week",),
+    "Entry / Stop / Target": ("Entry", "Stop", "Target", "entry $", "stop $", "target $"),
+    "Reward : risk": ("Reward", "reward"),
+    "Market cap": ("Market cap", "market cap"),
+    "P/E (trailing, forward)": ("P/E",),
+    "Revenue / earnings growth YoY": ("YoY",),
+    "Net margin": ("margin",),
+    "Debt / equity": ("Debt", "debt"),
+    "Analyst rating & target": ("Analyst", "analyst"),
+    "Earnings (before open, after close)": ("Earnings", "earnings"),
+    "Signal grades": ("Key signals", "All indicators"),
+    "S&P 500 (SPY)": ("S&P 500",),
+    "Nasdaq-100 (QQQ)": ("Nasdaq",),
+    "Dow Jones (DIA)": (re.compile(r"\bDow\b"),),
+    "NYSE Composite": ("NYSE",),
+    "Russell 2000 (IWM)": ("Russell",),
+    "A vs B (pts)": ("vs Dow", "vs S&P"),
+    "Market mood": ("Mood", "mood"),
+    "Put/call ratio": ("Put/call",),
+    "S&P breadth": ("breadth",),
+    "US Dollar (DXY)": ("DXY", "Dollar"),
+    "10Y yield": ("10Y",),
+    "10Y-2Y spread": ("10Y–2Y", "10Y-2Y", "spread"),
+    "Crude oil (WTI)": ("WTI", "Crude"),
+    "5D": ("5D",),
+    "bps": ("bps",),
+    "pts": ("pts",),
+}
+
+
+def visible_text(page: str) -> str:
+    """An email's text as a reader sees it: no <style> blocks, no tags, entities decoded."""
+    page = re.sub(r"<style[^>]*>.*?</style>", " ", page, flags=re.S)
+    return html.unescape(re.sub(r"<[^>]+>", " ", page))
+
+
+def terms_in_use(categories: list[dict], text: str) -> list[dict]:
+    """
+    Claude-authored (2026-10-22): the glossary categories ({"category", "terms": [(term, explanation), ...]}) with
+    only the terms `text` (the digest's own visible text, without the glossary) uses; empty categories are dropped.
+    """
+    def used(term: str) -> bool:
+        return any(marker.search(text) if isinstance(marker, re.Pattern) else marker in text
+                   for marker in USAGE_MARKERS.get(term, (term,)))
+
+    kept = [{**category, "terms": [entry for entry in category["terms"] if used(entry[0])]} for category in categories]
+    return [category for category in kept if category["terms"]]

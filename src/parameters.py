@@ -338,9 +338,28 @@ params_dict = {
     },
     "LONG_TERM_N_AMOUNT": 2,
     "SWING_TERM_N_AMOUNT": 5,
+    # Claude-authored (2026-10-22, at Andres's request): a new-stock score that could go either way is scored again.
+    # The same stock scored twice can come out ~4 points apart (13.5 at most), so a candidate within BELOW_MIN /
+    # ABOVE_MIN points of its list's minimum (MIN_LONG_SCORE / MIN_SWING_SCORE) is scored EXTRA_RUNS more times and
+    # keeps the middle score (scorer.rescore_borderline). A list that already has as many candidates clear of the band
+    # as it shows (LONG_TERM_N_AMOUNT / SWING_TERM_N_AMOUNT) isn't re-scored: its picks are clear.
+    "IDEA_RESCORE": {
+        # A score more than this above the minimum is clear: it stays above even after a bad run (long-term 85+,
+        # swing 80+). Was an absolute CLEAR_SCORE of 85 until swing's minimum went to 75 (2026-10-22, Andres: "+-5%")
+        "ABOVE_MIN": 5.0,
+        "BELOW_MIN": 5.0,     # How far under the minimum a score can be and still be re-scored (long-term 75, swing 70)
+        "EXTRA_RUNS": 2,      # More scores per borderline candidate (3 in all; the middle one is kept)
+    },
+    # Claude-authored (2026-10-22, at Andres's request): a holding whose first review says one of SIGNALS is reviewed
+    # EXTRA_REVIEWS more times and gets the majority's label (a tie goes to the milder label), so a one-off
+    # 'urgent_sell' can't send a Telegram alert, nor a one-off 'profit_sell' flag a holding
+    # (recommendation.ParallelHoldingEvaluator). Sentiment alone never triggers a re-review.
+    "HOLDINGS_RECHECK": {"SIGNALS": ["urgent_sell", "profit_sell"], "EXTRA_REVIEWS": 2},
     # Both totals are out of 100: the sum of the sub-scores in src/universal/recommendations/LLM_rec_instr.py
     "MIN_LONG_SCORE": 80.0,
-    "MIN_SWING_SCORE": 80.0,
+    # 2026-10-22, Andres: 75 for swing (was 80). The swing rubric now scores from checks worked out in code
+    # (swing_screen.rubric_checks), and on that day only one of 30 candidates reached 80; the next were 73-74
+    "MIN_SWING_SCORE": 75.0,
     # Claude-authored (2026-10-17): the sector mix of each list of picks (scorer.select_top_candidates), by Yahoo's
     # sector. "all_different": no two picks share a sector. "majority_different": more than half the picks are from
     # different sectors, i.e. distinct sectors > picks / 2 (3 sectors among 5 picks, 2 among 2). "any": no rule.
@@ -362,6 +381,11 @@ params_dict = {
     # that run scored 93 + 20 for $0.14 off-peak, against $0.24-0.26 for 93-96.
     # Loosened a step the same day at Andres's request, for a larger pool to pick the best from (the old value is
     # noted on each changed rule): on the same data, 596 -> 468 -> 187 -> 108 -> the best 40 to the LLM.
+    # Tightened 2026-10-22 at Andres's request, to match the rubric without sending fewer ("2026-10-22" on each
+    # change); the best are now the ones the code scores highest (swing_screen.screen_points). On that day's data:
+    # 476 fundamentals -> 50 in a setup (145 before) -> 30 plans (78) -> 30 to the LLM (40). About 10 of either list
+    # could reach 80 (MIN_SWING_SCORE then) even at the top of every band; the ones no longer sent couldn't, apart from NSC
+    # (reporting that day), TGT (a 1.4-ATR pullback), and ALAB (still falling: it would need full marks everywhere).
     "SWING_SCREEN": {
         "ENABLED": True,
         # 1. Fundamentals (Yahoo, already fetched for the long-term screen): a decent business, looser than
@@ -381,18 +405,30 @@ params_dict = {
             "MIN_DOLLAR_VOLUME_M": 20.0,   # Trades at least $20M a day (20-day average), so orders fill near the price
             "MIN_RSI": 20,                 # Not in free fall (was 25)...
             "MAX_RSI": 65,                 # ...and not stretched (was 60; SWING_EARLY_ENTRY's MAX_RSI also applies)
+            # 2026-10-22: the rubric's four signs of a turn (swing_screen.turn_signs). Requiring one (1) would have
+            # cut 2026-10-22's 78 plans by 31: a dip in a good trend that is still falling is ranked down instead...
+            "MIN_TURN_SIGNS": 0,
+            "EXCLUDE_FALLING_KNIVES": True,  # ...unless RSI is also at a 10-day low: still falling, so left out
+            # 2026-10-22: no report this many trading days ahead or fewer (Yahoo's date): event risk, not a setup.
+            # The rubric caps the catalyst score at 10 within 5 days, and the swing idea would be a bet on the report
+            "EARNINGS_BLACKOUT_SESSIONS": 5,
             # Either setup qualifies (each can be switched off):
             "PULLBACK": {                  # A dip in a healthy longer trend
                 "ENABLED": True,
                 "MAX_BELOW_SMA200_PCT": 5.0,   # Trend intact: at most 5% below its 200-day average (was 3)...
-                "OR_SMA50_ABOVE_SMA200": True, # ...or its 50-day average still above the 200-day
+                # ...or (True) any depth while its 50-day average is still above the 200-day. Off since 2026-10-22: it
+                # let through dips 6-20% under the 200-day (SE, CAT, APO), below both averages, which the rubric scores
+                # as a weaker trend. The ones within 5% (a test of the 200-day) are still sent, ranked lower.
+                "OR_SMA50_ABOVE_SMA200": False,
                 "LOOKBACK_DAYS": 20,           # The recent high it pulled back from: the highest close of these days
-                "MIN_PULLBACK_ATR": 1.0,       # Pulled back at least this many ATRs from that high (was 1.5)
+                "MIN_PULLBACK_ATR": 1.5,       # Pulled back at least this many ATRs from that high (2026-10-22: the
+                                               # rubric's orderly pullback is 1.5-6; was 1.0, and 1.5 before that)
                 "MAX_PULLBACK_PCT": 30.0,      # but not collapsed (was 25)
             },
             "NEW_UPTREND": {               # The first days of a turn up
                 "ENABLED": True,
-                "CROSS_WITHIN_DAYS": 7,        # The 9-day average crossed above the 21-day within this many sessions (was 5)
+                "CROSS_WITHIN_DAYS": 5,        # The 9-day average crossed above the 21-day within this many sessions
+                                               # (2026-10-22: at most 4 sessions ago, as the rubric; was 7, and 5 before)
             },
             # Also applied: SWING_EARLY_ENTRY above (not too far along its run).
         },
@@ -406,10 +442,22 @@ params_dict = {
             "MIN_TARGET_ATR": 1.5,         # averages from below, the upper band: the nearest at least this far up,
             "MAX_TARGET_ATR": 8.0,         # capped at this far up (reachable in 2-8 weeks)
         },
-        # Kept at 1.5 when loosening: a plan under 1.5:1 earns at most ~8 of the 30 risk/reward points, so it can't
-        # reach MIN_SWING_SCORE even with a perfect score on the rest; sending it would only add cost
+        # Claude-authored (2026-10-22, re-banded at Andres's request): the plan's risk/reward points (of 30) at each
+        # reward-to-risk ratio, [ratio, points], with straight lines between them (0 at 0.5:1 up to the first) and full
+        # marks from the last. Full marks at 4:1 (was 4.5:1): the best an ideal pullback can reach, as its target (the
+        # recent high) is at most ~6 ATRs up and its stop at least MIN_RISK_ATR down. No jump at 2.5:1 any more (24 just
+        # below it, 25 at it). On 2026-10-20/21's 120 candidates the average fell slightly (24.2 -> 23.6 on 10-21) and
+        # the points spread more (sd 2.9 -> 3.4), so plans are told apart better without inflating the totals.
+        "RISK_REWARD_POINTS": [[1.5, 12], [2.0, 18], [2.5, 22.5], [3.0, 26], [3.5, 28.5], [4.0, 30]],
+        # Kept at 1.5 when loosening: a plan under 1.5:1 earns under 12 of the 30 risk/reward points, so it would need
+        # 64+ of the other 70 to reach MIN_SWING_SCORE (75); sending it would only add cost
         "MIN_PLAN_RR": 1.5,                # Plans with less reward per unit of risk can't score well; not sent to the LLM
-        # The best plans sent to the LLM (was 20): ranked by their risk/reward score, then the earliest in its move
+        # 2026-10-22: the price at most this many ATRs above the support its stop sits under; further, the rubric
+        # calls the setup stretched (and the stop is more than 2.5 ATRs away)
+        "MAX_ABOVE_SUPPORT_ATR": 2.0,
+        # The best plans sent to the LLM (was 20): ranked by the part of the swing score the code can check (2026-10-22:
+        # the plan's risk/reward points, the technical start, and the momentum band; was risk/reward alone), then the
+        # earliest in its move
         "MAX_CANDIDATES": 40,
     },
     # Claude-authored (2026-10-20): the sanitized sections each horizon's LLM call is sent (sanitizer.horizon_payload).
@@ -690,6 +738,12 @@ params_dict = {
         "SYMBOL_NEWS_BULLETS": 2,                # News bullets per holding card (src/personalized/symbol_specific_news.py); 2026-10-20: 2, was 3
         "SYMBOL_NEWS_MIN_PRIORITY": "MEDIUM",    # Claude-authored (2026-10-20): lower-priority stories (routine commentary, recaps) are left out
         "SYMBOL_NEWS_LOOKBACK_DAYS": 7,          # How many days back Gemini searches for each holding's news
+        # Claude-authored (2026-10-22, Andres's rule): with more holdings than NEWS_FULL_UP_TO_HOLDINGS, each card shows
+        # its NEWS_LARGE_PORTFOLIO_BULLETS most important stories, except stocks flagged NEWS_FULL_SIGNALS, which keep
+        # SYMBOL_NEWS_BULLETS; so a big portfolio fits Gmail's size limit before fit_for_gmail has to cut more
+        "NEWS_FULL_UP_TO_HOLDINGS": 10,
+        "NEWS_LARGE_PORTFOLIO_BULLETS": 1,
+        "NEWS_FULL_SIGNALS": ["urgent_sell", "risky"],
         "PORTFOLIO_REVIEW_BULLETS": 5,           # Max notes in the whole-portfolio review (src/personalized/portfolio_review.py)
         # Claude-authored (2026-10-15): parallelism and reuse
         "SYMBOL_NEWS_CONCURRENCY": 4,            # Gemini news requests in flight at once per user (each user has their own key)

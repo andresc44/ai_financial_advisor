@@ -144,8 +144,8 @@ def test_universal_scoring_on_deepseek(deepseek_server, monkeypatch):
     deepseek_server["plan"] = answer_by_tool({universal_llm.LONG_TERM_TOOL_NAME: LONG, universal_llm.SWING_TOOL_NAME: SWING})
     picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5, swing_setups={"AAA": SETUP})
     assert [(p["ticker"], p["model"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", "deepseek-v4-pro", 84)]
-    # 2026-10-20: the swing call adds the plan's risk/reward (4:1, 28.8) to the model's three sub-scores
-    assert [(p["ticker"], p["swingScore"]) for p in picks["top_swing"]] == [("AAA", 88.8)]
+    # 2026-10-20: the swing call adds the plan's risk/reward (4:1, 30 since 2026-10-22) to the model's three sub-scores
+    assert [(p["ticker"], p["swingScore"]) for p in picks["top_swing"]] == [("AAA", 90.0)]
     assert all(request["reasoning_effort"] == "high" for request in deepseek_server["requests"])
     assert len(deepseek_server["requests"]) == 2  # One call per horizon
 

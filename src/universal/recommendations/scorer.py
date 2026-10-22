@@ -158,6 +158,47 @@ def swing_reasoning(ticker: str, scores: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def rescore_borderline(
+    scores: Dict[str, Dict[str, Any]],
+    key: str,
+    picks: int,
+    min_score: float,
+    rescore: Callable[[List[str]], Dict[str, Dict[str, Any]]],
+    label: str,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Claude-authored (2026-10-22, at Andres's request): scores that could go either way, scored again
+    (params_dict["IDEA_RESCORE"]). Unless the list already has `picks` candidates above `min_score` + ABOVE_MIN, each
+    candidate whose `key` score is from `min_score` - BELOW_MIN up to `min_score` + ABOVE_MIN is scored EXTRA_RUNS more
+    times by
+    `rescore(tickers)` ({ticker: scores}, like run_llm_evaluation), and keeps the run with the middle score (the
+    lower of the two middle ones when a re-score failed), so its sub-scores and thesis match the score it shows.
+    """
+    settings = params_dict.get("IDEA_RESCORE") or {}
+    # 2026-10-22: the band is relative to each list's minimum (swing's went to 75); it was up to an absolute 85
+    clear = min_score + settings.get("ABOVE_MIN", 5.0)
+    below, runs = settings.get("BELOW_MIN", 5.0), settings.get("EXTRA_RUNS", 2)
+    if not scores or runs <= 0:
+        return scores
+    clear_count = sum(1 for s in scores.values() if (s.get(key) or 0.0) > clear)
+    if clear_count >= picks:
+        logger.info(f"{clear_count} {label} candidates score above {clear:g} (the list shows {picks}); no re-scoring.")
+        return scores
+    borderline = sorted(t for t, s in scores.items() if min_score - below <= (s.get(key) or 0.0) <= clear)
+    if not borderline:
+        return scores
+    logger.info(f"Re-scoring {len(borderline)} borderline {label} candidates {runs} more times: {borderline}")
+    extra = [rescore(borderline) for _ in range(runs)]
+    result = dict(scores)
+    for ticker in borderline:
+        draws = sorted([scores[ticker]] + [run[ticker] for run in extra if ticker in run], key=lambda s: s.get(key) or 0.0)
+        middle = draws[(len(draws) - 1) // 2]
+        result[ticker] = middle
+        logger.info(f"[{ticker}] {label} scores {[round(s.get(key) or 0.0, 1) for s in draws]} -> "
+                    f"{(middle.get(key) or 0.0):.1f}")
+    return result
+
+
 def select_top_candidates(
     sanitized_inputs: Dict[str, Dict[str, Any]],
     long_n: int = 2,
@@ -233,6 +274,20 @@ def select_top_candidates(
         issues=issues,
         horizon="swing",
     ) if swing_setups and not key_failed else {}
+
+    # Claude-authored (2026-10-22): scores that could go either way are scored twice more, keeping the middle one
+    long_scores = rescore_borderline(
+        long_scores, "longScore", long_n, min_long_score,
+        lambda tickers: run_llm_evaluation(
+            sanitized_inputs={t: horizon_payload(sanitized_inputs[t], "long_term") for t in tickers},
+            config=config, horizon="long_term"),
+        "long-term")
+    swing_scores = rescore_borderline(
+        swing_scores, "swingScore", swing_n, min_swing_score,
+        lambda tickers: run_llm_evaluation(
+            sanitized_inputs={t: horizon_payload(sanitized_inputs[t], "swing", swing_setups[t]) for t in tickers},
+            config=config, horizon="swing"),
+        "swing")
 
     stats["scored"] = len(long_scores)
     stats["swing_scored"] = len(swing_scores)

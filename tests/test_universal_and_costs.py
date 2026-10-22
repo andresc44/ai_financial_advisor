@@ -378,7 +378,7 @@ def test_every_configured_field_comes_through_from_complete_data():
 
 
 def test_score_thresholds_and_news_limit():
-    assert params_dict["MIN_LONG_SCORE"] == params_dict["MIN_SWING_SCORE"] == 80.0
+    assert params_dict["MIN_LONG_SCORE"] == 80.0 and params_dict["MIN_SWING_SCORE"] == 75.0  # Swing 75 since 2026-10-22
     assert params_dict["MAX_NEWS_ARTICLES"] == 20
 
 

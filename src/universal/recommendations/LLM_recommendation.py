@@ -112,6 +112,13 @@ HORIZONS = ("long_term", "swing")
 
 
 MIN_RISK_FRACTION = 0.01  # A stop closer than 1% of the entry is counted as 1% away when scoring the plan
+# Claude-authored (2026-10-22): the plan's points by ratio when SWING_SCREEN.RISK_REWARD_POINTS isn't set
+DEFAULT_RISK_REWARD_POINTS = [[1.5, 12], [2.0, 18], [2.5, 22.5], [3.0, 26], [3.5, 28.5], [4.0, 30]]
+
+
+def risk_reward_points() -> List[List[float]]:
+    """The [ratio, points] anchors of the risk/reward score (params_dict["SWING_SCREEN"]["RISK_REWARD_POINTS"])."""
+    return (params_dict.get("SWING_SCREEN") or {}).get("RISK_REWARD_POINTS") or DEFAULT_RISK_REWARD_POINTS
 
 
 def daily_atr(daily_bars: Any, days: int = 14) -> Optional[float]:
@@ -129,10 +136,12 @@ def daily_atr(daily_bars: Any, days: int = 14) -> Optional[float]:
 
 def plan_risk_reward_score(entry: Any, stop: Any, target: Any, atr: Optional[float] = None) -> float:
     """
-    Claude-authored (2026-10-18): risk_reward_ratio_score (0-30) for a swing plan, by the rubric's bands in
-    LLM_rec_instr.py: below 1.5:1 scores 0-11 (0 at 0.5:1 or less), 1.5:1 to 2.5:1 scores 12-24, and 2.5:1 and up
-    scores 25-30 (30 from 4.5:1). Why in code: re-scoring 37 candidates showed the model doesn't score its own levels
-    (a 1.0:1 plan got 24/30 and an 8:1 plan 15/30). A plan that isn't 0 < stop < entry < target scores 0.
+    Claude-authored (2026-10-18): risk_reward_ratio_score (0-30) for a swing plan. 2026-10-22 (re-banded at Andres's
+    request): straight lines between SWING_SCREEN.RISK_REWARD_POINTS' anchors (1.5:1 -> 12, 2:1 -> 18, 2.5:1 -> 22.5,
+    3:1 -> 26, 3.5:1 -> 28.5, 4:1 -> 30), from 0 at 0.5:1 up to the first, and full marks from the last; until then
+    bands of 0-11 below 1.5:1, 12-24 to 2.5:1, and 25-30 from it (30 from 4.5:1). Why in code: re-scoring 37
+    candidates showed the model doesn't score its own levels (a 1.0:1 plan got 24/30 and an 8:1 plan 15/30). A plan
+    that isn't 0 < stop < entry < target scores 0.
     The risk is at least one `atr` (a normal day's move; daily_atr) and at least MIN_RISK_FRACTION of the entry: a
     stop tighter than that is likely hit by ordinary noise, and on 2026-10-17 a falling stock (APH) scored 29/30 from
     a stop 1.4% under the price. The top band was 3:1 until 2026-10-18; 2.5:1 is a solid 2-8 week swing trade.
@@ -140,11 +149,14 @@ def plan_risk_reward_score(entry: Any, stop: Any, target: Any, atr: Optional[flo
     if not all(isinstance(v, (int, float)) for v in (entry, stop, target)) or not 0 < stop < entry < target:
         return 0.0
     ratio = (target - entry) / max(entry - stop, entry * MIN_RISK_FRACTION, atr or 0.0)
-    if ratio < 1.5:
-        return round(max(0.0, ratio - 0.5) * 11, 1)
-    if ratio < 2.5:
-        return round(12 + (ratio - 1.5) * 12, 1)
-    return round(min(30.0, 25 + (ratio - 2.5) / 2 * 5), 1)
+    anchors = risk_reward_points()
+    first_ratio, first_points = anchors[0]
+    if ratio < first_ratio:
+        return round(max(0.0, ratio - 0.5) / (first_ratio - 0.5) * first_points, 1)
+    for (ratio_0, points_0), (ratio_1, points_1) in zip(anchors, anchors[1:]):
+        if ratio < ratio_1:
+            return round(points_0 + (ratio - ratio_0) / (ratio_1 - ratio_0) * (points_1 - points_0), 1)
+    return float(anchors[-1][1])
 
 
 def long_term_evaluation(answer: LongTermSubScores) -> Dict[str, Any]:
