@@ -130,21 +130,12 @@ def get_llm_settings(user_name: str) -> dict[str, str]:
     params_dict["LLM"]["HOLDINGS"]. The effort is <NAME>_HOLDINGS_LLM_EFFORT (or HOLDINGS_CLAUDE_EFFORT) when the
     model accepts it; otherwise LLM["HOLDINGS"]'s effort if that model is the default one, else the provider's
     default (CLAUDE_CONFIG / DEEPSEEK_CONFIG "effort"). The provider follows from the model.
+
+    2026-10-22 (Andres): every user's holdings use params_dict["LLM"]["HOLDINGS"] (Claude Haiku 5.5, low), chosen
+    from the model comparison (docs/model_selection.md). The sign-up form no longer asks, and <NAME>_HOLDINGS_LLM_MODEL
+    / _EFFORT (and the older HOLDINGS_CLAUDE_*) are ignored; the sign-up sync clears them.
     """
-    default = llm_models.job_settings("HOLDINGS")
-    models = llm_models.allowed_models()
-
-    model = _resolve(user_name, "holdings_llm_model", None, parse=str, is_valid=lambda v: v in models)
-    if model is None:
-        model = _resolve(user_name, "holdings_claude_model", default["model"], parse=str, is_valid=lambda v: v in models)
-
-    efforts = models.get(model, [])
-    fallback = default["effort"] if model == default["model"] else llm_models.default_effort(model)
-    effort = _resolve(user_name, "holdings_llm_effort", None, parse=str.lower, is_valid=lambda v: v in efforts)
-    if effort is None:
-        effort = _resolve(user_name, "holdings_claude_effort", fallback, parse=str.lower, is_valid=lambda v: v in efforts)
-
-    return {"provider": llm_models.provider_of(model), "model": model, "effort": effort}
+    return llm_models.job_settings("HOLDINGS")
 
 
 def get_home_currency(user_name: str) -> str:

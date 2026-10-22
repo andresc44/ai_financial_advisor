@@ -19,12 +19,13 @@
  *   3. Google Sheets ............. How shared? -> privately: 4. Sheet ID | by link: 6. Your settings
  *   4. Sheet ID .................. -> 6. Your settings
  *   5. Ideas only ................ -> submit (no keys, nothing else needed)
- *   6. Your settings ............. Model? -> default: 9. Telegram | Claude: 7 | DeepSeek: 8
- *   7. Claude model .............. -> 9. Telegram
- *   8. DeepSeek model ............ -> 9. Telegram
- *   9. Telegram and watchdog ..... -> with watchdog: 10. Watchdog | otherwise: 11. Your keys
- *  10. Watchdog .................. -> 11. Your keys
- *  11. Your keys (confirmations) . -> submit
+ *   6. Your settings ............. -> 7. Telegram
+ *   7. Telegram and watchdog ..... -> with watchdog: 8. Watchdog | otherwise: 9. Your keys
+ *   8. Watchdog .................. -> 9. Your keys
+ *   9. Your keys (confirmations) . -> submit
+ *
+ * The AI model isn't asked (2026-10-22): every user's holdings are reviewed by Claude Haiku 5.5 at
+ * low effort (LLM["HOLDINGS"] in src/parameters.py), so everyone with holdings needs an Anthropic key.
  *
  * API keys, SnapTrade keys, and Telegram chat IDs are never asked for: the form's answers are
  * stored in a spreadsheet, so users send those separately through a private channel. Free-text
@@ -204,65 +205,10 @@ function createFinnbotSignupForm() {
         'On (default): about $0.012 per stock per digest',
         'Off: saves that cost',
       ]);
-  const modelQuestion = form.addMultipleChoiceItem()
-      .setTitle('Which AI model should review your holdings?')
-      .setHelpText('It gives each stock its signal (buy more, hold, risky, profit sell, urgent sell). ' +
-                   'Costs are per stock, per review. Guide 3.4.')
-      .setRequired(true);
 
-  // ---------------------------------------------------------------- 7. Claude model
-  const claudePage = form.addPageBreakItem()
-      .setTitle('7. Your Claude model')
-      .setHelpText('Billed by Anthropic to your own key. Guide sections 3.4 and 3.5.');
-  form.addMultipleChoiceItem()
-      .setTitle('Claude model')
-      .setHelpText('Approximate cost per stock, per review, at medium effort.')
-      .setRequired(true)
-      .setChoiceValues([
-        'Claude Haiku 5.5: about $0.001, the default, cheapest and fastest',
-        'Claude Sonnet 5.5: about $0.027, a step up in nuance',
-        'Claude Opus 5.5: about $0.054, stronger reasoning',
-        'Claude Fable 5.1: about $0.134, the most capable',
-        'Claude Sonnet 5: about $0.027 (older; Sonnet 5.5 is better)',
-        'Claude Opus 5: about $0.067 (older; Opus 5.5 is better and cheaper)',
-        'Claude Opus 4.8: about $0.067 (older; Opus 5.5 is better and cheaper)',
-        'Claude Fable 5: about $0.134 (older; Fable 5.1 is better)',
-      ]);
-  form.addMultipleChoiceItem()
-      .setTitle('Effort (how long it thinks)')
-      .setHelpText('More thinking can mean more careful reviews, but costs more: each extra 1,000 ' +
-                   'tokens of thinking adds about $0.0005 per stock on Haiku, $0.01 on Sonnet, ' +
-                   '$0.02 on Opus 5.5, $0.05 on Fable. Guide 3.5.')
-      .setRequired(true)
-      .setChoiceValues(['Low', 'Medium (default)', 'High', 'Extra high (xhigh)', 'Max']);
-
-  // ---------------------------------------------------------------- 8. DeepSeek model
-  const deepseekPage = form.addPageBreakItem()
-      .setTitle('8. Your DeepSeek model')
-      .setHelpText('Billed by DeepSeek to your own key. Guide sections 3.4 and 3.5.');
-  form.addMultipleChoiceItem()
-      .setTitle('DeepSeek model')
-      .setHelpText('Approximate cost per stock, per review, at low effort.')
-      .setRequired(true)
-      .setChoiceValues([
-        'DeepSeek Flash: about $0.002, the cheapest overall',
-        'DeepSeek V4 Pro: about $0.007, stronger',
-      ]);
-  form.addMultipleChoiceItem()
-      .setTitle('Effort (how long it thinks)')
-      .setRequired(true)
-      .setChoiceValues(['None (no thinking)', 'Low (default)', 'High', 'Max']);
-  form.addCheckboxItem()
-      .setTitle('Please confirm')
-      .setRequired(true)
-      .setChoiceValues([
-        'I understand my holdings data (symbols, share counts, prices paid) is sent to DeepSeek\'s ' +
-            'servers.',
-      ]);
-
-  // ---------------------------------------------------------------- 9. Telegram and watchdog
+  // ---------------------------------------------------------------- 7. Telegram and watchdog
   const telegramPage = form.addPageBreakItem()
-      .setTitle('9. Telegram and the watchdog')
+      .setTitle('7. Telegram and the watchdog')
       .setHelpText(
           'Telegram is a free messaging app. Finnbot\'s bot can send you urgent sell alerts (from the ' +
           'watchdog), earnings reminders 24 hours before your stocks report, and notices if your ' +
@@ -273,14 +219,14 @@ function createFinnbotSignupForm() {
       .setTitle('Do you want Telegram messages?')
       .setRequired(true);
 
-  // ---------------------------------------------------------------- 10. Watchdog
+  // ---------------------------------------------------------------- 8. Watchdog
   const watchdogPage = form.addPageBreakItem()
-      .setTitle('10. The watchdog')
+      .setTitle('8. The watchdog')
       .setHelpText(
           'Each check looks at prices first; only stocks that moved about a day\'s range, report ' +
           'earnings within 7 days, or weren\'t reviewed in 24 hours get a new AI review, and never more ' +
-          'than 40 a day. With Claude Haiku 5.5 (the default) or DeepSeek Flash that\'s under $2 a ' +
-          'month; with Claude Sonnet 5.5 about $3-7 (at most about $23). Guide 3.9.');
+          'than 40 a day. On Claude Haiku 5.5 that\'s about $0.20-0.50 a month, at most about $1.70. ' +
+          'Guide 3.9.');
   form.addTextItem()
       .setTitle('Hours between checks')
       .setHelpText('A whole number from 1 to 168. 4 is the default (about two checks per trading ' +
@@ -306,9 +252,9 @@ function createFinnbotSignupForm() {
       .setRequired(true)
       .setChoiceValues(['On (default)', 'Off']);
 
-  // ---------------------------------------------------------------- 11. Your keys
+  // ---------------------------------------------------------------- 9. Your keys
   const keysPage = form.addPageBreakItem()
-      .setTitle('11. Your keys')
+      .setTitle('9. Your keys')
       .setHelpText(
           'Last step. Your keys must be ready, but they are sent separately, never in this form. ' +
           'How to create them: guide section 3.6. How to store and send them safely: section 6.');
@@ -317,8 +263,7 @@ function createFinnbotSignupForm() {
       .setRequired(true)
       .setChoiceValues([
         'I\'ve created my Gemini API key and saved it somewhere safe (e.g. a password manager).',
-        'I\'ve created the key for my model (Anthropic for Claude, including the default; DeepSeek ' +
-            'for DeepSeek) and saved it somewhere safe.',
+        'I\'ve created my Anthropic API key and saved it somewhere safe.',
         'I have NOT typed any API key, SnapTrade key, or Telegram chat ID into this form.',
         'I\'ll send my keys (and my Telegram chat ID and SnapTrade keys, if any) to Andres ' +
             'one-to-one through the private channel he gives me, never by email, a group chat, ' +
@@ -349,13 +294,6 @@ function createFinnbotSignupForm() {
     sharingQuestion.createChoice('By link ("Anyone with the link can view"): I\'ll send the sheet\'s ID ' +
                                  'to Andres privately, since anyone with it can see my holdings', settingsPage),
   ]);
-  modelQuestion.setChoices([
-    modelQuestion.createChoice('The default: Claude Haiku 5.5 at medium effort (about $0.001 per stock; ' +
-                               'needs an Anthropic key)', telegramPage),
-    modelQuestion.createChoice('Choose a Claude model (needs an Anthropic key)', claudePage),
-    modelQuestion.createChoice('Choose a DeepSeek model (needs a DeepSeek key; cheapest, data goes to ' +
-                               'DeepSeek)', deepseekPage),
-  ]);
   telegramQuestion.setChoices([
     telegramQuestion.createChoice('Yes, with the watchdog: urgent sell alerts, earnings reminders, and ' +
                                   'notices', watchdogPage),
@@ -368,8 +306,7 @@ function createFinnbotSignupForm() {
   sheetsPage.setGoToPage(settingsPage);                        // After 2. SnapTrade
   ideasPage.setGoToPage(settingsPage);                         // After 4. Sheet ID
   settingsPage.setGoToPage(FormApp.PageNavigationType.SUBMIT);  // After 5. Ideas only: done
-  deepseekPage.setGoToPage(telegramPage);                      // After 7. Claude model
-  // 8. DeepSeek model continues to 9, and 10. Watchdog to 11, in order; 11 is the last section.
+  // 6. Your settings continues to 7, and 8. Watchdog to 9, in order; 9 is the last section.
 
   // ---------------------------------------------------------------- Answers spreadsheet and links
   let sheetUrl = '(not created)';

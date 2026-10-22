@@ -24,6 +24,7 @@ import os
 from src.digest.create_html import html_main
 from src.digest.send_gmail import send_html_email
 from src.universal.universal_consolidated import get_universal_content
+from src.usage_tracking import shared_usage  # Claude-authored (2026-10-22): the admin's costs
 from src.personalized.personalized_consolidated import get_ideas_only_content, get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
@@ -74,6 +75,7 @@ class DigestPayload:
         curr_date = day or now_et.date()
         digest_period = period or get_digest_period(now_et)
         self.period = digest_period
+        self.run_started_at = datetime.now(timezone.utc)  # Claude-authored (2026-10-22): the admin's "this run" costs
         self.payload = {
             "date": curr_date,
             "period": digest_period,  # Claude-authored (2026-10-17): for create_html's header and file name
@@ -115,6 +117,11 @@ class DigestPayload:
         user_payload = copy.deepcopy(self.payload)
         user_payload["user_name"] = user_name
         user_payload.update(self.personal_content(user_name) if personal is None else personal)
+        # Claude-authored (2026-10-22, Andres): the admin's costs (the shared keys: ideas and market news) beside the
+        # user's own. Added here, after the shared content is done: the user's content can finish before it
+        usage = user_payload.get("api_usage")
+        user_payload["api_usage"] = {**(usage if isinstance(usage, dict) else {"currency": "USD"}),
+                                     "admin": shared_usage(self.run_started_at)}
         return user_payload
 
     def send_daily_digest_to(self, user_name: str = "Andres", personal: Optional[dict] = None):

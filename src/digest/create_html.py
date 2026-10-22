@@ -1330,22 +1330,46 @@ def _long_term_card(pick: dict, today: Optional[date]) -> dict:
     return card
 
 
+PROVIDER_LABELS = {"anthropic": "Anthropic", "deepseek": "DeepSeek", "gemini": "Gemini"}
+# Claude-authored (2026-10-22, Andres): the providers each side's cost line always shows, $0.00 included: the user's
+# own keys (holdings reviews on Claude, news and the portfolio review on Gemini) and the admin's shared ones (ideas
+# on DeepSeek, market news on Gemini). Any other provider that cost something follows, so the parts add up.
+USAGE_PROVIDERS = {"you": ("anthropic", "gemini"), "admin": ("deepseek", "gemini")}
+
+
+def _usage_row(block: Any, label: str, code: str, always: tuple[str, ...] = ()) -> Optional[tuple[str, str]]:
+    """One cost line: the total, then `always`'s providers and any other that cost anything."""
+    total = _num(block.get("total_cost_usd")) if isinstance(block, dict) else None
+    if total is None:
+        return None
+
+    def cost(name: str) -> float:
+        return (_num(block[name].get("cost_usd")) or 0.0) if isinstance(block.get(name), dict) else 0.0
+
+    names = list(always) + [name for name in PROVIDER_LABELS if name not in always and cost(name) > 0]
+    providers = [f"{PROVIDER_LABELS[name]} {_money(cost(name))}" for name in names]
+    return label, f"{_money(total)} {code}" + (f" ({' · '.join(providers)})" if providers else "")
+
+
 def _usage(api_usage: Any) -> list[tuple[str, str]]:
+    """
+    The costs in About this digest. 2026-10-22 (Andres): this run and the last 30 days, each split into the reader's
+    own keys ("you") and the admin's shared ones ("admin": new-stock ideas and market news). Payloads saved before
+    then have today and the month to date instead, shown as they were.
+    """
     if not isinstance(api_usage, dict):
         return []
     code = _text(api_usage.get("currency")) or DEFAULT_CURRENCY
+    admin = api_usage.get("admin") if isinstance(api_usage.get("admin"), dict) else {}
+    periods = (("this_digest", "This run"), ("last_30_days", "Last 30 days"))
+    if "last_30_days" not in api_usage and "last_30_days" not in admin:
+        periods = (("this_digest", "This run"), ("today", "Today"), ("month_to_date", "Month to date"))
     rows = []
-    for key, label in (("this_digest", "This digest"), ("today", "Today"), ("month_to_date", "Month to date")):
-        block = api_usage.get(key) or {}
-        total = _num(block.get("total_cost_usd"))
-        if total is None:
-            continue
-        providers = [
-            f"{label} {_money(block[name].get('cost_usd'))}"
-            for name, label in (("anthropic", "Anthropic"), ("deepseek", "DeepSeek"), ("gemini", "Gemini"))
-            if isinstance(block.get(name), dict) and (_num(block[name].get("cost_usd")) or 0) > 0
-        ]
-        rows.append((label, f"{_money(total)} {code}" + (f" ({' · '.join(providers)})" if providers else "")))
+    for key, label in periods:
+        for block, who in ((api_usage.get(key), "you"), (admin.get(key), "admin")):
+            row = _usage_row(block, f"{label} · {who}", code, USAGE_PROVIDERS[who])
+            if row:
+                rows.append(row)
     return rows
 
 

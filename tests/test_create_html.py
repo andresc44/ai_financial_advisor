@@ -209,7 +209,7 @@ def test_digest_without_personal_or_macro_content():
     ))
     assert view["portfolio"] is None and view["risk"] is None and view["account"] is None and view["market"] is None
     assert "Hello, Test" in html
-    assert "No setups scored 75+ today" in html and "No ideas scored 80+ today" in html  # Swing's minimum: 75
+    assert "No setups scored 75+ today" in html and "No ideas scored 85+ today" in html  # Minimums: 75 swing, 85 long-term
     # Empty sections are plain cards, with nothing to open; the only dropdowns left are the glossary's
     assert html.count("<details>") == 1 + len(view["glossary"])
 
@@ -725,7 +725,7 @@ def test_currencies_come_from_the_payload_or_default_to_usd(monkeypatch):
         "holdings without a currency, shown as USD: NOC",
         "API usage has no currency; costs are shown as USD",
     ]
-    assert dict(view["usage"])["This digest"].startswith("$0.30 USD")
+    assert dict(view["usage"])["This run · you"].startswith("$0.30 USD")  # An older payload: no admin side
     with_currency = payload(api_usage={"currency": "USD", "this_digest": {"total_cost_usd": 0.3}})
     assert ch.build_view(with_currency)["currency_notes"] == []
 
@@ -998,3 +998,22 @@ def test_a_card_says_when_no_earnings_date_is_known():
     assert notes == {"AAA": "No earnings date available", "BBB": "", "CCC": "", "DDD": ""}
     assert ch.render_html(view, TEMPLATE_DIR).count("No earnings date available") == 1
     assert "  No earnings date available" in ch.render_text(view).splitlines()
+
+
+def test_about_shows_the_users_and_the_admins_costs():
+    # 2026-10-22 (Andres): this run and the last 30 days, each the reader's own keys and the admin's shared ones
+    api_usage = {"currency": "USD",
+                 "this_digest": {"total_cost_usd": 0.05, "anthropic": {"cost_usd": 0.02}, "gemini": {"cost_usd": 0.03}},
+                 "last_30_days": {"total_cost_usd": 4.2, "anthropic": {"cost_usd": 1.2}, "gemini": {"cost_usd": 3.0}},
+                 "admin": {"this_digest": {"total_cost_usd": 0.31, "deepseek": {"cost_usd": 0.3}, "gemini": {"cost_usd": 0.01}},
+                           "last_30_days": {"total_cost_usd": 12.5, "deepseek": {"cost_usd": 12.5}}}}
+    rows = ch.build_view(payload(api_usage=api_usage))["usage"]
+    assert [label for label, _ in rows[:4]] == ["This run · you", "This run · admin", "Last 30 days · you",
+                                                "Last 30 days · admin"]
+    assert dict(rows)["This run · admin"] == "$0.31 USD (DeepSeek $0.30 · Gemini $0.01)"
+    assert dict(rows)["Last 30 days · you"] == "$4.20 USD (Anthropic $1.20 · Gemini $3.00)"
+    # Each side's two providers always show, $0.00 included; another provider that cost something follows
+    assert dict(rows)["Last 30 days · admin"] == "$12.50 USD (DeepSeek $12.50 · Gemini $0.00)"
+    api_usage["admin"]["last_30_days"] = {"total_cost_usd": 3.0, "deepseek": {"cost_usd": 1.0}, "anthropic": {"cost_usd": 2.0}}
+    rows = dict(ch.build_view(payload(api_usage=api_usage))["usage"])
+    assert rows["Last 30 days · admin"] == "$3.00 USD (DeepSeek $1.00 · Gemini $0.00 · Anthropic $2.00)"

@@ -250,48 +250,65 @@ def test_gemini_tokens_and_scheduled_price_change():
     assert usage.gemini_token_cost("gemini-3.6-flash", tokens, date(2027, 1, 2)) == pytest.approx(1.50)
 
 
-def test_usage_summary_periods_and_free_search_allowance(monkeypatch):
-    monkeypatch.setitem(usage.params_dict["API_PRICES"], "GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH", 2)
-    now = datetime(2026, 10, 16, 15, 0, tzinfo=timezone.utc)
+def usage_row(at, provider, cost, queries=0, user="Andres"):
+    return {"at": at.isoformat(), "user": user, "source": "digest", "provider": provider, "model": "gemini-3.6-flash",
+            "input_tokens": 1, "output_tokens": 1, "cache_write_tokens": 0, "cache_read_tokens": 0,
+            "search_queries": queries, "cost_usd": cost}
 
-    def row(at, provider, cost, queries=0, user="Andres"):
-        return {"at": at.isoformat(), "user": user, "source": "digest", "provider": provider, "model": "gemini-3.6-flash",
-                "input_tokens": 1, "output_tokens": 1, "cache_write_tokens": 0, "cache_read_tokens": 0,
-                "search_queries": queries, "cost_usd": cost}
 
-    rows = [row(datetime(2026, 9, 30, 12, tzinfo=timezone.utc), "gemini", 5.0, 9),   # Last month: excluded
-            row(datetime(2026, 10, 2, 12, tzinfo=timezone.utc), "gemini", 0.10, 2),  # Uses the free allowance
-            row(datetime(2026, 10, 16, 13, tzinfo=timezone.utc), "anthropic", 0.20),  # Today (ET)
-            row(now - timedelta(minutes=5), "gemini", 0.01, 1),                        # This digest: 1 billable query
-            row(now - timedelta(minutes=5), "gemini", 9.99, 0, user="Steven")]         # Another user
+def write_ledger(rows):
     usage.LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
     usage.LEDGER_PATH.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
 
+
+def test_usage_summary_this_run_and_the_last_30_days(monkeypatch):
+    # 2026-10-22 (Andres): this run and the last 30 days (were this digest, today, and the month to date)
+    monkeypatch.setitem(usage.params_dict["API_PRICES"], "GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH", 2)
+    now = datetime(2026, 10, 16, 15, 0, tzinfo=timezone.utc)  # 30 days back: Sep 16
+    write_ledger([
+        usage_row(datetime(2026, 9, 10, 12, tzinfo=timezone.utc), "gemini", 5.0, 9),   # Over 30 days ago: out, but it
+        usage_row(datetime(2026, 9, 20, 12, tzinfo=timezone.utc), "gemini", 0.30, 2),  # used September's allowance,
+        usage_row(datetime(2026, 10, 2, 12, tzinfo=timezone.utc), "gemini", 0.10, 2),  # so these 2 queries are billed
+        usage_row(datetime(2026, 10, 16, 13, tzinfo=timezone.utc), "anthropic", 0.20),  # October's allowance: free
+        usage_row(now - timedelta(minutes=5), "gemini", 0.01, 1),                        # This run: 1 billable query
+        usage_row(now - timedelta(minutes=5), "gemini", 9.99, 0, user="Steven"),         # Another user
+        usage_row(now - timedelta(minutes=5), "gemini", 0.50, 0, user=usage.SHARED),     # The admin's shared keys
+    ])
     summary = usage.usage_summary("Andres", run_started_at=now - timedelta(minutes=10), now=now)
+    assert set(summary) == {"currency", "note", "this_digest", "last_30_days"}
     assert summary["this_digest"]["gemini"]["cost_usd"] == pytest.approx(0.01 + 0.014)
     assert summary["this_digest"]["anthropic"]["calls"] == 0
-    assert summary["today"]["total_cost_usd"] == pytest.approx(0.20 + 0.024)
-    assert summary["month_to_date"]["gemini"]["search_queries"] == 3
-    assert summary["month_to_date"]["total_cost_usd"] == pytest.approx(0.10 + 0.20 + 0.024)
+    assert summary["last_30_days"]["gemini"]["search_queries"] == 5
+    assert summary["last_30_days"]["total_cost_usd"] == pytest.approx(0.30 + 0.028 + 0.10 + 0.20 + 0.024)
+    # The admin's side: the shared keys only
+    admin = usage.shared_usage(run_started_at=now - timedelta(minutes=10), now=now)
+    assert admin["this_digest"]["total_cost_usd"] == admin["last_30_days"]["total_cost_usd"] == pytest.approx(0.50)
 
 
-def test_late_digest_on_the_last_day_of_the_month(monkeypatch):
+def test_each_months_search_allowance_starts_with_the_utc_month(monkeypatch):
     monkeypatch.setitem(usage.params_dict["API_PRICES"], "GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH", 1)
     now = datetime(2026, 11, 1, 0, 30, tzinfo=timezone.utc)  # 20:30 ET on Oct 31
-
-    def row(at, cost, queries):
-        return {"at": at.isoformat(), "user": "Andres", "source": "digest", "provider": "gemini", "model": "gemini-3.6-flash",
-                "input_tokens": 1, "output_tokens": 1, "cache_write_tokens": 0, "cache_read_tokens": 0,
-                "search_queries": queries, "cost_usd": cost}
-
-    usage.LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
-    usage.LEDGER_PATH.write_text("\n".join(json.dumps(r) for r in [
-        row(datetime(2026, 10, 31, 15, tzinfo=timezone.utc), 0.10, 1),   # Oct 31 ET, October (UTC)
-        row(now - timedelta(minutes=5), 0.01, 1),                          # Oct 31 ET, November (UTC): new allowance
-    ]) + "\n")
+    write_ledger([
+        usage_row(datetime(2026, 10, 31, 15, tzinfo=timezone.utc), "gemini", 0.10, 1),  # October's free query
+        usage_row(now - timedelta(minutes=5), "gemini", 0.01, 1),                         # November's: free again
+    ])
     summary = usage.usage_summary("Andres", run_started_at=now - timedelta(minutes=10), now=now)
-    assert summary["today"]["gemini"]["calls"] == 2 and summary["today"]["total_cost_usd"] == pytest.approx(0.11)
-    assert summary["month_to_date"]["gemini"]["calls"] == 1 and summary["month_to_date"]["total_cost_usd"] == pytest.approx(0.01)
+    assert summary["last_30_days"]["gemini"]["calls"] == 2 and summary["last_30_days"]["total_cost_usd"] == pytest.approx(0.11)
+    assert summary["this_digest"]["total_cost_usd"] == pytest.approx(0.01)
+
+
+def test_each_digest_adds_the_admins_costs_once_the_shared_content_is_done(monkeypatch):
+    from src.digest import digest_payload
+
+    monkeypatch.setattr(digest_payload, "shared_usage", lambda started: {"this_digest": {"total_cost_usd": 0.4},
+                                                                         "last_30_days": {"total_cost_usd": 9.0}})
+    digest = digest_payload.DigestPayload(period="Pre-Market")
+    own = {"currency": "USD", "this_digest": {"total_cost_usd": 0.1}, "last_30_days": {"total_cost_usd": 2.0}}
+    payload = digest.personalized_content("Andres", personal={"api_usage": own})
+    assert payload["api_usage"]["this_digest"] == {"total_cost_usd": 0.1}
+    assert payload["api_usage"]["admin"]["last_30_days"] == {"total_cost_usd": 9.0}
+    # A user without costs of their own (ideas only) still shows the admin's
+    assert digest.personalized_content("Kim", personal={})["api_usage"]["admin"]["this_digest"] == {"total_cost_usd": 0.4}
 
 
 # --------------------------------------------------------------------------------------------- data on universal picks
@@ -378,7 +395,13 @@ def test_every_configured_field_comes_through_from_complete_data():
 
 
 def test_score_thresholds_and_news_limit():
-    assert params_dict["MIN_LONG_SCORE"] == 80.0 and params_dict["MIN_SWING_SCORE"] == 75.0  # Swing 75 since 2026-10-22
+    # 2026-10-22: long-term 85 (was 80), swing 75 (was 80); 3 long-term picks, at least 1 outside tech
+    assert params_dict["MIN_LONG_SCORE"] == 85.0 and params_dict["MIN_SWING_SCORE"] == 75.0
+    assert params_dict["LONG_TERM_N_AMOUNT"] == 3 and params_dict["LONG_TERM_MIN_NON_TECH_PICKS"] == 1
+    # The ideas model (the tests' conftest swaps params_dict["LLM"], so read the settings file itself)
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "src" / "parameters.py").read_text(encoding="utf-8")
+    assert '"UNIVERSAL": {"model": "deepseek-flash", "effort": "high"}' in source
     assert params_dict["MAX_NEWS_ARTICLES"] == 20
 
 

@@ -20,7 +20,33 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-19: the rationale is at most 2 plain sentences on what the trend is doing and what it suggests (plus
   any important news), with indicator names used sparingly, at Andres's request. Why: rationales had grown to ~900 characters of indicator names and
   values, hard to read on a phone and a tenth of the email's size.
+- 2026-10-22: the rubric works from facts code works out for each holding (`checks`, src/personalized/holding_checks.py),
+  and the labels are checked in a fixed order with stated thresholds, at Andres's request. Why: in that day's model
+  comparison every model but Opus gave Opus's label for only ~7 holdings in 10, mostly with extra 'risky' labels that
+  cited the price under its short-term averages or an upcoming report: judgment calls the rubric left open. His
+  choices: 'risky' means genuinely risky, needing a close eye; leveraged ETFs are judged on their trend. Later the
+  same day, after the comparison (Opus 5.5 and the cheaper models then agreed on 91-95% of the labels), he asked for
+  'risky' to be a little more reserved: an upcoming report is now a lesser warning, so it needs another one.
 """
+import sys
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parents[2]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# Claude-authored (2026-10-22): the rubric's numbers, shared with holding_checks so the prompt and the code agree.
+# The four signs of a turn are the swing rubric's.
+from src.universal.recommendations.LLM_rec_instr import (  # noqa: E402
+    TURN_SIGN_LOW_HELD, TURN_SIGN_OFF_LOW_ATR, TURN_SIGN_RSI_BELOW, TURN_SIGN_UP_VOLUME,
+)
+
+PULLBACK_ATR = 1.5        # A pullback: down at least this many ATRs from the 20-day high close
+RECENT_RUN_PCT = 15.0     # A real recent run: up at least this much from the 20-day low...
+RECENT_RUN_ATR = 4.0      # ...or this many ATRs
+BUY_MORE_TURN_SIGNS = 2   # Signs of a turn 'buy_more' needs
+STRETCHED_RSI = 70        # Stretched: RSI at least this, or a close above the upper Bollinger Band
+RSI_HIGH, RSI_FALL_POINTS = 65, 5  # Tiring: RSI down this many points from a high of at least RSI_HIGH (5 sessions)
 
 # The recommendations, most urgent first (the digest's order)
 RECOMMENDATIONS = ("urgent_sell", "risky", "profit_sell", "buy_more", "hold")
@@ -84,35 +110,36 @@ MARKET SESSION:
 - When present, `session_price` is the latest price for that session, and `session_price_as_of` / `session_price_age_minutes` show how fresh it is. Prefer it over `current_price` when judging recent moves.
 - Outside regular hours, trading is thin and prices may be stale or not yet reflect news. 'urgent_sell' then means acting at the next trading opportunity (e.g. a pre-market order): a material event can still justify it, but a thin after-hours price move on its own should not.
 
-### WHAT A GOOD TIME TO ADD LOOKS LIKE
-A good time to buy more is when the stock is temporarily cheap and likely to recover soon, not when it has already been rising for weeks:
-- Cheap: it has pulled back toward support (lower Bollinger Band, EMA 21, the 50- or 200-day average, a prior low) or sold off on news that doesn't change the business, while the longer-term trend and fundamentals are intact.
-- Likely to recover: the selling is losing force: RSI turning up from roughly 30-45, a higher low or a bounce off support in the daily bars, the price holding or reclaiming support or EMA 9, the Parabolic SAR flipping or about to flip below the price, heavier volume on up days than down days, or a catalyst ahead that can lift it.
-- A stock that has risen for weeks, trades near or above its upper Bollinger Band, or has an RSI above ~70 is not a good add, however strong the business.
+### CHECKS WORKED OUT FOR YOU
+`checks` holds facts computed in code from `market_context`, as of `checks.as_of` (its latest daily bar). Apply them as given rather than re-judging them, and judge yourself only what they can't settle: news, fundamentals, analyst and insider activity, and how serious something is. A null check means the data was missing.
+- `trend`: "intact" (the price above its 200-day average with the 50-day above the 200-day), "mixed" (one of the two), or "weak" (neither).
+- `pullback`: down at least {PULLBACK_ATR:g} ATRs from its 20-day high close (`pullback_from_20d_high_atr`, `_pct`). `recent_run`: up at least {RECENT_RUN_PCT:g}% or {RECENT_RUN_ATR:g} ATRs from its 20-day low (`run_from_20d_low_pct`, `_atr`). `atr` is a normal day's range.
+- `turn_signs`, the signs the selling is ending, and `turn_sign_count`: `rsi_rising` (RSI higher than 5 sessions ago and below {TURN_SIGN_RSI_BELOW}); `volume_on_up_days` (10 sessions' up-day volume at least {TURN_SIGN_UP_VOLUME:g} times the down-day volume); `higher_low` (no new 10-day low for {TURN_SIGN_LOW_HELD} sessions, and at least {TURN_SIGN_OFF_LOW_ATR:g} ATR above it); `above_ema_9_or_sar` (a close above EMA 9, or the Parabolic SAR below the price).
+- `below_ema_21`, `sar_above_price`, `new_low_in_last_2_sessions`; `stretched` (a close above the upper Bollinger Band, or RSI {STRETCHED_RSI} or more); `rsi_falling_from_high` (RSI down {RSI_FALL_POINTS} or more points from a high of {RSI_HIGH}+ within 5 sessions).
+- `sessions_to_earnings` (trading days to the next report) and `next_earnings_date`; `fund` (an ETF or other fund) and `leveraged_fund`.
 
 ### RECOMMENDATION RUBRIC
-1. buy_more:
-   - The stock is in a rebounding phase: it has pulled back and now looks cheap, and the data suggests it is likely to go back up, so now is a good time to add to the position (see WHAT A GOOD TIME TO ADD LOOKS LIKE).
-   - Needs both an intact thesis (no thesis-breaking news, stable fundamentals) and evidence the decline is ending. A stock still falling with no sign of a floor is 'risky', not 'buy_more'.
+Go through the labels in this order and use the first one that applies.
 
-2. hold:
-   - The position is healthy: the trend is intact or recovering normally (price at or above EMA 21 with the Parabolic SAR below it, or an ordinary pullback within an uptrend), fundamentals are stable, and there is no material negative catalyst. Give it time to reach its next swing peak before selling.
-   - The default when evidence is mixed and nothing is deteriorating.
-
-3. risky:
-   - Something looks wrong or suspicious and needs close monitoring. Selling to be safe may make sense, but it is not necessarily a good moment to sell (e.g. the price is already depressed).
-   - Examples: a close below EMA 21 with the Parabolic SAR flipped above the price and no sign of a floor, consecutive earnings misses or guidance cuts, analyst downgrades, heavy insider selling, contracting margins, unusual moves or news without a clear explanation, or an earnings report within ~5 trading days on a position with meaningful downside exposure.
-
-4. profit_sell:
-   - The stock has risen well recently, but the indicators suggest the run is tiring and may turn down soon, so now is an opportunistic moment to sell (all or part) and lock in the gain.
-   - Examples: price stretched above the upper Bollinger Band or well above EMA 9/21 with RSI above ~70 and starting to turn down, the price at or beyond the analyst mean target or a prior high, momentum fading (RSI making a lower high while the price makes a higher one, the Parabolic SAR close to flipping above the price), or valuation stretched after the run.
-   - Needs a recent rise. A stock that hasn't risen is 'hold' or 'risky', not 'profit_sell'.
-
-5. urgent_sell:
+1. urgent_sell:
    - Immediate, time-sensitive action is required, and waiting for the next digest would likely cost the user materially.
    - Requires a specific, recent, verifiable trigger in the provided data: a thesis-breaking event (fraud or accounting allegations, going-concern or bankruptcy risk, delisting, major regulatory action, guidance collapse, failed key product or trial, a dilutive or unfavorable deal) or a decisive, accelerating technical breakdown (gap down through support or the SAR stop on heavy volume).
    - Never use for slow deterioration, valuation alone, general macro worries, or ordinary volatility within the stock's normal range (compare moves against `natr`).
    - When torn between 'risky' and 'urgent_sell', choose 'risky'.
+
+2. profit_sell: the stock has made a real recent run (`checks.recent_run`) and at least two signs say the run is tiring: `checks.stretched`; `checks.rsi_falling_from_high`; the price at or beyond the analysts' mean target or a prior high; momentum fading (RSI making a lower high while the price makes a higher one); or valuation stretched after the run. It is an opportunistic moment to sell (all or part) and lock in the gain. A stock without a recent run is never 'profit_sell'.
+
+3. risky: the position is genuinely at risk and needs a close eye. Selling to be safe may make sense, though it is not necessarily a good moment to sell (e.g. the price is already depressed). It needs one serious warning or two lesser ones:
+   - Serious: consecutive earnings misses or a guidance cut; two or more analyst downgrades, or one with a sharply cut target; news that damages the thesis without meeting the urgent_sell test; or a broken trend that is still falling (`trend` "weak" and `turn_sign_count` 0).
+   - Lesser: a short-term downtrend with no sign of a turn (`below_ema_21` and `sar_above_price` with `turn_sign_count` 0); an earnings report within ~5 trading days (`sessions_to_earnings` 5 or less) on a position with meaningful downside exposure; a single analyst downgrade; insider selling well beyond routine sales; contracting margins; an unexplained move larger than twice the stock's normal daily range (`natr`).
+   - Not 'risky' on its own: an upcoming earnings report, a dip within an intact trend, any other single lesser warning, or a large daily move within the stock's normal range.
+
+4. buy_more: a pullback (`checks.pullback`) while the long-term `trend` is "intact" or "mixed", with at least {BUY_MORE_TURN_SIGNS} of the `turn_signs`, not `stretched`, no warning from step 3, and an intact thesis (no thesis-breaking news, stable fundamentals): the stock is temporarily cheap and the selling is ending, so now is a good time to add.
+
+5. hold: everything else. The position is healthy or recovering normally, or the evidence is mixed and nothing above applies; give it time to reach its next swing peak.
+
+FUNDS (`checks.fund`, e.g. index and sector ETFs): judge them on their price trend alone; they have no earnings, guidance, or analyst ratings of their own. For a fund, a broken trend that is still falling (`trend` "weak" with `turn_sign_count` 0) or a short-term downtrend with no sign of a turn (`below_ema_21` and `sar_above_price`, `turn_sign_count` 0) is enough for 'risky'.
+LEVERAGED ETFs (`checks.leveraged_fund`): they move 2-3 times their index each day by design, so the size of their moves and the leverage itself are never a warning. Apply the fund rule above to their trend.
 
 ### SENTIMENT
 Separately from the recommendation, rate your overall outlook on the stock itself as 'Bullish', 'Neutral', or 'Bearish'.

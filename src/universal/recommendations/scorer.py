@@ -119,6 +119,44 @@ def pick_with_sector_rule(
     return sorted(picked, key=lambda item: rank[item[0]])
 
 
+def with_non_tech_picks(
+    picked: List[Tuple[str, Dict[str, Any]]], n: int, candidates: List[Tuple[str, Dict[str, Any]]],
+    sector_of: Callable[[str], str],
+) -> List[Tuple[str, Dict[str, Any]]]:
+    """
+    Claude-authored (2026-10-22, Andres's rule): long-term picks with at least params_dict["LONG_TERM_MIN_NON_TECH_PICKS"]
+    stocks outside TECH_SECTORS. While there are fewer, the best non-tech candidate from a sector not already picked (so
+    the sector rule still holds) joins the picks: added when there are fewer than `n`, otherwise in place of the
+    lowest-scoring tech pick. `candidates` are best first and may score below the usual minimum (from
+    LONG_TERM_NON_TECH_MIN_SCORE). Only applies when something was picked; with no such candidate the picks stay as they
+    are, and the log says so.
+    """
+    minimum = int(params_dict.get("LONG_TERM_MIN_NON_TECH_PICKS", 0) or 0)
+    tech = set(params_dict.get("TECH_SECTORS") or [])
+    is_tech = lambda ticker: sector_of(ticker) in tech  # noqa: E731
+    result = list(picked)
+    while result and sum(not is_tech(t) for t, _ in result) < minimum:
+        taken = {sector_of(t) for t, _ in result}
+        joining = next((item for item in candidates if item[0] not in {t for t, _ in result} and not is_tech(item[0])
+                        and sector_of(item[0]) not in taken), None)
+        tech_picks = [item for item in result if is_tech(item[0])]
+        if joining is None or (len(result) >= n and not tech_picks):
+            logger.info(f"Long-term picks {[t for t, _ in result]}: no non-tech candidate scored high enough, so they stay "
+                        f"as they are (LONG_TERM_MIN_NON_TECH_PICKS {minimum}).")
+            break
+        if len(result) < n:
+            logger.info(f"[{joining[0]}] Added to the long-term picks ({sector_of(joining[0])}): at least {minimum} "
+                        f"pick(s) must be outside {sorted(tech)} (LONG_TERM_MIN_NON_TECH_PICKS).")
+            result.append(joining)
+        else:
+            leaving = tech_picks[-1]  # The lowest-scoring tech pick (picks are best first)
+            logger.info(f"[{leaving[0]}] Left out of the long-term picks for {joining[0]} ({sector_of(joining[0])}): at "
+                        f"least {minimum} pick(s) must be outside {sorted(tech)} (LONG_TERM_MIN_NON_TECH_PICKS).")
+            result[result.index(leaving)] = joining
+    rank = {ticker: position for position, (ticker, _) in enumerate(candidates)}
+    return sorted(result, key=lambda item: rank.get(item[0], len(rank)))
+
+
 def long_term_reasoning(scores: Dict[str, Any]) -> Dict[str, Any]:
     """Sentiment, thesis, key risk, and sub-scores from the long-term half of a ticker's evaluation."""
     section = (scores.get("sub_scores") or {}).get("long_term") or {}
@@ -325,6 +363,11 @@ def select_top_candidates(
     sector_of = lambda ticker: candidate_sector(ticker, sanitized_inputs)  # noqa: E731
     top_long_tuples = pick_with_sector_rule(
         sorted_by_long, long_n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term")
+    # 2026-10-22: at least one pick outside tech, which may score from LONG_TERM_NON_TECH_MIN_SCORE
+    non_tech_floor = params_dict.get("LONG_TERM_NON_TECH_MIN_SCORE", min_long_score)
+    non_tech_pool = sorted(((t, s) for t, s in long_scores.items() if s.get("longScore", 0.0) >= min(non_tech_floor, min_long_score)),
+                           key=lambda item: item[1].get("longScore", 0.0), reverse=True)
+    top_long_tuples = with_non_tech_picks(top_long_tuples, long_n, non_tech_pool, sector_of)
 
     def other_score(scores_map: Dict[str, Dict[str, Any]], ticker: str, key: str) -> Optional[float]:
         return (scores_map.get(ticker) or {}).get(key)

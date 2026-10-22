@@ -8,7 +8,6 @@ params_dict = {
     # sheet's users with nothing required missing. Changes made here are replaced; change the sheet instead.
     "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/import_signup.py): edit the sheet
         "Andres",
-        "Steven",
     ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
@@ -304,15 +303,21 @@ params_dict = {
     # 2026-10-19: effort "low" (thinking) at Andres's request. On 8 candidates scored twice each, swing scores moved
     # 3.5 points on average between runs (max 6) instead of 9.9 (max 31.5) without thinking. About 5x the output
     # tokens: the first full run (95 candidates) cost $0.28 instead of ~$0.11 and took 27 minutes instead of ~17.
+    # 2026-10-22: effort "high", chosen by Andres from the model comparison (docs/model_selection.md): on the same 90
+    # long-term and 30 swing candidates, against Claude Opus 5.5 as the reference, Flash 4.1 high matched Opus's swing
+    # picks in every run and ranked long-term candidates best of the Flash settings, for ~$0.23 a run (low: $0.20).
     "LLM": {
-        "UNIVERSAL": {"model": "deepseek-flash", "effort": "low"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
+        "UNIVERSAL": {"model": "deepseek-flash", "effort": "high"},  # New-stock scoring: shared ANTHROPIC_API_KEY or DEEPSEEK_API_KEY
         # Default for holdings; each user's own key. 2026-10-22: claude-haiku-5-5 (was claude-sonnet-5-5) at Andres's
         # request: Sonnet's reviews averaged 342 output tokens at medium effort, so ~85% of its $0.027 per stock was the
         # ~11.7K input tokens at Sonnet's price; Haiku is ~$0.0013 per stock and keeps users' data with Anthropic
-        # (a DeepSeek default would send it to DeepSeek without them choosing). Not yet compared on the same holdings.
-        "HOLDINGS": {"model": "claude-haiku-5-5", "effort": "medium"},
-        # A user picks their own holdings model and effort with <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT
-        # in .env; a DeepSeek model chosen without an effort gets DEEPSEEK_CONFIG["effort"]. UNIVERSAL_LLM_MODEL /
+        # (a DeepSeek default would send it to DeepSeek without them choosing).
+        # 2026-10-22: effort "low" (was medium), chosen by Andres from the model comparison (docs/model_selection.md):
+        # with the holdings rubric worked from code-computed checks, Haiku 5.5 low gave Opus 5.5's label for 93% of 29
+        # holdings (medium: 91%), at ~$0.05 a run for both test portfolios against Opus's $2.04.
+        "HOLDINGS": {"model": "claude-haiku-5-5", "effort": "low"},
+        # 2026-10-22 (Andres): HOLDINGS applies to every user; the sign-up form no longer asks, and the old per-user
+        # <NAME>_HOLDINGS_LLM_MODEL / _EFFORT are ignored (user_settings.get_llm_settings). UNIVERSAL_LLM_MODEL /
         # UNIVERSAL_LLM_EFFORT in .env override UNIVERSAL on one machine.
     },
     # Claude-authored (2026-10-16): DeepSeek request settings (src/deepseek_client.py). Note: prompts and the user's
@@ -336,7 +341,7 @@ params_dict = {
         # src/universal/recommendations/LLM_rec_instr.py and named a tool that doesn't exist. Prompts now live
         # only in LLM_rec_instr.py (new-stock scoring) and src/personalized/LLM_hold_instr.py (holdings).
     },
-    "LONG_TERM_N_AMOUNT": 2,
+    "LONG_TERM_N_AMOUNT": 3,  # 2026-10-22, Andres: 3 long-term picks in the digest (was 2)
     "SWING_TERM_N_AMOUNT": 5,
     # Claude-authored (2026-10-22, at Andres's request): a new-stock score that could go either way is scored again.
     # The same stock scored twice can come out ~4 points apart (13.5 at most), so a candidate within BELOW_MIN /
@@ -344,10 +349,10 @@ params_dict = {
     # keeps the middle score (scorer.rescore_borderline). A list that already has as many candidates clear of the band
     # as it shows (LONG_TERM_N_AMOUNT / SWING_TERM_N_AMOUNT) isn't re-scored: its picks are clear.
     "IDEA_RESCORE": {
-        # A score more than this above the minimum is clear: it stays above even after a bad run (long-term 85+,
+        # A score more than this above the minimum is clear: it stays above even after a bad run (long-term 90+,
         # swing 80+). Was an absolute CLEAR_SCORE of 85 until swing's minimum went to 75 (2026-10-22, Andres: "+-5%")
         "ABOVE_MIN": 5.0,
-        "BELOW_MIN": 5.0,     # How far under the minimum a score can be and still be re-scored (long-term 75, swing 70)
+        "BELOW_MIN": 5.0,     # How far under the minimum a score can be and still be re-scored (long-term 80, swing 70)
         "EXTRA_RUNS": 2,      # More scores per borderline candidate (3 in all; the middle one is kept)
     },
     # Claude-authored (2026-10-22, at Andres's request): a holding whose first review says one of SIGNALS is reviewed
@@ -356,7 +361,9 @@ params_dict = {
     # (recommendation.ParallelHoldingEvaluator). Sentiment alone never triggers a re-review.
     "HOLDINGS_RECHECK": {"SIGNALS": ["urgent_sell", "profit_sell"], "EXTRA_REVIEWS": 2},
     # Both totals are out of 100: the sum of the sub-scores in src/universal/recommendations/LLM_rec_instr.py
-    "MIN_LONG_SCORE": 80.0,
+    # 2026-10-22, Andres: 85 (was 80). Flash 4.1 scores long-term ideas ~2 points above Opus 5.5 (the model
+    # comparison), so ~19 of 90 cleared 80 against Opus's ~9; at 85 about as many clear as with Opus at 82-83
+    "MIN_LONG_SCORE": 85.0,
     # 2026-10-22, Andres: 75 for swing (was 80). The swing rubric now scores from checks worked out in code
     # (swing_screen.rubric_checks), and on that day only one of 30 candidates reached 80; the next were 73-74
     "MIN_SWING_SCORE": 75.0,
@@ -366,6 +373,18 @@ params_dict = {
     # A stock the rule leaves out makes room for the next best that fits, if it clears the minimum score, so a
     # list can come up short; the log says which stocks were left out.
     "PICK_SECTOR_RULES": {"LONG_TERM": "all_different", "SWING": "majority_different"},
+    # Claude-authored (2026-10-22, Andres's rule): at least this many long-term picks are not tech stocks
+    # (scorer.with_non_tech_picks). When the picks have fewer, the best non-tech candidate scoring at least
+    # LONG_TERM_NON_TECH_MIN_SCORE joins them (in place of the lowest-scoring tech pick when the list is full); with none,
+    # the picks stay as they are (logged). It only applies when something cleared MIN_LONG_SCORE. Tech means Yahoo's sectors
+    # in TECH_SECTORS. Communication Services is included: it holds the internet and ad-tech names (GOOGL, META, RDDT,
+    # APP, SPOT), and with LONG_TERM "all_different" only one "Technology" stock can be picked anyway, so with Technology
+    # alone the rule would never change a pick.
+    "LONG_TERM_MIN_NON_TECH_PICKS": 1,
+    # 2026-10-22, Andres: the non-tech pick may score from 80, under MIN_LONG_SCORE (85). On that day only chipmakers
+    # reached 85, and the best non-tech candidates scored 82-84
+    "LONG_TERM_NON_TECH_MIN_SCORE": 80.0,
+    "TECH_SECTORS": ["Technology", "Communication Services"],
     # Claude-authored (2026-10-18): a swing pick must still be early in its move. A stock past any of these is left
     # out however it scores (scorer.too_far_along): more than MAX_RUN_ATR normal days' ranges (14-day ATR) above
     # its LOOKBACK_DAYS low, an RSI above MAX_RSI, or a close above its upper Bollinger Band. Calibrated on
@@ -802,6 +821,10 @@ params_dict = {
     },
     # Claude-authored (2026-10-16): DeepSeek models LLM and HOLDINGS_LLM_MODEL may use. "none" = non-thinking (V3-like),
     # low / high / max = thinking (R1-like). Flash is the cheap fast tier, v4-pro the stronger one.
+    # 2026-10-22 (checked with GET /models): "deepseek-flash" is served by DeepSeek-V4.1-Flash-1017 (V4.1-Flash since
+    # 2026-09-10, its 1017 update since 2026-10-17; same price), so Finnbot is on Flash 4.1 with no change; the old
+    # "deepseek-v4-flash" is retired and routes to it. The API's effort levels are low / high / max (default high):
+    # "medium" is accepted but scored like "high" in the 2026-10-22 model comparison, so it isn't offered here.
     "ALLOWED_DEEPSEEK_MODELS": {
         "deepseek-flash": ["none", "low", "high", "max"],
         "deepseek-v4-pro": ["none", "low", "high", "max"],

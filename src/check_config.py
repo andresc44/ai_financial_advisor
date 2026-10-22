@@ -84,11 +84,11 @@ USER_KEYS = {
     "watchdog_interval_hours": ("optional", f"Hours between watchdog checks, 0 = off (default {params_dict['WATCHDOG']['DEFAULT_INTERVAL_HOURS']})"),
     "watchdog_session": ("optional", "regular, extended, or 24_7 (default regular)"),
     "watchdog_tripwire": ("optional", "true or false: hourly price check between checks"),
-    "holdings_llm_model": ("optional", "LLM for holdings: a model in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS (default LLM['HOLDINGS'])"),
-    "holdings_llm_effort": ("optional", "Claude: low..max; DeepSeek: none (no thinking), low, high, or max"),
+    "holdings_llm_model": ("optional", "Ignored since 2026-10-22: every user's holdings use LLM['HOLDINGS']"),
+    "holdings_llm_effort": ("optional", "Ignored since 2026-10-22: every user's holdings use LLM['HOLDINGS']"),
     "receive_holding_news": ("optional", "True or False: Gemini news bullets for each holding (default True)"),
-    "holdings_claude_model": ("optional", "Older name for HOLDINGS_LLM_MODEL (used when that's unset)"),
-    "holdings_claude_effort": ("optional", "Older name for HOLDINGS_LLM_EFFORT (used when that's unset)"),
+    "holdings_claude_model": ("optional", "Older name for HOLDINGS_LLM_MODEL; ignored since 2026-10-22"),
+    "holdings_claude_effort": ("optional", "Older name for HOLDINGS_LLM_EFFORT; ignored since 2026-10-22"),
 }
 
 

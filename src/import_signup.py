@@ -22,8 +22,8 @@ spreadsheet's first tab can be an empty "Sheet1".
 What applying one answer (the user's newest, matched by first name or email) does:
 - Writes each answered setting to .env as <NAME>_<SETTING> (src/personalized/user_profiles.py names), replacing the
   line if there is one (e.g. a "${ANDRES_EMAIL}" stand-in) and adding the rest to the user's block. Questions the
-  user skipped (another branch of the form) leave .env untouched. Choosing the default model clears an earlier
-  model choice, so LLM["HOLDINGS"] applies.
+  user skipped (another branch of the form) leave .env untouched. Since 2026-10-22 the form doesn't ask for a
+  holdings model (every user gets LLM["HOLDINGS"]), so each answer clears an earlier model choice.
 - The same name and email as an existing user: the form is the reference, so its answers replace theirs. The same
   name with another email stops (it may be someone else), unless --overwrite.
 - Checks what's still missing or invalid for the user's choices, API keys included (check_config's rules, plus the
@@ -74,7 +74,8 @@ SECRET_SETTINGS = ("anthropic_api_key", "deepseek_api_key", "gemini_api_key", "s
 API_KEY_SETTINGS = ("anthropic_api_key", "deepseek_api_key", "gemini_api_key", "snaptrade_client_id",
                     "snaptrade_consumer_key")
 LEGACY_SETTINGS = ("holdings_claude_model", "holdings_claude_effort")  # Older names; never asked or required
-EFFORT_TITLE = "Effort (how long it thinks)"  # Twice in the form: the Claude section's, then DeepSeek's
+# 2026-10-22: per-user holdings models, no longer used (user_settings.get_llm_settings): each answer clears them
+HOLDINGS_MODEL_SETTINGS = ("holdings_llm_model", "holdings_llm_effort") + LEGACY_SETTINGS
 NOTICE_COOLDOWN_HOURS = 24 * 365  # Each sign-up notice is keyed by its answer, so it's sent once
 
 
@@ -170,16 +171,6 @@ def _display_name(raw: str) -> str:
     return "-".join(part[:1].upper() + part[1:].lower() for part in raw.strip().split("-") if part)
 
 
-def _model_id(choice: str) -> str:
-    """'Claude Haiku 5.5: about $0.001, ...' -> 'claude-haiku-5-5'; 'DeepSeek V4 Pro: ...' -> 'deepseek-v4-pro'."""
-    return re.sub(r"[ .]+", "-", choice.split(":", 1)[0].strip().lower())
-
-
-def _effort(choice: str) -> str:
-    """'Medium (default)' -> 'medium', 'Extra high (xhigh)' -> 'xhigh', 'None (no thinking)' -> 'none'."""
-    return "xhigh" if "xhigh" in choice.lower() else choice.split()[0].lower() if choice else ""
-
-
 def plan_from_answer(answer: Answer) -> Plan:
     plan = Plan(name=_display_name(answer.name))
     s = plan.settings
@@ -219,22 +210,10 @@ def plan_from_answer(answer: Answer) -> Plan:
     if answer.get("News for each holding"):
         s["receive_holding_news"] = str(answer.get("News for each holding").startswith("On"))
 
-    model_choice = answer.get("Which AI model should review your holdings?")
-    if model_choice.startswith("The default"):
-        s["holdings_llm_model"] = s["holdings_llm_effort"] = None  # Clear an earlier choice: LLM["HOLDINGS"] applies
-    elif model_choice.startswith(("Choose a Claude", "Choose a DeepSeek")):
-        deepseek = "DeepSeek" in model_choice
-        model = _model_id(answer.get("DeepSeek model" if deepseek else "Claude model"))
-        effort = _effort(answer.get(EFFORT_TITLE, nth=1 if deepseek else 0) or answer.get(EFFORT_TITLE))
-        allowed = llm_models.allowed_models()
-        if model not in allowed:
-            plan.problems.append(f"Unrecognised model {model!r}; LLM['HOLDINGS'] applies until it's fixed.")
-        else:
-            s["holdings_llm_model"] = model
-            if effort in allowed[model]:
-                s["holdings_llm_effort"] = effort
-            else:
-                plan.problems.append(f"Effort {effort!r} isn't one {model} accepts; its default applies.")
+    # 2026-10-22 (Andres): no model question any more; every user's holdings use LLM["HOLDINGS"], so an earlier
+    # choice in .env is cleared (a model answered on the old form is ignored)
+    for key in HOLDINGS_MODEL_SETTINGS:
+        s[key] = None
 
     telegram = answer.get("Do you want Telegram messages?")
     plan.wants_telegram = telegram.startswith("Yes")
@@ -441,7 +420,7 @@ def missing_report(name: str, env: dict[str, Optional[str]], plan: Plan) -> list
         return current if current and current != MISSING_VALUE else None
 
     source = value("holdings_source")
-    model = value("holdings_llm_model") or value("holdings_claude_model") or params_dict["LLM"]["HOLDINGS"]["model"]
+    model = llm_models.job_settings("HOLDINGS")["model"]  # 2026-10-22: the same for every user
     provider = llm_models.provider_of(model)
     rows = []
     for key, (rule, description) in USER_KEYS.items():
@@ -615,6 +594,28 @@ def _notify_admins(reason: str, body: str) -> None:
             print(f"[WARNING] Sign-up notice to {admin} failed: {e}")
 
 
+def _activation_notice(result: Applied) -> tuple[str, str]:
+    """
+    Claude-authored (2026-10-22, Andres): the admins' Telegram message when a user is added to ACTIVE_USERS, with what
+    they signed up for, so it can be checked at a glance. (reason, body) for _notify_admins: once per user and day.
+    """
+    plan, s = result.plan, result.plan.settings
+    source = {"SHEETS": "Google Sheets", "SNAPTRADE": "SnapTrade", "NO_HOLDINGS": "ideas only"}.get(
+        s.get("holdings_source"), s.get("holdings_source") or "?")
+    digests = [label for key, label in (("Receive_Premarket_Digest", "Pre-Market"), ("Receive_Postmarket_Digest", "Post-Market"))
+               if s.get(key) == "True"]
+    lines = [f"Holdings: {source}", f"Digests: {' and '.join(digests) or 'none'}"]
+    lines += [f"{label}: {s[key]}" for key, label in (("home_currency", "Home currency"), ("home_timezone", "Timezone"))
+              if s.get(key)]
+    if source != "ideas only":
+        watchdog = s.get("watchdog_interval_hours")
+        lines.append("Telegram: " + ("no" if not plan.wants_telegram else "yes, no watchdog" if watchdog in (None, "", "0")
+                                     else f"yes, watchdog every {watchdog} h ({s.get('watchdog_session') or 'regular'})"))
+    return (f"active {plan.name} {date.today().isoformat()}",
+            f"✅ New Finnbot user added: {html.escape(plan.name)}. Nothing required is missing, so they get the next "
+            f"digest.\n\n" + "\n".join(f"- {html.escape(line, quote=False)}" for line in lines))
+
+
 def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, sheet_id: Optional[str] = None) -> list[str]:
     """
     Claude-authored (2026-10-22): run first in every cron digest run (digest_payload.__main__), before the users are
@@ -626,7 +627,8 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
       user gets this run's digest, and anyone not in the sheet, or missing a key, stops getting them. Their .env
       settings stay, keys included, so they come back as soon as they're in the sheet and complete again.
     - The admins hear on Telegram, once each: a new or edited answer (with what's missing), a user becoming active
-      or inactive, and a name clash.
+      ("New Finnbot user added", with what they signed up for; also when added by hand, 2026-10-22) or inactive,
+      and a name clash.
     If the sheet can't be read or has no answers, nothing changes, so a glitch can't switch everyone off.
     Never raises: a problem is logged and the digest goes on. Returns the users who became active.
     """
@@ -639,8 +641,10 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
             print("[signup] The sheet has no answers, so ACTIVE_USERS is left as it is.")
             return []
         wanted, waiting, notices = [], {}, []  # Notices go last, once the run's users and settings are in place
+        results = {}
         for answer in answers.values():
             result = apply_answer(answer, env_path, params_path, activate=False)
+            results[result.plan.name] = result
             _report_answer(result, answer, notices)
             missing = _incomplete(result.rows, result.plan)
             if result.status == "applied" and not missing:
@@ -659,10 +663,8 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
         added = [name for name in wanted if name not in before]
         removed = [name for name in before if name not in wanted]
         today = date.today().isoformat()
-        for name in added:
-            notices.append((f"active {name} {today}",
-                            f"✅ {html.escape(name)} is now active: nothing required is missing, so they get the "
-                            f"next digest."))
+        for name in added:  # 2026-10-22: with what they signed up for (_activation_notice)
+            notices.append(_activation_notice(results[name]))
         for name in removed:
             why = (f"still missing: {', '.join(waiting[name])}" if name in waiting
                    else "they aren't in the sign-up sheet (or their answer couldn't be imported)")
@@ -748,6 +750,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     result = apply_answer(answer, activate=not args.no_activate, overwrite=args.overwrite, dry_run=args.dry_run,
                           keys=args.enter_keys)
     _print_result(result, answer, args.dry_run)
+    if result.activated and not args.dry_run:  # 2026-10-22: a user added by hand is announced like the sync's
+        _notify_admins(*_activation_notice(result))
     if not args.dry_run and result.status == "applied":
         print("\nCheck everything with: venv/bin/python -m src.check_config")
     ok = result.status == "applied" and not _incomplete(result.rows, result.plan)

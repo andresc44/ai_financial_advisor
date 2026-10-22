@@ -11,8 +11,8 @@ DeepSeek (src/deepseek_client.py). Each model lists the efforts it accepts:
 
 The jobs (params_dict["LLM"]):
 - "UNIVERSAL": new-stock scoring with the shared key (ANTHROPIC_API_KEY or DEEPSEEK_API_KEY).
-- "HOLDINGS": the default for each user's holdings evaluation with their own key; a user overrides it with
-  <NAME>_HOLDINGS_LLM_MODEL / <NAME>_HOLDINGS_LLM_EFFORT (src/personalized/user_settings.get_llm_settings).
+- "HOLDINGS": each user's holdings evaluation, with their own key. Since 2026-10-22 it applies to every user (the
+  per-user <NAME>_HOLDINGS_LLM_MODEL / _EFFORT are ignored; src/personalized/user_settings.get_llm_settings).
 2026-10-17: UNIVERSAL_LLM_MODEL / UNIVERSAL_LLM_EFFORT in .env override LLM["UNIVERSAL"], so each machine can pick
 the scoring model without editing parameters.py (ENV_OVERRIDES).
 """

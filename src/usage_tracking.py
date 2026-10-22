@@ -23,10 +23,9 @@ The shared keys used for the universal content are recorded under user "_shared"
 import json
 import sys
 import threading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
-from zoneinfo import ZoneInfo
 
 project_root = Path(__file__).resolve().parents[1]
 if str(project_root) not in sys.path:
@@ -36,7 +35,6 @@ from src.parameters import params_dict
 
 LEDGER_PATH = project_root / "data" / "usage" / "api_usage.jsonl"
 SHARED = "_shared"  # Ledger "user" for the universal content's shared keys
-MARKET_TZ = ZoneInfo("America/New_York")
 _LOCK = threading.Lock()  # Users and their news requests run in parallel threads
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_write_tokens", "cache_read_tokens", "search_queries")
 PROVIDERS = ("anthropic", "deepseek", "gemini")  # Each gets its own block in the digest's api_usage
@@ -228,21 +226,41 @@ def _totals(records: list[dict]) -> dict:
     return out
 
 
-def usage_summary(user_name: str, run_started_at: datetime, now: Optional[datetime] = None) -> dict:
-    """The digest's `api_usage` block for one user: this digest, today (US Eastern), and the month to date (UTC)."""
-    now = now or datetime.now(timezone.utc)
-    month_start = now.astimezone(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    today = now.astimezone(MARKET_TZ).date()
-    # A digest after 20:00 ET on the last day of a month runs in the next UTC month, so "today" starts before it
-    today_start = datetime.combine(today, datetime.min.time(), tzinfo=MARKET_TZ)
-    records = _load(user_name, min(month_start, today_start))
+LAST_DAYS = 30  # Claude-authored (2026-10-22): the digest's longer period, "last 30 days"
+
+
+def _periods(user_name: str, run_started_at: datetime, now: datetime) -> dict:
+    """{"this_digest", "last_30_days"} totals for one ledger user (a user's name, or SHARED)."""
+    since = now - timedelta(days=LAST_DAYS)
+    # Loaded from the start of that UTC month, so each month's free Google Search allowance is counted from its start
+    month_start = since.astimezone(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    records = _load(user_name, min(month_start, run_started_at))
     _with_search_cost(records)
+    return {
+        "this_digest": _totals([r for r in records if datetime.fromisoformat(r["at"]) >= run_started_at]),
+        "last_30_days": _totals([r for r in records if datetime.fromisoformat(r["at"]) >= since]),
+    }
+
+
+def usage_summary(user_name: str, run_started_at: datetime, now: Optional[datetime] = None) -> dict:
+    """
+    The digest's `api_usage` block for one user: what their own keys cost this digest and over the last 30 days
+    (2026-10-22, Andres; it was this digest, today, and the month to date). The digest adds the admin's side, the
+    shared keys (shared_usage), once the shared content is done (digest_payload.DigestPayload.personalized_content).
+    """
+    now = now or datetime.now(timezone.utc)
     prices = params_dict["API_PRICES"]
     return {
         "currency": "USD",
         "note": f"Estimated from token counts at list prices as of {prices['AS_OF']}; excludes credits, discounts, "
                 "and use of the same keys outside Finnbot.",
-        "this_digest": _totals([r for r in records if datetime.fromisoformat(r["at"]) >= run_started_at]),
-        "today": _totals([r for r in records if datetime.fromisoformat(r["at"]).astimezone(MARKET_TZ).date() == today]),
-        "month_to_date": _totals([r for r in records if datetime.fromisoformat(r["at"]) >= month_start]),
+        **_periods(user_name, run_started_at, now),
     }
+
+
+def shared_usage(run_started_at: datetime, now: Optional[datetime] = None) -> dict:
+    """
+    Claude-authored (2026-10-22, Andres): the admin's cost, i.e. the shared keys' (new-stock ideas, market news), this
+    run and over the last 30 days: {"this_digest", "last_30_days"}, like usage_summary's.
+    """
+    return _periods(SHARED, run_started_at, now or datetime.now(timezone.utc))

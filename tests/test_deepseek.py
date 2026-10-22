@@ -142,7 +142,8 @@ def test_universal_scoring_on_deepseek(deepseek_server, monkeypatch):
                                                            "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-shared")
     deepseek_server["plan"] = answer_by_tool({universal_llm.LONG_TERM_TOOL_NAME: LONG, universal_llm.SWING_TOOL_NAME: SWING})
-    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5, swing_setups={"AAA": SETUP})
+    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5, min_long_score=80,  # 84 < the 85 bar
+                                  swing_setups={"AAA": SETUP})
     assert [(p["ticker"], p["model"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", "deepseek-v4-pro", 84)]
     # 2026-10-20: the swing call adds the plan's risk/reward (4:1, 30 since 2026-10-22) to the model's three sub-scores
     assert [(p["ticker"], p["swingScore"]) for p in picks["top_swing"]] == [("AAA", 90.0)]
@@ -175,7 +176,7 @@ def test_universal_scoring_repairs_extra_keys_without_asking_again(deepseek_serv
                                                            "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
     monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-shared")
     deepseek_server["plan"] = answer_by_tool({universal_llm.LONG_TERM_TOOL_NAME: {**LONG, "growth_momentum_score_note": ""}})
-    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5)
+    picks = select_top_candidates({"AAA": {"symbol": "AAA"}}, long_n=2, swing_n=5, min_long_score=80)
     assert [(p["ticker"], p["longScore"]) for p in picks["top_long_term"]] == [("AAA", 84)]
     assert len(deepseek_server["requests"]) == 1
 
@@ -207,27 +208,25 @@ def clean_env(monkeypatch):
     return monkeypatch
 
 
-@pytest.mark.parametrize("env, expected", [
-    ({}, ("Anthropic", "claude-sonnet-5-5", "medium")),                                      # LLM["HOLDINGS"]
-    ({"HOLDINGS_LLM_MODEL": "deepseek-v4-pro"}, ("DeepSeek", "deepseek-v4-pro", "low")),      # Provider default effort
-    ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "high"}, ("DeepSeek", "deepseek-flash", "high")),
-    ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "medium"}, ("DeepSeek", "deepseek-flash", "low")),
-    ({"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "none"}, ("DeepSeek", "deepseek-flash", "none")),
-    ({"HOLDINGS_CLAUDE_MODEL": "claude-opus-5-5", "HOLDINGS_CLAUDE_EFFORT": "high"}, ("Anthropic", "claude-opus-5-5", "high")),
-    ({"HOLDINGS_LLM_MODEL": "gpt-9"}, ("Anthropic", "claude-sonnet-5-5", "medium")),          # Unknown: the default
+@pytest.mark.parametrize("env", [
+    {},
+    {"HOLDINGS_LLM_MODEL": "deepseek-v4-pro"},
+    {"HOLDINGS_LLM_MODEL": "deepseek-flash", "HOLDINGS_LLM_EFFORT": "high"},
+    {"HOLDINGS_CLAUDE_MODEL": "claude-opus-5-5", "HOLDINGS_CLAUDE_EFFORT": "high"},
 ])
-def test_each_user_picks_their_llm(clean_env, env, expected):
+def test_every_user_gets_the_holdings_model_from_parameters(clean_env, env):
+    # 2026-10-22 (Andres): LLM["HOLDINGS"] for everyone (the tests' conftest sets it to Sonnet); per-user keys are ignored
     for key, value in env.items():
         clean_env.setenv(f"ANDRES_{key}", value)
     settings = get_llm_settings("Andres")
-    assert (settings["provider"], settings["model"], settings["effort"]) == expected
+    assert (settings["provider"], settings["model"], settings["effort"]) == ("Anthropic", "claude-sonnet-5-5", "medium")
 
 
-def test_check_config_requires_the_key_the_model_needs(clean_env):
+def test_check_config_requires_the_key_the_holdings_model_needs(clean_env):
     clean_env.setenv("ANDRES_HOLDINGS_SOURCE", "SNAPTRADE")
-    clean_env.setenv("ANDRES_HOLDINGS_LLM_MODEL", "deepseek-flash")
+    clean_env.setenv("ANDRES_HOLDINGS_LLM_MODEL", "deepseek-flash")  # Ignored: LLM["HOLDINGS"] is a Claude model
     rows = {key: status for status, key, _ in check_user("Andres")}
-    assert rows["ANDRES_DEEPSEEK_API_KEY"] == "MISSING" and rows["ANDRES_ANTHROPIC_API_KEY"] == "unset"
+    assert rows["ANDRES_ANTHROPIC_API_KEY"] == "MISSING" and rows["ANDRES_DEEPSEEK_API_KEY"] == "unset"
 
 
 

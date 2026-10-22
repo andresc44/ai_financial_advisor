@@ -47,6 +47,7 @@ from src.idea_positions import prompt_view
 from src.market_session import market_phase
 from src.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error, verify_llm_key
+from src.personalized.holding_checks import holding_checks
 from src.personalized.holdings_state import record_evaluations, reusable_evaluations
 from src.personalized.LLM_hold_instr import (
     RECOMMENDATION_DESCRIPTION,
@@ -383,6 +384,8 @@ def build_holding_payloads(holdings_df: pd.DataFrame) -> Dict[str, Dict[str, Any
         origin = prompt_view(group["idea_origin"].iloc[0]) if "idea_origin" in group.columns else None
         if origin:
             payloads[symbol]["opened_from_finnbot_idea"] = origin
+        # Claude-authored (2026-10-22): the rubric's facts, worked out in code so every model applies the same ones
+        payloads[symbol]["checks"] = holding_checks(payloads[symbol])
     return payloads
 
 

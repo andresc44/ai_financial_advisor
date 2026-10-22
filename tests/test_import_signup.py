@@ -7,7 +7,8 @@ from dotenv import dotenv_values
 import src.import_signup as signup
 from src.parameters import params_dict
 
-# The answers sheet's header, as the form (docs/finnbot_signup_form.gs) created it: titles repeat
+# The answers sheet's header, as the first form (docs/finnbot_signup_form.gs) created it: titles repeat. The model
+# questions were dropped on 2026-10-22 (NEW_HEADER); an answer from either form clears per-user model choices
 HEADER = ["Timestamp", "Your first name", "Email address for the digest", "Which digests do you want?",
           "How should Finnbot see your holdings?", "Please confirm", "Please confirm your sheet's layout",
           "How did you share the sheet?", "Sheet ID", "Your timezone (optional)",
@@ -16,6 +17,10 @@ HEADER = ["Timestamp", "Your first name", "Email address for the digest", "Which
           "DeepSeek model", "Effort (how long it thinks)", "Please confirm", "Do you want Telegram messages?",
           "Hours between checks", "When should it run?", "Tripwire", "Please confirm",
           "Anything else Andres should know? (optional)", "Email address"]
+MODEL_QUESTIONS = {"Which AI model should review your holdings?", "Claude model", "Effort (how long it thinks)",
+                   "DeepSeek model"}
+NEW_HEADER = [title for title in HEADER if title not in MODEL_QUESTIONS]
+CLEARED = dict.fromkeys(["holdings_llm_model", "holdings_llm_effort", "holdings_claude_model", "holdings_claude_effort"])
 BOTH = "Both: Pre-Market (starts 7:00 AM ET) and Post-Market (starts 4:10 PM ET)"
 SAM = {
     "Timestamp": "10/22/2026 10:00:00", "Your first name": "sam", "Email address for the digest": "sam@example.com",
@@ -55,13 +60,13 @@ PARAMS = ('params_dict = {\r\n    "ACTIVE_USERS": [\r\n                    # "An
           '                    # "Kim",  # Paused\r\n                    ],\r\n    "OTHER": 1,\r\n}\r\n')
 
 
-def answer(values, row_number=2):
+def answer(values, row_number=2, header=HEADER):
     """A response row in the sheet's column order; ("title", n) sets the nth of a repeated title."""
     seen, row = {}, []
-    for title in HEADER:
+    for title in header:
         n = seen[title] = seen.get(title, -1) + 1
         row.append(values.get((title, n), values.get(title, "") if n == 0 else ""))
-    return signup.Answer.from_row(HEADER, row, row_number)
+    return signup.Answer.from_row(header, row, row_number)
 
 
 @pytest.fixture
@@ -85,35 +90,35 @@ def test_each_answer_becomes_the_matching_settings():
         "destination_email": "sam@example.com", "Receive_Premarket_Digest": "True", "Receive_Postmarket_Digest": "True",
         "holdings_source": "SHEETS", "home_timezone": "Europe/London",
         "google_sheets_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", "account_company": "My portfolio",
-        "home_currency": "GBP", "receive_holding_news": "True", "holdings_llm_model": "claude-opus-5-5",
-        "holdings_llm_effort": "high", "watchdog_interval_hours": "2", "watchdog_session": "extended",
-        "watchdog_tripwire": "false"}
+        "home_currency": "GBP", "receive_holding_news": "True", **CLEARED,  # A model answered on the old form: ignored
+        "watchdog_interval_hours": "2", "watchdog_session": "extended", "watchdog_tripwire": "false"}
     assert sam.notes == ["Their note: I hold mostly ETFs."]
+    # The new form has no model questions: the same settings
+    new_form = {title: value for title, value in SAM.items() if (title[0] if isinstance(title, tuple) else title) not in MODEL_QUESTIONS}
+    assert signup.plan_from_answer(answer(new_form, header=NEW_HEADER)).settings == sam.settings
     lee = signup.plan_from_answer(answer(LEE))
-    # The DeepSeek section's effort is the second "Effort" column; no Telegram turns the watchdog off
-    assert (lee.settings["holdings_llm_model"], lee.settings["holdings_llm_effort"]) == ("deepseek-v4-pro", "none")
+    # No Telegram turns the watchdog off
+    assert all(lee.settings[key] is None for key in CLEARED)
     assert lee.sheet_by_link and "google_sheets_id" not in lee.settings and not lee.wants_telegram
     assert lee.settings["watchdog_interval_hours"] == "0" and lee.settings["receive_holding_news"] == "False"
     kim = signup.plan_from_answer(answer(KIM))
     assert kim.settings == {"destination_email": "kim@example.com", "Receive_Premarket_Digest": "True",
                             "Receive_Postmarket_Digest": "False", "holdings_source": "NO_HOLDINGS",
-                            "home_timezone": "America/Toronto"}
-    default = signup.plan_from_answer(answer({**SAM, "Which AI model should review your holdings?": "The default: ..."}))
-    assert default.settings["holdings_llm_model"] is None  # Clears an earlier choice
+                            "home_timezone": "America/Toronto"}  # Ideas only: no holdings settings at all
 
 
 def test_a_holdings_user_waits_for_their_keys_then_is_activated(files, capsys):
     env, params = files
     result = signup.apply_answer(answer(SAM), env, params)
     values = dotenv_values(env)
-    assert values["SAM_INSTITUTION"] == "My portfolio" and values["SAM_HOLDINGS_LLM_MODEL"] == "claude-opus-5-5"
+    assert values["SAM_INSTITUTION"] == "My portfolio" and "SAM_HOLDINGS_LLM_MODEL" not in values  # Never written
     raw = env.read_bytes().decode()
     assert "SAM_INSTITUTION='My portfolio'" in raw and "\r\n# --- Sam (from the sign-up form" in raw
     assert raw.count("\n") == raw.count("\r\n")  # Line endings kept
     missing = {key for status, key, _ in result.rows if status == "MISSING"}
     assert missing == {"SAM_ANTHROPIC_API_KEY", "SAM_GEMINI_API_KEY", "SAM_TELEGRAM_CHAT_ID"}
-    # 2026-10-22: each missing API key their choices need is written as None, so the gap shows in .env (a Claude
-    # model, so no DeepSeek key; the chat ID isn't an API key)
+    # 2026-10-22: each missing API key their choices need is written as None, so the gap shows in .env (LLM["HOLDINGS"]
+    # is a Claude model, so no DeepSeek key; the chat ID isn't an API key)
     values = dotenv_values(env)
     assert values["SAM_ANTHROPIC_API_KEY"] == values["SAM_GEMINI_API_KEY"] == "None"
     assert "SAM_DEEPSEEK_API_KEY" not in values and "SAM_TELEGRAM_CHAT_ID" not in values
@@ -145,7 +150,7 @@ def test_the_form_replaces_a_stand_in_when_the_name_and_email_match(files):
     assert result.status == "applied" and result.existing
     raw = env.read_bytes().decode()
     assert "STEVEN_EMAIL=andres@example.com\r\n" in raw and "${ANDRES_EMAIL}" not in raw
-    assert "STEVEN_HOLDINGS_LLM_MODEL=\r\n" in raw  # The default model: the earlier choice is cleared
+    assert "STEVEN_HOLDINGS_LLM_MODEL=\r\n" in raw  # Per-user models are cleared: LLM["HOLDINGS"] applies
     change = next(c for c in result.changes if c.key == "STEVEN_EMAIL")
     assert change.old == "${ANDRES_EMAIL}"
 
@@ -200,7 +205,9 @@ def test_the_digests_sync_keeps_everything_matching_the_sheet(files, monkeypatch
     assert dotenv_values(env)["STEVEN_HOLDINGS_SOURCE"] == "SHEETS"  # Inactive, but his settings stay
     sent = [body for _, body in telegram.messages]
     assert any("New Finnbot sign-up: Sam" in body and "SAM_GEMINI_API_KEY" in body for body in sent)
-    assert any("Kim is now active" in body for body in sent)
+    # 2026-10-22: a user added says so, with what they signed up for
+    kim = next(body for body in sent if "New Finnbot user added: Kim" in body)
+    assert "- Holdings: ideas only" in kim and "- Digests: Pre-Market" in kim and "Telegram" not in kim
     assert any("Steven is no longer active" in body and "aren't in the sign-up sheet" in body for body in sent)
 
     # Nothing changed: nothing is written or sent again
@@ -214,6 +221,9 @@ def test_the_digests_sync_keeps_everything_matching_the_sheet(files, monkeypatch
     env.write_bytes((raw + "SAM_TELEGRAM_CHAT_ID=1\r\n").encode())
     assert sync() == ["Sam"]
     assert dotenv_values(env)["SAM_HOME_CURRENCY"] == "GBP" and active_users(params) == ["Sam", "Kim"]
+    sam = next(body for _, body in telegram.messages if "New Finnbot user added: Sam" in body)
+    assert "- Holdings: Google Sheets" in sam and "- Digests: Pre-Market and Post-Market" in sam
+    assert "- Home currency: GBP" in sam and "- Telegram: yes, watchdog every 2 h (extended)" in sam
 
     # Sam edits the answer: applied, and announced once more
     answers[0] = answer({**SAM, "Home currency": "EUR"}, 2)
@@ -247,18 +257,21 @@ def test_a_none_placeholder_counts_as_missing_everywhere(monkeypatch):
         monkeypatch.setenv("X_GEMINI_API_KEY", value)
         assert env_setting("X_GEMINI_API_KEY") == expected and _env("X_GEMINI_API_KEY") == expected
     lee = signup.plan_from_answer(answer(LEE))
+    # 2026-10-22: the key LLM["HOLDINGS"] needs (Anthropic), whatever model was set per user before
     rows = signup.missing_report("Lee", {"LEE_HOLDINGS_SOURCE": "SHEETS", "LEE_HOLDINGS_LLM_MODEL": "deepseek-v4-pro",
-                                         "LEE_DEEPSEEK_API_KEY": "None"}, lee)
-    assert ("MISSING", "LEE_DEEPSEEK_API_KEY") in [(status, key) for status, key, _ in rows]
-    assert ("MISSING", "LEE_ANTHROPIC_API_KEY") not in [(status, key) for status, key, _ in rows]
+                                         "LEE_ANTHROPIC_API_KEY": "None"}, lee)
+    assert ("MISSING", "LEE_ANTHROPIC_API_KEY") in [(status, key) for status, key, _ in rows]
+    assert ("MISSING", "LEE_DEEPSEEK_API_KEY") not in [(status, key) for status, key, _ in rows]
 
 
-def test_a_deepseek_user_gets_placeholders_for_the_deepseek_and_gemini_keys_only(files):
+def test_a_holdings_user_gets_placeholders_for_the_keys_the_holdings_model_needs(files):
+    # 2026-10-22: Lee answered the old form's DeepSeek question, but LLM["HOLDINGS"] (a Claude model) applies to
+    # everyone, so the Anthropic and Gemini keys get placeholders, and no DeepSeek key
     env, params = files
     signup.apply_answer(answer(LEE), env, params)
     values = dotenv_values(env)
-    assert values["LEE_DEEPSEEK_API_KEY"] == values["LEE_GEMINI_API_KEY"] == "None"
-    assert "LEE_ANTHROPIC_API_KEY" not in values
+    assert values["LEE_ANTHROPIC_API_KEY"] == values["LEE_GEMINI_API_KEY"] == "None"
+    assert "LEE_DEEPSEEK_API_KEY" not in values
     before = env.read_bytes()
     signup.apply_answer(answer(LEE), env, params)  # Already there: not written again
     assert env.read_bytes() == before

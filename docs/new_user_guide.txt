@@ -16,7 +16,7 @@ CONTENTS
        3.3  Home currency
        3.4  The AI model that reviews your holdings
        3.5  Effort level
-       3.6  API keys (Anthropic, DeepSeek, Gemini)
+       3.6  API keys (Anthropic, Gemini)
        3.7  News for each holding
        3.8  Telegram
        3.9  The watchdog: how often, when, and the tripwire
@@ -311,82 +311,39 @@ What it is: at every digest, an AI model reviews each of your holdings: its pric
 technical indicators, fundamentals, upcoming earnings, analyst views, and recent news. It then
 gives the stock one of the five signals (section 0) with its reasoning. The watchdog (3.9) uses the
 same model when it re-checks a stock.
-Required: no. The default is Claude Haiku 5.5 at medium effort.
-Which key you need: a Claude model needs an Anthropic key; a DeepSeek model needs a DeepSeek key
-(3.6).
-
-Cost per stock, per review (estimated from Finnbot's own measured usage, at the default effort):
-
-  Model               Provider   Per stock  Notes
-  ------------------  ---------  ---------  ----------------------------------------------------
-  DeepSeek Flash      DeepSeek   $0.002     Cheapest overall. Measured. Your holdings data goes to
-                                            DeepSeek's servers.
-  DeepSeek V4 Pro     DeepSeek   $0.007     DeepSeek's stronger model. Same data note.
-  Claude Haiku 5.5    Anthropic  $0.001     The default: the cheapest model of all, fast and
-                                            light, and your data stays with Anthropic.
-  Claude Sonnet 5.5   Anthropic  $0.027     A step up in nuance, about 20x Haiku. Measured.
-  Claude Sonnet 5     Anthropic  $0.027     The previous Sonnet, same price. Pick 5.5 instead.
-  Claude Opus 5.5     Anthropic  $0.054     Stronger reasoning, about 2x Sonnet.
-  Claude Opus 5       Anthropic  $0.067     Older and pricier than Opus 5.5.
-  Claude Opus 4.8     Anthropic  $0.067     Older and pricier than Opus 5.5.
-  Claude Fable 5.1    Anthropic  $0.134     The most capable, about 5x Sonnet.
-  Claude Fable 5      Anthropic  $0.134     The previous Fable, same price. Pick 5.1 instead.
-
-  The measured figures come from real Finnbot runs; the others apply each model's published prices
-  to the same amount of text. DeepSeek charges half price outside its peak hours, and Finnbot's
-  runs fall outside them, so these are off-peak prices.
-  Finnbot hasn't compared the models' accuracy against each other. More capable models generally
-  write more careful reasoning, but no model's signals are a guarantee.
-
-Pros and cons:
-  DeepSeek    Pros: very cheap (Flash costs about as little as Haiku); V4 Pro is a cheap step up.
-              Cons: your holdings data (symbols, share counts, prices) is sent to DeepSeek.
-  Claude      Pros: Anthropic's models; a range from the cheapest (Haiku, the default) to the most
-              capable (Fable).
-              Cons: the stronger models cost noticeably more for a large portfolio.
-  Why Haiku is the default: Finnbot's reviews read a lot of data but write little, so most of the
-  cost is the reading, and Haiku reads at a small fraction of Sonnet's price. If you want more
-  careful reasoning, Sonnet 5.5 or Opus 5.5 are the natural upgrades.
+Nothing to choose: every user's holdings are reviewed by Claude Haiku 5.5, at low effort.
+Which key you need: an Anthropic key (3.6).
+Cost: about $0.002 per stock, per review.
+Why Haiku: in October 2026 Andres compared ten AI models and effort levels on the same holdings,
+against the strongest available (Claude Opus 5.5). With Finnbot's review rules, Haiku gave the same
+signal as Opus for about 9 holdings in 10, for about a fortieth of the price, and your holdings data
+stays with Anthropic. No model's signals are a guarantee.
 
 3.5 Effort level
 ----------------
-What it is: how long the model "thinks" before answering. More thinking can mean more careful
-analysis, but it takes longer and costs more, because thinking is billed like written output.
-Options:
-  Claude:   low, medium (default), high, xhigh, max
-  DeepSeek: none (no thinking), low (default), high, max
-Cost: the prices in 3.4 are at the default effort. Each extra 1,000 words-worth of thinking
-("tokens") per stock adds about:
-  Claude Haiku $0.0005 · Sonnet $0.01 · Opus 5.5 $0.02 · Opus 5 / 4.8 $0.025 · Fable $0.05
-  DeepSeek Flash $0.0006 · V4 Pro $0.002
-Higher efforts can think several thousand tokens per stock, so on Opus or Fable a high effort can
-double the cost per stock. Recommendation: keep the default unless you have a reason not to.
+What it is: how long the model "thinks" before answering.
+Nothing to choose: low, for everyone. It is already included in the cost in 3.4.
 
-3.6 API keys (Anthropic, DeepSeek, Gemini)
-------------------------------------------
+3.6 API keys (Anthropic, Gemini)
+--------------------------------
 What they are: an API key is a private code that lets Finnbot use an AI provider on your account,
 so the provider bills you directly for your holdings' reviews. You need:
 
   Key        When you need it                          Used for
   ---------  ----------------------------------------  -------------------------------------------
-  Anthropic  Your model is Claude (including the       Reviewing each holding
-             default, if you don't choose a model)
-  DeepSeek   Your model is DeepSeek                    Reviewing each holding
+  Anthropic  Always, with holdings                     Reviewing each holding
   Gemini     Always, with holdings                     News for each holding, and the
                                                        portfolio-risk review
 
-You never need both Anthropic and DeepSeek: only the one for your chosen model.
-
 Before you start: have a safe place ready to store each key the moment you create it (section 6).
-Anthropic and DeepSeek show a key only once; if you lose it, you have to create a new one.
+Anthropic shows a key only once; if you lose it, you have to create a new one.
 
-GETTING AN ANTHROPIC KEY (for Claude models, including the default)
+GETTING AN ANTHROPIC KEY (everyone with holdings)
   1. Go to platform.claude.com and sign in, or click to create an account (email or Google
      sign-in). This is Anthropic's developer console, separate from a claude.ai chat subscription:
      a Claude Pro or Max plan does NOT include API use.
   2. Add credit: open Billing (in Settings), add a payment card, and buy prepaid credit. For 10
-     holdings on the default Haiku, the Anthropic part is under $1 a month (3.10), so $5 lasts
-     months. On Sonnet 5.5 it's about $14 a month.
+     holdings, the Anthropic part is about $1 a month (3.10), so $5 lasts months.
   3. Recommended: in the console's limits settings, set a monthly spend limit, so a mistake or a
      leaked key can never cost more than you chose.
   4. Open Settings, then API keys, and click "Create key".
@@ -396,14 +353,6 @@ GETTING AN ANTHROPIC KEY (for Claude models, including the default)
        - Linked account: yourself
   5. Copy the key (it starts with sk-ant-) and save it immediately in your password manager. The
      console never shows it again.
-
-GETTING A DEEPSEEK KEY (for DeepSeek models)
-  1. Go to platform.deepseek.com and sign up (email or phone, depending on your country).
-  2. Add credit: open "Top up" (or Billing) and add a small balance. For 10 holdings on DeepSeek
-     Flash, DeepSeek's part is about $1 a month, so $5 lasts months. New accounts sometimes get a
-     small free grant that's used first. With no balance left, reviews stop until you top up.
-  3. Open "API keys" in the left sidebar and click "Create new API key". Name it Finnbot.
-  4. Copy the key (it starts with sk-) and save it immediately. DeepSeek never shows it again.
 
 GETTING A GEMINI KEY (everyone with holdings)
   1. Go to aistudio.google.com and sign in with a Google account.
@@ -420,7 +369,7 @@ GETTING A GEMINI KEY (everyone with holdings)
   Each Gemini key includes 5,000 free web searches a month, far more than Finnbot uses, so you pay
   only for the text.
 
-Tips for all three:
+Tips for both:
   - Create a key used ONLY for Finnbot. If it ever leaks, you can delete it without affecting
     anything else you use the provider for.
   - Check your usage page after the first week to confirm costs match section 3.10.
@@ -433,8 +382,8 @@ What it is: for each holding, Gemini searches the web for its most important rec
 writes up to 2 short summaries (medium priority or higher), each with a link to its source. They
 appear on the stock's card and feed the portfolio review.
 Options: on (default) or off.
-Cost: about $0.012 per stock per digest. This is usually the largest part of the bill with a
-cheap model: with DeepSeek Flash it's around 80% of the total.
+Cost: about $0.012 per stock per digest. This is usually the largest part of the bill: around
+85% of the total.
 Pros (on): explains WHY a stock is moving, with sources; the reviews can weigh real events.
 Cons (on): costs more; with 20 or more holdings the email nears Gmail's size limit and Finnbot
 shortens the news to fit.
@@ -501,15 +450,9 @@ C) The tripwire
 Watchdog cost per month (21 trading days). The watchdog hasn't run on a schedule for long enough
 to measure, so the first two columns are estimates; the last is the hard maximum.
 
-  Model               Quiet (~5 reviews/day)  Busy (~12/day)  Maximum (40/day cap)
-  ------------------  ----------------------  --------------  --------------------
-  DeepSeek Flash      $0.20                   $0.50           $1.60
-  DeepSeek V4 Pro     $0.75                   $1.80           $5.95
-  Claude Haiku 5.5    $0.15                   $0.35           $1.15
-  Claude Sonnet 5.5   $2.80                   $6.75           $22.55
-  Claude Opus 5.5     $5.65                   $13.50          $45.10
-  Claude Opus 5/4.8   $7.05                   $16.90          $56.35
-  Claude Fable 5.1    $14.10                  $33.80          $112.70
+  Quiet (~5 reviews/day)  Busy (~12/day)  Maximum (40/day cap)
+  ----------------------  --------------  --------------------
+  $0.20                   $0.50           $1.70
 
   "Quiet" is roughly 10 holdings checked every 4 hours on a normal day; hourly checks, extended
   hours, earnings season, or a volatile market push it toward "busy".
@@ -519,49 +462,26 @@ to measure, so the first two columns are estimates; the last is the hard maximum
 Your bill = digests + watchdog. Ideas, market signals, and macro news are covered by Andres.
 
 Per digest:
-  (number of holdings) x (model cost per stock from 3.4  +  $0.012 if holding news is on)
+  (number of holdings) x ($0.002 for the AI review (3.4)  +  $0.012 if holding news is on)
   + $0.017 for the portfolio review
 
 Per month with BOTH digests (2 a day, 21 trading days). With ONE digest a day, halve these.
 
-  Holdings  Model               News on   News off
-  --------  ------------------  --------  --------
-  5         DeepSeek Flash      $3.60     $1.10
-  5         DeepSeek V4 Pro     $4.65     $2.20
-  5         Claude Haiku 5.5    $3.45     $1.00
-  5         Claude Sonnet 5.5   $8.80     $6.35
-  5         Claude Opus 5.5     $14.45    $12.00
-  5         Claude Fable 5.1    $31.35    $28.90
-
-  10        DeepSeek Flash      $6.45     $1.50
-  10        DeepSeek V4 Pro     $8.65     $3.70
-  10        Claude Haiku 5.5    $6.25     $1.25
-  10        Claude Sonnet 5.5   $16.95    $12.00
-  10        Claude Opus 5.5     $28.20    $23.25
-  10        Claude Fable 5.1    $62.00    $57.05
-
-  20        DeepSeek Flash      $12.20    $2.30
-  20        DeepSeek V4 Pro     $16.55    $6.65
-  20        Claude Haiku 5.5    $11.75    $1.85
-  20        Claude Sonnet 5.5   $33.15    $23.25
-  20        Claude Opus 5.5     $55.70    $45.80
-  20        Claude Fable 5.1    $123.30   $113.40
-
-  (Opus 5 and Opus 4.8 cost about 20% more than Opus 5.5.)
+  Holdings  News on   News off
+  --------  --------  --------
+  5         $3.65     $1.15
+  10        $6.60     $1.55
+  20        $12.45    $2.40
 
 Then add the watchdog from 3.9.
 
 Examples:
-  - 10 holdings, the defaults (Claude Haiku 5.5, news on, both digests, watchdog every 4 hours):
-      about $6.25 + $0.15 = roughly $6.50 a month (Anthropic about $0.70, Google about $5.70).
-  - 10 holdings, DeepSeek Flash, news on, both digests, watchdog every 4 hours:
-      about $6.45 + $0.20 = roughly $6.50 a month (DeepSeek about $1, Google about $5.70).
-  - 10 holdings, upgraded to Claude Sonnet 5.5 (news on, both digests, watchdog every 4 hours):
-      about $16.95 + $2.80 = roughly $20 a month.
-  - 10 holdings, DeepSeek Flash, news off, Pre-Market only, watchdog off:
-      about $0.75 a month.
+  - 10 holdings, news on, both digests, watchdog every 4 hours:
+      about $6.60 + $0.20 = roughly $6.80 a month (Anthropic about $1, Google about $5.80).
+  - 10 holdings, news off, Pre-Market only, watchdog off:
+      under $1 a month.
 
-Who bills you: Anthropic or DeepSeek for the reviews of your holdings (including the watchdog's),
+Who bills you: Anthropic for the reviews of your holdings (including the watchdog's),
 and Google for the news and the portfolio review. From January 1, 2027, Google's part roughly
 doubles (3.7).
 All figures are estimates at October 2026 prices; your real costs depend on market activity and
@@ -574,15 +494,11 @@ on how much the models write.
 
   If you choose...                You can skip...
   ------------------------------  ------------------------------------------------------------
-  Ideas only (2.3)                All of section 3: brokerage name, home currency, model,
-                                  effort, every API key, news, Telegram, watchdog. Timezone is
-                                  optional.
+  Ideas only (2.3)                All of section 3: brokerage name, home currency, every API
+                                  key, news, Telegram, watchdog. Timezone is optional.
   SnapTrade (2.1, check with      The Google Sheet.
   Andres first)
   Google Sheets (2.2)             The SnapTrade Client ID and Consumer Key.
-  A Claude model, or no model     The DeepSeek key.
-  choice (the default is Claude)
-  A DeepSeek model                The Anthropic key.
   No Telegram                     All watchdog settings (it can't run without Telegram).
   Watchdog off (0 hours)          The watchdog's session and tripwire. Earnings reminders and
                                   notices still come by Telegram.
@@ -605,7 +521,7 @@ Things that are still needed even though you might expect otherwise:
      read), the top of your email tells you what happened (sheet and brokerage problems also come
      by Telegram) and says "Contact Andres to address this issue." Andres is the only admin.
 
-To change a setting later (another model, news off, a different watchdog interval), just ask
+To change a setting later (news off, a different watchdog interval), just ask
 Andres. Changes apply from the next run.
 
 
@@ -616,7 +532,7 @@ Andres. Changes apply from the next run.
 6.1 Why an API key matters
 --------------------------
 An API key is like a password and a credit card in one. Anyone who has your key can:
-  - Anthropic, DeepSeek, Gemini keys: run as many AI requests as they like, billed to YOU, until
+  - Anthropic and Gemini keys: run as many AI requests as they like, billed to YOU, until
     your credit or spend limit runs out. Leaked keys are found and abused within minutes; there are
     automated programs that search the internet for them all day.
   - SnapTrade Consumer Key: read all of your brokerage positions and balances, and possibly place
@@ -625,7 +541,7 @@ The providers can't tell a thief's requests from yours, and generally won't refu
 
 6.2 Store every key safely the moment you create it
 ---------------------------------------------------
-Anthropic, DeepSeek, and SnapTrade show a key only once. If you don't save it right away, you'll
+Anthropic and SnapTrade show a key only once. If you don't save it right away, you'll
 have to create a new one.
   - Best: a password manager (for example Bitwarden, 1Password, or the one built into your
     iPhone, Android, or browser). Save each key as its own entry, e.g. "Finnbot - Anthropic key",
@@ -658,8 +574,8 @@ How to send your keys to Andres:
 6.4 Limit the damage in advance
 -------------------------------
   - Create a key used only for Finnbot, so you can delete it without affecting anything else.
-  - Set a monthly spend limit (Anthropic) or a budget alert (Google), or keep only a small prepaid
-    balance (DeepSeek), so a leak can never cost much.
+  - Set a monthly spend limit (Anthropic) or a budget alert (Google), so a leak can never cost
+    much.
   - Turn on two-factor authentication for each provider account and for SnapTrade.
   - Look at each provider's usage page now and then. Usage you don't recognise is the first sign of
     a leak.
@@ -674,8 +590,8 @@ How to send your keys to Andres:
 
 6.6 Where your data goes
 ------------------------
-  - Your holdings (symbols, share counts, prices paid) are sent to the AI provider of your chosen
-    model (Anthropic or DeepSeek), and to Google (Gemini) with your account names for the
+  - Your holdings (symbols, share counts, prices paid) are sent to Anthropic, whose AI model
+    reviews them, and to Google (Gemini) with your account names for the
     portfolio review. Gemini's news searches use only the symbols and company names.
   - With SnapTrade, SnapTrade can read your brokerage positions.
   - With Google Sheets, only you, Finnbot's service account, and anyone you shared the sheet with
@@ -706,8 +622,7 @@ With holdings (SnapTrade or Google Sheets):
   [ ] Brokerage name (any label for a sheet)
   [ ] Timezone, e.g. America/Toronto
   [ ] Home currency: USD, CAD, EUR, GBP, AUD, or COP (default USD)
-  [ ] AI model and effort (default Claude Haiku 5.5, medium)
-  [ ] Anthropic key (Claude model) OR DeepSeek key (DeepSeek model) (PRIVATELY)
+  [ ] Anthropic key (PRIVATELY)
   [ ] Gemini key (PRIVATELY)
   [ ] News for each holding: on or off (default on)
   [ ] Telegram chat ID (optional, PRIVATELY)
