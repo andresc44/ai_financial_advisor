@@ -35,6 +35,7 @@ from src.idea_positions import send_idea_scorecards
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
 from src.import_signup import sync_signups
+from src.remote_settings import sync_settings
 import copy
 
 # Claude-authored (2026-10-16): where --payload-only writes each user's payload (test_output/ is gitignored, since the
@@ -359,7 +360,9 @@ if __name__ == "__main__":
     reports_status = not (args.check or args.payload_only)  # Only cron runs feed the healthchecks.io heartbeat
     # Claude-authored (2026-10-22): new or edited sign-up form answers go into .env first, and form users with
     # nothing required missing into ACTIVE_USERS, before the users are read (src/import_signup.py). Cron runs only.
+    # 2026-10-23: before that, the settings changed in the spreadsheet's Parameters tab (src/remote_settings.py)
     if reports_status:
+        sync_settings()
         sync_signups()
     try:
         ok, status = run_daily_digests(

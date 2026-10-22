@@ -279,13 +279,22 @@ params_dict = {
         "METRIC": "all" # str: 'all', 'margin', 'valuation', 'price', etc.
     },
 
-    # Claude-authored (2026-10-16): the Gemini model for each use (all Google Search grounded except the review).
-    # Each user's own GEMINI key pays for HOLDING_NEWS and PORTFOLIO_REVIEW; the shared GEMINI_API_KEY pays for
-    # MACRO_NEWS. A model without a price in API_PRICES["gemini"] is still counted in api_usage, just not costed.
+    # Claude-authored (2026-10-16): the Gemini model for each use (both Google Search grounded). Each user's own
+    # GEMINI key pays for HOLDING_NEWS; the shared GEMINI_API_KEY pays for MACRO_NEWS. A model without a price in
+    # API_PRICES["gemini"] is still counted in api_usage, just not costed.
+    # 2026-10-23: no PORTFOLIO_REVIEW any more: the portfolio review is written by LLM["HOLDINGS"] (below)
     "GEMINI_MODELS": {
         "HOLDING_NEWS": "gemini-3.6-flash",      # News bullets per holding (src/personalized/symbol_specific_news.py)
-        "PORTFOLIO_REVIEW": "gemini-3.6-flash",  # Whole-portfolio review notes (src/personalized/portfolio_review.py)
         "MACRO_NEWS": "gemini-3.6-flash",        # Top macro stories in the universal content (src/universal/market_news.py)
+    },
+    # Claude-authored (2026-10-23, at Andres's request): settings for every Gemini call in the project
+    # (src/gemini_settings.py). Until then no call set a thinking level, so gemini-3.6-flash thought as much as it
+    # liked: ~90% of the Gemini bill was output tokens, mostly thinking (~2.9K output tokens for ~1.1K in per holding).
+    "GEMINI_CONFIG": {
+        "effort": "low",            # How much Gemini thinks before answering: minimal | low | medium | high, or
+                                    # default (the model decides, as before 2026-10-23). Holding news and macro news
+        "max_output_tokens": 8192,  # Safety cap on each answer, thinking included (the largest before was ~5.3K, at the
+                                    # model's own effort). Holding news cut off by it is asked for again per stock
     },
 
     # Claude-authored (2026-10-16): which LLM does each job. "model" is any key of ALLOWED_CLAUDE_MODELS (Anthropic) or
@@ -764,8 +773,19 @@ params_dict = {
         "NEWS_LARGE_PORTFOLIO_BULLETS": 1,
         "NEWS_FULL_SIGNALS": ["urgent_sell", "risky"],
         "PORTFOLIO_REVIEW_BULLETS": 5,           # Max notes in the whole-portfolio review (src/personalized/portfolio_review.py)
+        # Claude-authored (2026-10-23): the review is written by LLM["HOLDINGS"] (Claude Haiku 5.5, low) instead of
+        # Gemini; this caps its answer, thinking included (5 notes are ~400 tokens)
+        "PORTFOLIO_REVIEW_MAX_TOKENS": 8000,
+        # Claude-authored (2026-10-23): this many holdings share one Gemini news request (was one request each). A
+        # stock the answer leaves out is asked for again on its own
+        "SYMBOL_NEWS_BATCH_SIZE": 5,
+        # Claude-authored (2026-10-23): a holding's news fetched earlier the same US Eastern day (the Pre-Market
+        # digest's) is shown again in a later digest instead of asking Gemini, unless its price moved more than
+        # MAX_MOVE_NATR normal days' ranges (its NATR) since, its signal changed, or it reported earnings
+        # (src/personalized/news_reuse.py). ENABLED False always fetches
+        "NEWS_REUSE": {"ENABLED": True, "MAX_MOVE_NATR": 1.0},
         # Claude-authored (2026-10-15): parallelism and reuse
-        "SYMBOL_NEWS_CONCURRENCY": 4,            # Gemini news requests in flight at once per user (each user has their own key)
+        "SYMBOL_NEWS_CONCURRENCY": 4,            # Gemini news requests (of SYMBOL_NEWS_BATCH_SIZE holdings) in flight at once per user
         "MAX_PARALLEL_USERS": 4,                 # Users whose digest content is built at the same time (alongside the universal content)
         "REUSE_EVALUATION_MAX_AGE_MINUTES": 60,  # Reuse a watchdog evaluation this recent instead of calling Claude again (0 = off)
         # Claude-authored (2026-10-15): when the digest is due (src/digest/digest_schedule.py). Cron runs it hourly at :10.
@@ -830,3 +850,10 @@ params_dict = {
         "deepseek-v4-pro": ["none", "low", "high", "max"],
     },
 }
+
+# Claude-authored (2026-10-23, at Andres's request): values changed in the "Parameters" tab of the sign-up spreadsheet
+# replace the ones above. Each cron digest run reads that tab and keeps the accepted values in data/remote_settings.json
+# (src/remote_settings.py), and every Finnbot process applies them here as it starts. This file stays the defaults.
+from src.settings_overrides import apply_saved  # noqa: E402
+
+apply_saved(params_dict)

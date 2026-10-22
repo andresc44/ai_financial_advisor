@@ -331,9 +331,9 @@ so the provider bills you directly for your holdings' reviews. You need:
 
   Key        When you need it                          Used for
   ---------  ----------------------------------------  -------------------------------------------
-  Anthropic  Always, with holdings                     Reviewing each holding
-  Gemini     Always, with holdings                     News for each holding, and the
-                                                       portfolio-risk review
+  Anthropic  Always, with holdings                     Reviewing each holding, and the
+                                                       portfolio review
+  Gemini     With holdings and news on (3.7)           News for each holding
 
 Before you start: have a safe place ready to store each key the moment you create it (section 6).
 Anthropic shows a key only once; if you lose it, you have to create a new one.
@@ -354,13 +354,13 @@ GETTING AN ANTHROPIC KEY (everyone with holdings)
   5. Copy the key (it starts with sk-ant-) and save it immediately in your password manager. The
      console never shows it again.
 
-GETTING A GEMINI KEY (everyone with holdings)
+GETTING A GEMINI KEY (only if you want news for each holding, 3.7)
   1. Go to aistudio.google.com and sign in with a Google account.
   2. Click "Get API key" in the sidebar, then "Create API key". Choose an existing Google Cloud
      project or let it create one (any name is fine, e.g. Finnbot).
   3. Turn on billing for that project: AI Studio links to it, or go to console.cloud.google.com,
      open Billing, and attach a payment card to the project. For 10 holdings with news on and both
-     digests, Google's part is about $6 a month.
+     digests, Google's part is about $0.55 a month.
      Google also has a free tier with tight request limits on some models. Finnbot may work with it,
      but your holdings' news can be slower or cut short, and Google's terms for free-tier data
      differ, so check them before relying on it.
@@ -382,15 +382,16 @@ What it is: for each holding, Gemini searches the web for its most important rec
 writes up to 2 short summaries (medium priority or higher), each with a link to its source. They
 appear on the stock's card and feed the portfolio review.
 Options: on (default) or off.
-Cost: about $0.012 per stock per digest. This is usually the largest part of the bill: around
-85% of the total.
+Cost: about $0.002 per stock for a digest's news. The Post-Market digest shows the morning's news
+again for stocks that haven't moved much, kept their signal, and haven't reported earnings since, so
+most of its news costs nothing. (Until October 23, 2026 it was about $0.012 per stock per digest,
+85% of the bill; Gemini now thinks less and covers 5 stocks per request.)
 Pros (on): explains WHY a stock is moving, with sources; the reviews can weigh real events.
 Cons (on): costs more; with 20 or more holdings the email nears Gmail's size limit and Finnbot
 shortens the news to fit.
-Turning it off does NOT remove the need for a Gemini key: the portfolio review still uses it
-(about $0.017 per digest).
+Turning it off means you don't need a Gemini key at all.
 Note: Google has announced that this model's prices double on January 1, 2027, which roughly
-doubles the news and review costs from then on.
+doubles the news cost from then on.
 
 3.8 Telegram
 ------------
@@ -462,28 +463,28 @@ to measure, so the first two columns are estimates; the last is the hard maximum
 Your bill = digests + watchdog. Ideas, market signals, and macro news are covered by Andres.
 
 Per digest:
-  (number of holdings) x ($0.002 for the AI review (3.4)  +  $0.012 if holding news is on)
-  + $0.017 for the portfolio review
+  (number of holdings) x ($0.002 for the AI review (3.4)  +  $0.002 if holding news is on*)
+  + $0.002 for the portfolio review
+  * The Post-Market digest reuses most of the morning's news (3.7), so its news costs much less.
 
-Per month with BOTH digests (2 a day, 21 trading days). With ONE digest a day, halve these.
+Per month with BOTH digests (2 a day, 21 trading days). With ONE digest a day, about 60% of these.
 
   Holdings  News on   News off
   --------  --------  --------
-  5         $3.65     $1.15
-  10        $6.60     $1.55
-  20        $12.45    $2.40
+  5         $0.75     $0.50
+  10        $1.45     $0.90
+  20        $2.80     $1.75
 
 Then add the watchdog from 3.9.
 
 Examples:
   - 10 holdings, news on, both digests, watchdog every 4 hours:
-      about $6.60 + $0.20 = roughly $6.80 a month (Anthropic about $1, Google about $5.80).
+      about $1.45 + $0.20 = roughly $1.65 a month (Anthropic about $1.10, Google about $0.55).
   - 10 holdings, news off, Pre-Market only, watchdog off:
-      under $1 a month.
+      about $0.45 a month.
 
-Who bills you: Anthropic for the reviews of your holdings (including the watchdog's),
-and Google for the news and the portfolio review. From January 1, 2027, Google's part roughly
-doubles (3.7).
+Who bills you: Anthropic for the reviews of your holdings (including the watchdog's) and the
+portfolio review, and Google for the news. From January 1, 2027, Google's part roughly doubles (3.7).
 All figures are estimates at October 2026 prices; your real costs depend on market activity and
 on how much the models write.
 
@@ -500,12 +501,12 @@ on how much the models write.
   Andres first)
   Google Sheets (2.2)             The SnapTrade Client ID and Consumer Key.
   No Telegram                     All watchdog settings (it can't run without Telegram).
+  News off (3.7)                  The Gemini key.
   Watchdog off (0 hours)          The watchdog's session and tripwire. Earnings reminders and
                                   notices still come by Telegram.
   Home currency USD               Nothing extra; it's the default.
 
 Things that are still needed even though you might expect otherwise:
-  - News off: you still need a Gemini key, for the portfolio review.
   - Neither digest: you still give an email address.
 
 
@@ -591,8 +592,8 @@ How to send your keys to Andres:
 6.6 Where your data goes
 ------------------------
   - Your holdings (symbols, share counts, prices paid) are sent to Anthropic, whose AI model
-    reviews them, and to Google (Gemini) with your account names for the
-    portfolio review. Gemini's news searches use only the symbols and company names.
+    reviews them and writes the portfolio review (with your account names). Gemini's news
+    searches use only the symbols and company names.
   - With SnapTrade, SnapTrade can read your brokerage positions.
   - With Google Sheets, only you, Finnbot's service account, and anyone you shared the sheet with
     can see it.

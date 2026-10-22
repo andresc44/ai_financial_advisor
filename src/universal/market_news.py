@@ -11,6 +11,10 @@ the macro news on:
   matches a page Google Search grounding returned, else None), and the prompt states today's date.
 - 2026-10-20: STORY_COUNT stories (UNIVERSAL_EXTRAS.MACRO_NEWS_STORIES, 4; was 5), each with a one-sentence
   market impact (was 1-2 sentences), at Andres's request: the stories were about 6% of the email.
+- 2026-10-23: the request uses GEMINI_CONFIG's effort (thinking level) and output cap (src/gemini_settings.py), and
+  the model and story count are read when the request is built, so a change from the settings sheet applies at once.
+  The prompt asks for the search result's grounding redirect link by name, which low effort otherwise often replaced
+  with the article's own address (which can't be verified, so it was dropped).
 """
 import os
 import sys
@@ -22,7 +26,6 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
 from google.genai.errors import APIError
 from pydantic import BaseModel
 from tenacity import retry
@@ -31,13 +34,16 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.gemini_settings import gemini_model, generation_config
 from src.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error, shared_api_key, shared_key_issue
 from src.personalized.symbol_specific_news import _grounded_urls, _verify_source_urls
 from src.usage_tracking import record_gemini_response
 
-MACRO_NEWS_MODEL = params_dict["GEMINI_MODELS"]["MACRO_NEWS"]  # Claude-authored (2026-10-16): set in parameters.py
-STORY_COUNT = int(params_dict["UNIVERSAL_EXTRAS"].get("MACRO_NEWS_STORIES", 4))  # Claude-authored (2026-10-20)
+
+def story_count() -> int:
+    """Claude-authored (2026-10-20): how many stories (UNIVERSAL_EXTRAS.MACRO_NEWS_STORIES); read when used (2026-10-23)."""
+    return int(params_dict["UNIVERSAL_EXTRAS"].get("MACRO_NEWS_STORIES", 4))
 
 # 1. Load variables from .env file into environment
 load_dotenv()
@@ -54,9 +60,10 @@ class MacroStory(BaseModel):
 class DigestPayload(BaseModel):
     macro_stories: list[MacroStory]
 
-# 3. System Prompt
-SYSTEM_PROMPT = f"""
-You are a senior macro strategist. Extract the top {STORY_COUNT} major global stories from the news feed or web search results for a daily digest.
+# 3. System Prompt (2026-10-23: built per request, for the current story count)
+def system_prompt(count: int) -> str:
+    return f"""
+You are a senior macro strategist. Extract the top {count} major global stories from the news feed or web search results for a daily digest.
 
 PRIORITY HIERARCHY:
 1. HIGH: Geopolitical shocks, emergency central bank actions, sharp energy/commodity spikes, or major broad-market shifts (+/- 2% intraday).
@@ -64,14 +71,14 @@ PRIORITY HIERARCHY:
 3. LOW (FILTER OUT): Routine commentary, minor corporate updates, or normal sector fluctuations.
 
 SELECTION RULE:
-Select strictly the {STORY_COUNT} highest-priority stories available. Do NOT balance across tiers (e.g., return {STORY_COUNT} HIGH items if {STORY_COUNT} exist). Only fall back to lower tiers if higher-priority events are absent.
+Select strictly the {count} highest-priority stories available. Do NOT balance across tiers (e.g., return {count} HIGH items if {count} exist). Only fall back to lower tiers if higher-priority events are absent.
 
 FORMATTING REQUIREMENTS:
 Keep all fields extremely succinct and direct:
 - priority: Must be "HIGH", "MEDIUM", or "LOW".
 - event_summary: 1 concise sentence summarizing what occurred.
 - market_impact: ONE succinct sentence of at most 25 words on the direct effect on assets, sectors, yields, or volatility, e.g. "Higher oil costs raise inflation risk, lifting yields and weighing on airlines." Never add a second sentence.
-- source_url: The direct URL link to the original article source.
+- source_url: The search result's link exactly as your Google Search tool returned it (it starts with https://vertexaisearch.cloud.google.com/grounding-api-redirect/), copied character for character. Never replace it with the article's own address, and never construct or guess a URL; use null if you have no such link for the story.
 """
 
 # 4. Fetch Function using Chat interface to fix AFC warning
@@ -79,19 +86,20 @@ Keep all fields extremely succinct and direct:
 def fetch_live_macro_stories() -> DigestPayload:
     print("\n[DIAGNOSTIC] Initializing Gemini Client...")
     client = genai.Client(api_key=shared_api_key("Gemini"))
+    model, count = gemini_model("MACRO_NEWS"), story_count()
 
     today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
         f"Today is {today:%Y-%m-%d}. Perform a web search for today's top global macroeconomic, central bank, "
-        f"and high-impact world financial news. Select the top {STORY_COUNT} items based on priority."
+        f"and high-impact world financial news. Select the top {count} items based on priority."
     )
 
     print("[DIAGNOSTIC] Creating Chat session with Google Search grounding enabled...")
     # Using client.chats.create avoids the Automatic Function Calling warning
     chat = client.chats.create(
-        model=MACRO_NEWS_MODEL,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
+        model=model,
+        config=generation_config(  # 2026-10-23: with GEMINI_CONFIG's effort and output cap
+            system_instruction=system_prompt(count),
             tools=[{"google_search": {}}],  # Enables Search Grounding
             response_mime_type="application/json",
             response_schema=DigestPayload,
@@ -102,13 +110,13 @@ def fetch_live_macro_stories() -> DigestPayload:
     print("[DIAGNOSTIC] Sending request to Gemini API (Awaiting search grounding)...")
 
     response = chat.send_message(prompt_text)
-    record_gemini_response(None, "universal", MACRO_NEWS_MODEL, response)  # Claude-authored (2026-10-16): shared-key cost
+    record_gemini_response(None, "universal", model, response)  # Claude-authored (2026-10-16): shared-key cost
 
     elapsed = round(time.time() - start_time, 2)
     print(f"[DIAGNOSTIC] Response received successfully in {elapsed}s.")
 
     payload = DigestPayload.model_validate_json(response.text)
-    payload.macro_stories = payload.macro_stories[:STORY_COUNT]  # Claude-authored (2026-10-20): in case it sends more
+    payload.macro_stories = payload.macro_stories[:count]  # Claude-authored (2026-10-20): in case it sends more
     _verify_source_urls(payload.macro_stories, _grounded_urls(response))  # Claude-authored (2026-10-16)
     return payload
 

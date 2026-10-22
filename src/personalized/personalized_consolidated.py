@@ -18,10 +18,11 @@ from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import cached_company_names
 from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.api_errors import ApiKeyUnusable
-from src.personalized.portfolio_review import review_portfolio
+from src.personalized.news_reuse import as_items, news_to_refresh, remember_news, same_day_news
+from src.personalized.portfolio_review import review_portfolio, review_settings
 from src.idea_positions import attach_idea_origins
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
-from src.personalized.user_settings import get_gemini_api_key, get_home_currency, wants_holding_news
+from src.personalized.user_settings import get_gemini_api_key, get_home_currency, get_llm_api_key, wants_holding_news
 from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
 from src.usage_tracking import usage_summary
 
@@ -48,7 +49,7 @@ def fetch_holdings_news(
     """
     Claude-authored (2026-10-14, split out 2026-10-15): up to DIGEST.SYMBOL_NEWS_BULLETS news items per stock from
     Gemini with the user's own key, plus the key error (missing, invalid, expired, no credits, exhausted quota)
-    that stopped them, or None, so the portfolio review can skip a key that is known not to work.
+    that stopped them, or None. Only stocks whose news was fetched are in the result.
     """
     if not companies:
         return {}, None
@@ -57,6 +58,34 @@ def fetch_holdings_news(
     except ApiKeyUnusable as e:  # Key not set
         print(f"[ERROR] {e} Holding news skipped.")
         return {}, e
+
+def settle_holdings_news(
+    user_name: str,
+    companies: dict[str, Optional[str]],
+    reused: dict[str, dict],
+    fresh: dict[str, list[SymbolNewsItem]],
+    key_error: Optional[ApiKeyUnusable],
+    holdings: Optional[list[dict]],
+) -> tuple[dict[str, list[SymbolNewsItem]], Optional[ApiKeyUnusable]]:
+    """
+    Claude-authored (2026-10-23): every holding's news for the digest, once the holdings are evaluated. `reused` is
+    the news fetched earlier today that wasn't asked for again (news_reuse.same_day_news) and `fresh` what was. A
+    reused stock that moved more than DIGEST.NEWS_REUSE.MAX_MOVE_NATR, changed signal, or reported earnings is fetched
+    again now (if that fails, the earlier news is shown). Freshly fetched news is saved for later digests that day.
+    Returns (news, the first key error).
+    """
+    refresh = news_to_refresh(reused, holdings)
+    for symbol, reason in refresh.items():
+        print(f"[news] {symbol}: fetching its news again ({reason}).")
+    if refresh and not (key_error is not None and key_error.blocks_run):
+        more, more_error = fetch_holdings_news(user_name, {symbol: companies.get(symbol) for symbol in refresh})
+        fresh = {**fresh, **more}
+        key_error = key_error or more_error
+    remember_news(user_name, fresh, holdings)
+    kept = {symbol: as_items(entry) for symbol, entry in reused.items() if symbol not in fresh}
+    if kept:
+        print(f"[news] Showing news fetched earlier today for {len(kept)} holding(s): {', '.join(kept)}.")
+    return {**kept, **fresh}, key_error
 
 def attach_news_bullets(holdings: list[dict], news: dict[str, list[SymbolNewsItem]]) -> list[dict]:
     """
@@ -89,25 +118,30 @@ def get_portfolio_review(
     user_name: str,
     holdings: list[dict],
     portfolio_beta: float,
-    gemini_key_error: Optional[ApiKeyUnusable] = None,
+    llm_key_issues: Optional[list[dict]] = None,
 ) -> tuple[list[dict], Optional[ApiKeyUnusable]]:
     """
-    Claude-authored (2026-10-14): up to DIGEST.PORTFOLIO_REVIEW_BULLETS notes reviewing the whole portfolio, from
-    Gemini with the user's own key, as {"category": "WATCH" | "NOTE", "text": "...", "symbols": [held tickers]}.
-    Run after the news is attached so the review can weigh each stock's news. Empty when the user has no holdings
-    or Gemini key, or the request fails.
+    Claude-authored (2026-10-14): up to DIGEST.PORTFOLIO_REVIEW_BULLETS notes reviewing the whole portfolio, as
+    {"category": "WATCH" | "NOTE", "title": "...", "text": "...", "symbols": [held tickers]}. Run after the news is
+    attached so the review can weigh each stock's news. Empty when the user has no holdings or key, or the request
+    fails.
 
-    2026-10-15: `gemini_key_error` is the key failure the news already hit with the same key. Unless it was a
-    passing rate limit, the review is skipped without a request. Returns (notes, new key error or None).
+    2026-10-23: written by the holdings model (params_dict["LLM"]["HOLDINGS"], Claude Haiku 5.5 by default) with the
+    user's own key for its provider, instead of Gemini. `llm_key_issues` are the key problems the holdings
+    evaluation already hit (the payload's api_key_issues): unless it was a passing rate limit, a key known not to
+    work is skipped without a request. Returns (notes, new key error or None).
     """
     if not holdings:
         return [], None
-    if gemini_key_error is not None and gemini_key_error.blocks_run:
-        print(f"[ERROR] Portfolio review skipped: the Gemini key failed earlier ({gemini_key_error.reason}).")
+    provider = review_settings()["provider"]
+    failed = next((issue for issue in llm_key_issues or []
+                   if issue.get("provider") == provider and issue.get("reason") != "rate_limited"), None)
+    if failed is not None:
+        print(f"[ERROR] Portfolio review skipped: the {provider} key failed earlier ({failed['reason']}).")
         return [], None
     try:
-        api_key = get_gemini_api_key(user_name)
-    except ApiKeyUnusable as e:  # Key not set (already reported by the news when it ran first)
+        api_key = get_llm_api_key(user_name, provider)
+    except ApiKeyUnusable as e:  # Key not set (already reported by the holdings evaluation)
         return [], e
     notes, key_error = review_portfolio(holdings, portfolio_beta, api_key, user_name=user_name,
                                         home=_home(user_name))
@@ -141,7 +175,7 @@ def section_started_at(started_at: datetime, home_timezone: str, user_name: str)
     }
 
 def _key_issue_notices(holdings_dict: dict, *key_errors: Optional[ApiKeyUnusable]) -> list[dict]:
-    """One notice per (provider, reason): the Anthropic issue from the holdings payload plus any Gemini issues."""
+    """One notice per (provider, reason): the LLM issue from the holdings payload plus the news and review ones."""
     notices = list(holdings_dict.get("api_key_issues") or [])
     notices += [error.as_notice() for error in key_errors if error is not None]
     return list({(n["provider"], n["reason"]): n for n in notices}.values())
@@ -224,12 +258,18 @@ def get_personal_content(user_name: str = "Andres"):
         if not news_on:
             print(f"Holding news is off for {user_name} (RECEIVE_HOLDING_NEWS); no Gemini news requests.")
         companies = _holding_companies(portfolio.full_data) if news_on else {}
-        news_future = pool.submit(fetch_holdings_news, user_name, companies)
+        # Claude-authored (2026-10-23): news fetched earlier today isn't asked for again; it's checked once the
+        # holdings are evaluated (settle_holdings_news)
+        reused = same_day_news(user_name, companies)
+        news_future = pool.submit(fetch_holdings_news, user_name,
+                                  {symbol: name for symbol, name in companies.items() if symbol not in reused})
         holdings_dict = portfolio.get_holdings_digest_payload(reuse_recent_evaluations=True)
         news, news_key_error = news_future.result()
+    news, news_key_error = settle_holdings_news(
+        user_name, companies, reused, news, news_key_error, holdings_dict.get("holdings"))
     holdings = attach_news_bullets(holdings_dict.get("holdings"), news)
     portfolio_review, review_key_error = get_portfolio_review(
-        user_name, holdings, holdings_dict.get("portfolio_beta"), gemini_key_error=news_key_error
+        user_name, holdings, holdings_dict.get("portfolio_beta"), llm_key_issues=holdings_dict.get("api_key_issues")
     )
 
     return {

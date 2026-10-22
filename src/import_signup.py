@@ -59,7 +59,7 @@ if str(project_root) not in sys.path:
 
 from src import llm_models
 from src.admins import admins
-from src.check_config import USER_KEYS, VALUE_CHECKS, _required
+from src.check_config import USER_KEYS, VALUE_CHECKS, _required, news_on
 from src.parameters import params_dict
 from src.personalized.user_profiles import MISSING_VALUE, USER_PROFILES, build_profile, env_prefix
 
@@ -422,11 +422,12 @@ def missing_report(name: str, env: dict[str, Optional[str]], plan: Plan) -> list
     source = value("holdings_source")
     model = llm_models.job_settings("HOLDINGS")["model"]  # 2026-10-22: the same for every user
     provider = llm_models.provider_of(model)
+    news = news_on(value("receive_holding_news"))  # 2026-10-23: the Gemini key is only needed for the news
     rows = []
     for key, (rule, description) in USER_KEYS.items():
         if key in LEGACY_SETTINGS:
             continue
-        required = _required(rule, source, provider)
+        required = _required(rule, source, provider, news)
         if key == "telegram_chat_id" and plan.wants_telegram and source in ("SNAPTRADE", "SHEETS"):
             required, description = True, "Telegram chat ID (they chose Telegram; sent privately)"
         if key == "google_sheets_id" and plan.sheet_by_link:

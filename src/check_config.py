@@ -49,6 +49,9 @@ SHARED_KEYS = {
     # Claude-authored (2026-10-22): src/import_signup.py, also run at the start of every cron digest run
     "SIGNUP_FORM_SHEET_ID": (False, "The sign-up form's answers sheet, shared with the service account; without it "
                                     "new sign-ups aren't imported"),
+    # Claude-authored (2026-10-23): src/remote_settings.py, also run at the start of every cron digest run
+    "SETTINGS_TAB_GID": (False, "The settings tab (gid) in that same spreadsheet; without it the tab named "
+                                "'Parameters' is used"),
     # Claude-authored (2026-10-16): monitoring and backups, read by scripts/cron_job.sh and scripts/backup_to_drive.sh
     "HEALTHCHECKS_PING_KEY": (False, "healthchecks.io ping key; without it cron jobs run unmonitored"),
     "FINNBOT_BACKUP_REMOTE": (False, "rclone destination for the nightly backup (default finnbot-backup:)"),
@@ -62,8 +65,8 @@ HOLDINGS_SOURCES = ("SNAPTRADE", "SHEETS", "NO_HOLDINGS")
 WITH_HOLDINGS = ("SNAPTRADE", "SHEETS")
 
 # Per-user profile keys: (when it's required, what to put there). "always", "holdings" (SNAPTRADE or SHEETS),
-# "holdings_anthropic" / "holdings_deepseek" (holdings, and the user's model is from that provider), "SNAPTRADE",
-# "SHEETS", or "optional".
+# "holdings_anthropic" / "holdings_deepseek" (holdings, and the user's model is from that provider), "holdings_news"
+# (holdings with the news on; 2026-10-23), "SNAPTRADE", "SHEETS", or "optional".
 USER_KEYS = {
     "holdings_source": ("always", "SNAPTRADE, SHEETS, or NO_HOLDINGS"),
     "destination_email": ("always", "Where the digest is sent"),
@@ -76,7 +79,8 @@ USER_KEYS = {
                                   f"portfolio in it and in USD (default {params_dict['HOLDINGS']['DEFAULT_HOME_CURRENCY']})"),
     "anthropic_api_key": ("holdings_anthropic", "The user's own Anthropic key (holdings evaluation on a Claude model)"),
     "deepseek_api_key": ("holdings_deepseek", "The user's own DeepSeek key (holdings evaluation on a DeepSeek model)"),
-    "gemini_api_key": ("holdings", "The user's own Gemini key (holding news and portfolio review)"),
+    # 2026-10-23: only for the news; the portfolio review moved from Gemini to the holdings LLM
+    "gemini_api_key": ("holdings_news", "The user's own Gemini key (news for each holding)"),
     "snaptrade_client_id": ("SNAPTRADE", "SnapTrade personal client ID"),
     "snaptrade_consumer_key": ("SNAPTRADE", "SnapTrade personal consumer key"),
     "google_sheets_id": ("SHEETS", "ID of the holdings Google Sheet (from its URL)"),
@@ -134,11 +138,18 @@ def _env(key: str) -> Optional[str]:
     return env_setting(key)  # 2026-10-22: the sign-up sync's KEY=None placeholder counts as missing too
 
 
-def _required(rule: str, source: Optional[str], provider: Optional[str] = None) -> bool:
+def news_on(value: Optional[str]) -> bool:
+    """Claude-authored (2026-10-23): <NAME>_RECEIVE_HOLDING_NEWS as the digest reads it (on unless set to false)."""
+    return (value or "").strip().lower() not in ("false", "0", "no", "off")
+
+
+def _required(rule: str, source: Optional[str], provider: Optional[str] = None, news: bool = True) -> bool:
     if rule == "always":
         return True
     if rule == "holdings":
         return source in WITH_HOLDINGS
+    if rule == "holdings_news":  # Claude-authored (2026-10-23): the Gemini key, only needed for the news
+        return source in WITH_HOLDINGS and news
     if rule in ("holdings_anthropic", "holdings_deepseek"):  # Claude-authored (2026-10-16): the key the user's model needs
         return source in WITH_HOLDINGS and provider == (llm_models.ANTHROPIC if rule == "holdings_anthropic" else llm_models.DEEPSEEK)
     return rule == source
@@ -149,12 +160,13 @@ def check_user(user_name: str) -> list[tuple[str, str, str]]:
     profile = build_profile(user_name)
     source = _env(profile["holdings_source"])
     provider = get_llm_settings(user_name)["provider"]
+    news = news_on(_env(profile["receive_holding_news"]))
     rows = []
     for key, (rule, description) in USER_KEYS.items():
         env_key = profile[key]
         value = _env(env_key)
         if value is None:
-            status = "MISSING" if _required(rule, source, provider) else "unset"
+            status = "MISSING" if _required(rule, source, provider, news) else "unset"
             rows.append((status, env_key, description))
             continue
         check = VALUE_CHECKS.get(key)

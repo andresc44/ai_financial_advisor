@@ -265,3 +265,8 @@ test_output/
 # regenerated on demand, so they don't belong in history.
 data/usage/
 LLM_input*.json
+
+# Claude-authored (2026-10-23): holding news kept for later digests the same day (src/personalized/news_reuse.py)
+data/holding_news/
+# Claude-authored (2026-10-23): settings accepted from the settings sheet on this computer (src/remote_settings.py)
+data/remote_settings.json

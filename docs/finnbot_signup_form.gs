@@ -197,12 +197,12 @@ function createFinnbotSignupForm() {
       .setChoiceValues(['USD (default)', 'CAD', 'EUR', 'GBP', 'AUD', 'COP']);
   form.addMultipleChoiceItem()
       .setTitle('News for each holding')
-      .setHelpText('Up to 2 short news summaries per stock, with sources, written by Gemini. Usually ' +
-                   'the largest part of the bill. Your Gemini key is needed either way, for the ' +
-                   'portfolio review. Guide 3.7.')
+      .setHelpText('Up to 2 short news summaries per stock, with sources, written by Gemini. Needs ' +
+                   'a Gemini key; with news off you don\'t need one. The evening digest reuses the ' +
+                   'morning\'s news unless the stock moved. Guide 3.7.')
       .setRequired(true)
       .setChoiceValues([
-        'On (default): about $0.012 per stock per digest',
+        'On (default): about $0.002 per stock per digest',
         'Off: saves that cost',
       ]);
 
@@ -262,7 +262,7 @@ function createFinnbotSignupForm() {
       .setTitle('Please confirm')
       .setRequired(true)
       .setChoiceValues([
-        'I\'ve created my Gemini API key and saved it somewhere safe (e.g. a password manager).',
+        'If I chose news: I\'ve created my Gemini API key and saved it somewhere safe (e.g. a password manager).',
         'I\'ve created my Anthropic API key and saved it somewhere safe.',
         'I have NOT typed any API key, SnapTrade key, or Telegram chat ID into this form.',
         'I\'ll send my keys (and my Telegram chat ID and SnapTrade keys, if any) to Andres ' +

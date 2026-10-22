@@ -266,12 +266,13 @@ def test_a_none_placeholder_counts_as_missing_everywhere(monkeypatch):
 
 def test_a_holdings_user_gets_placeholders_for_the_keys_the_holdings_model_needs(files):
     # 2026-10-22: Lee answered the old form's DeepSeek question, but LLM["HOLDINGS"] (a Claude model) applies to
-    # everyone, so the Anthropic and Gemini keys get placeholders, and no DeepSeek key
+    # everyone, so the Anthropic key gets a placeholder, and no DeepSeek key. 2026-10-23: Lee turned the news off, and
+    # the portfolio review no longer uses Gemini, so no Gemini key is needed either
     env, params = files
     signup.apply_answer(answer(LEE), env, params)
     values = dotenv_values(env)
-    assert values["LEE_ANTHROPIC_API_KEY"] == values["LEE_GEMINI_API_KEY"] == "None"
-    assert "LEE_DEEPSEEK_API_KEY" not in values
+    assert values["LEE_ANTHROPIC_API_KEY"] == "None"
+    assert "LEE_DEEPSEEK_API_KEY" not in values and "LEE_GEMINI_API_KEY" not in values
     before = env.read_bytes()
     signup.apply_answer(answer(LEE), env, params)  # Already there: not written again
     assert env.read_bytes() == before

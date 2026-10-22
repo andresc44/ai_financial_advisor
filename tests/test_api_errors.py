@@ -1,5 +1,6 @@
 """API key failure handling for Anthropic and Gemini, exercised through the real SDKs with mock HTTP transports."""
 import json
+import re
 
 import anthropic
 import httpx
@@ -102,8 +103,17 @@ def quota(quota_id, delay):
     ]
 
 
-def gemini_ok(text):
-    return httpx.Response(200, json={"candidates": [{"content": {"role": "model", "parts": [{"text": text}]}, "finishReason": "STOP"}]})
+def gemini_ok(text, finish="STOP"):
+    return httpx.Response(200, json={"candidates": [{"content": {"role": "model", "parts": [{"text": text}]}, "finishReason": finish}]})
+
+
+def batch_answer(news_by_ticker):
+    """Claude-authored (2026-10-23): a holding-news answer, which covers several stocks"""
+    return json.dumps({"stocks": [{"ticker": ticker, "news_items": items} for ticker, items in news_by_ticker.items()]})
+
+
+def asked_tickers(request):
+    return re.findall(r"ticker: ([A-Z.]+)\)", json.loads(request.content)["contents"][-1]["parts"][0]["text"])
 
 
 GEMINI_KEY_CASES = [
@@ -128,12 +138,11 @@ def gemini_server(monkeypatch):
 
     def handler(request):
         state["calls"] += 1
+        state.setdefault("asked", []).append(asked_tickers(request))
         response = state["plan"](state["calls"])
-        if response is None:
-            is_review = b"Review this portfolio" in request.content
-            text = json.dumps({"notes": []} if is_review else {"news_items": [
-                {"priority": "high", "summary": "x.", "source_url": None}]})
-            return gemini_ok(text)
+        if response is None:  # Every stock asked for gets one story
+            return gemini_ok(batch_answer({ticker: [{"priority": "high", "summary": "x.", "source_url": None}]
+                                           for ticker in asked_tickers(request)}))
         return response
 
     real = genai.Client
@@ -170,21 +179,34 @@ def test_gemini_persistent_rate_limit_becomes_rate_limited(gemini_server):
     assert gemini_server["calls"] == 4  # GEMINI_RETRY's attempts
 
 
-def test_gemini_non_key_errors_fail_per_stock_without_retry(gemini_server):
+def test_gemini_non_key_errors_fail_without_retry(gemini_server):
     gemini_server["plan"] = lambda n: gemini_error(404, "model not found", "NOT_FOUND")
     result, key_error = news.fetch_symbol_news(COMPANIES, "g-key", user_name=USER, max_workers=1)
-    assert key_error is None and gemini_server["calls"] == 3
-    assert all(items == [] for items in result.values())
+    assert key_error is None and gemini_server["calls"] == 1  # 2026-10-23: one request for the three stocks
+    assert result == {}  # Nothing fetched, so nothing can be saved as "no news"
+
+
+def test_several_stocks_share_a_request_and_left_out_ones_are_asked_again(gemini_server):
+    # Claude-authored (2026-10-23): 7 stocks in batches of 5 go out as 4 + 3; the answer leaves BBB out, so it's
+    # asked for on its own; an answer cut off at the output cap is asked for again one stock at a time
+    companies = {ticker: ticker.title() for ticker in ("AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG")}
+    story = [{"priority": "HIGH", "summary": "x.", "source_url": None}]
+    gemini_server["plan"] = lambda n: gemini_ok(batch_answer({"AAA": story, "CCC": [], "DDD": story})) if n == 1 else (
+        gemini_ok('{"stocks": [', finish="MAX_TOKENS") if n == 3 else None)
+    result, key_error = news.fetch_symbol_news(companies, "g-key", user_name=USER, max_workers=1, batch_size=5)
+    assert key_error is None
+    assert gemini_server["asked"] == [["AAA", "BBB", "CCC", "DDD"], ["BBB"], ["EEE", "FFF", "GGG"], ["EEE"], ["FFF"], ["GGG"]]
+    assert set(result) == set(companies) and result["CCC"] == [] and len(result["EEE"]) == 1
 
 
 def test_holding_news_keeps_the_top_two_stories_of_medium_priority_or_higher(gemini_server):
     # 2026-10-20: at most DIGEST.SYMBOL_NEWS_BULLETS (2) per stock, and no LOW stories
     items = [{"priority": p, "summary": f"{p} story.", "source_url": None} for p in ("low", "medium", "LOW", "high", "medium")]
-    gemini_server["plan"] = lambda n: gemini_ok(json.dumps({"news_items": items}))
+    gemini_server["plan"] = lambda n: gemini_ok(batch_answer({"AAA": items}))
     result, key_error = news.fetch_symbol_news({"AAA": "Alpha"}, "g-key", user_name=USER)
     assert key_error is None and [item.priority for item in result["AAA"]] == ["HIGH", "MEDIUM"]
     only_low = [{"priority": "LOW", "summary": "A recap.", "source_url": None}]
-    gemini_server["plan"] = lambda n: gemini_ok(json.dumps({"news_items": only_low}))
+    gemini_server["plan"] = lambda n: gemini_ok(batch_answer({"aaa ": only_low}))  # Tickers matched loosely
     assert news.fetch_symbol_news({"AAA": "Alpha"}, "g-key", user_name=USER)[0]["AAA"] == []
 
 

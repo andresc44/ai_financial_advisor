@@ -1,4 +1,4 @@
-#File to connect to Gemini API and write a holistic review of the user's whole portfolio for the daily digest.
+#File to ask the holdings LLM (Claude by default) for a holistic review of the user's whole portfolio for the daily digest.
 """
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's request.
 - 2026-10-14: created, modelled on symbol_specific_news.py (Pydantic schema, chat session, tenacity retries on
@@ -10,44 +10,66 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-15: retries now use api_errors.GEMINI_RETRY, and a key failure (invalid, expired, no credits,
   exhausted quota) is returned to the caller instead of only being printed.
 - 2026-10-17: each note also gets a short title, shown as its collapsed dropdown row in the digest email.
+- 2026-10-23: written by the holdings model (params_dict["LLM"]["HOLDINGS"], Claude Haiku 5.5 at low effort) with the
+  user's own Anthropic key, instead of Gemini, at Andres's request: the review was ~$0.017 a digest on Gemini, mostly
+  thinking, and every user already has an Anthropic key for the holdings. It answers through a strict tool schema,
+  like the holdings evaluation (src/personalized/recommendation.py); a DeepSeek holdings model works the same way.
+  DIGEST.PORTFOLIO_REVIEW_MAX_TOKENS caps the answer, thinking included.
 """
+import asyncio
 import json
+import logging
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from zoneinfo import ZoneInfo
 
-from google import genai
-from google.genai import types
-from pydantic import BaseModel
-from tenacity import retry
+from anthropic import Anthropic, APIError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src import llm_models
+from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, inline_refs, validated_answer
 from src.fx_rates import CURRENCY_SYMBOLS
 from src.parameters import params_dict
-from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
+from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error
 from src.personalized.holdings_state import _clean_float
-from src.usage_tracking import record_gemini_response
+from src.usage_tracking import record_anthropic_response, record_deepseek_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
-GEMINI_MODEL = params_dict["GEMINI_MODELS"]["PORTFOLIO_REVIEW"]  # Claude-authored (2026-10-16): set in parameters.py
 CATEGORIES = ("WATCH", "NOTE")
+REVIEW_TOOL_NAME = "submit_portfolio_review"
+logger = logging.getLogger(__name__)
 
-# 1. Define Pydantic Schema
+# 1. Define Pydantic Schema (2026-10-23: strict, as a tool's input; extra="forbid" emits additionalProperties: false)
 class ReviewNote(BaseModel):
-    category: str        # Expects "WATCH" (something to keep an eye on) or "NOTE" (neutral observation or strength)
+    model_config = ConfigDict(extra="forbid")
+    category: Literal["WATCH", "NOTE"] = Field(
+        ..., description="WATCH: something to keep an eye on or consider acting on. NOTE: a neutral observation or strength.")
     # Claude-authored (2026-10-17): the note's collapsed dropdown row in the digest email
-    title: str           # A 3-8 word headline, e.g. "Leveraged ETFs drive a 2.2 beta"
-    text: str            # 1-2 concise sentences citing the figures behind the note
-    symbols: list[str]   # Held tickers the note is about; empty for portfolio-wide notes
+    title: str = Field(..., description="A 3-8 word headline naming the point, e.g. 'Leveraged ETFs drive a 2.2 beta'.")
+    text: str = Field(..., description="1-2 concise sentences citing the figures behind the note.")
+    symbols: list[str] = Field(
+        ..., description="Held tickers the note is about, exactly as given; an empty list for portfolio-wide notes.")
 
 class PortfolioReview(BaseModel):
-    notes: list[ReviewNote]
+    model_config = ConfigDict(extra="forbid")
+    notes: list[ReviewNote] = Field(..., description="The notes, most important first.")
+
+REVIEW_TOOL_SPEC = {
+    "name": REVIEW_TOOL_NAME,
+    "description": "Submit the portfolio review: its notes, most important first.",
+    "strict": True,
+    "input_schema": inline_refs(PortfolioReview.model_json_schema()),
+}
+
+class ReviewFailed(Exception):
+    """An answer the review can't use (declined, cut off, or without the tool call)."""
 
 # 2. System Prompt
 SYSTEM_PROMPT = """
@@ -72,9 +94,11 @@ Keep all fields extremely succinct and direct:
 - title: A 3-8 word headline naming the point, readable on its own (e.g. "Leveraged ETFs drive a 2.2 beta"). The reader sees only the title until they open the note.
 - text: 1-2 concise sentences citing the supporting figures.
 - symbols: The tickers the note is about, exactly as given in the data; an empty list for portfolio-wide notes.
+
+Submit the review by calling the submit_portfolio_review tool once.
 """
 
-# 3. Portfolio summary (figures precomputed so Gemini never does its own arithmetic)
+# 3. Portfolio summary (figures precomputed so the model never does its own arithmetic)
 def _round(value: Any) -> Optional[float]:
     number = _clean_float(value)
     return round(number, 2) if number is not None else None
@@ -165,33 +189,66 @@ def build_portfolio_summary(holdings: list[dict], portfolio_beta: Optional[float
         "holdings": stocks,
     }
 
-# 4. Fetch Function using Chat interface, matching symbol_specific_news.py
-@retry(**GEMINI_RETRY)  # Retries only what can recover; key, billing, and quota errors fail immediately
+# 4. Ask the holdings model (Claude-authored, 2026-10-23: Claude or DeepSeek instead of Gemini)
+def review_settings() -> dict[str, Any]:
+    """{"model", "effort", "provider", "max_tokens"}: params_dict["LLM"]["HOLDINGS"] and DIGEST.PORTFOLIO_REVIEW_MAX_TOKENS."""
+    settings = dict(llm_models.job_settings("HOLDINGS"))
+    if settings.get("effort") not in llm_models.allowed_models().get(settings["model"], [settings.get("effort")]):
+        settings["effort"] = llm_models.default_effort(settings["model"])
+    settings["provider"] = llm_models.provider_of(settings["model"])
+    settings["max_tokens"] = int(DIGEST_PARAMS.get("PORTFOLIO_REVIEW_MAX_TOKENS") or 8000)
+    return settings
+
+def _ask_claude(api_key: str, settings: dict, prompt: str, user_name: Optional[str]) -> PortfolioReview:
+    client = Anthropic(api_key=api_key)  # The SDK retries rate limits and server errors itself
+    response = client.messages.create(
+        model=settings["model"],
+        max_tokens=settings["max_tokens"],
+        output_config={"effort": settings["effort"]},
+        system=SYSTEM_PROMPT,
+        tools=[REVIEW_TOOL_SPEC],
+        tool_choice={"type": "auto"},  # Strict schema + "auto": newer models reject a forced tool choice
+        messages=[{"role": "user", "content": prompt}],
+    )
+    record_anthropic_response(user_name, "digest", response)  # Every answered request is billed
+    if response.stop_reason in ("refusal", "max_tokens"):
+        raise ReviewFailed(f"the answer stopped early ({response.stop_reason}, max_tokens {settings['max_tokens']})")
+    block = next((b for b in response.content if b.type == "tool_use" and b.name == REVIEW_TOOL_NAME), None)
+    if block is None:
+        raise ReviewFailed(f"the model didn't call {REVIEW_TOOL_NAME}")
+    return PortfolioReview(**block.input)
+
+async def _ask_deepseek(api_key: str, settings: dict, prompt: str, user_name: Optional[str]) -> PortfolioReview:
+    client = DeepSeekClient(api_key=api_key)
+    try:
+        request = build_request(settings["model"], settings["effort"], SYSTEM_PROMPT, prompt, REVIEW_TOOL_SPEC)
+        review = await validated_answer(
+            client, request, REVIEW_TOOL_SPEC, PortfolioReview, "portfolio review", logger,
+            on_response=lambda response: record_deepseek_response(user_name, "digest", settings["model"], response),
+        )
+    finally:
+        await client.aclose()
+    if review is None:
+        raise ReviewFailed("no valid answer")
+    return review
+
 def fetch_portfolio_review(
-    client: genai.Client, summary: dict, max_notes: int, user_name: Optional[str] = None
+    api_key: str, summary: dict, max_notes: int, user_name: Optional[str] = None
 ) -> PortfolioReview:
     today = datetime.now(ZoneInfo("America/New_York")).date()
     prompt_text = (
         f"Today is {today:%Y-%m-%d}. Review this portfolio and give at most {max_notes} notes, "
         f"most important first:\n\n{json.dumps(summary, indent=2, default=str)}"
     )
-
-    chat = client.chats.create(
-        model=GEMINI_MODEL,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=PortfolioReview,
-        )
-    )
-
+    settings = review_settings()
     start_time = time.time()
-    response = chat.send_message(prompt_text)
-    elapsed = round(time.time() - start_time, 2)
-    record_gemini_response(user_name, "digest", GEMINI_MODEL, response)  # Claude-authored (2026-10-16): user's cost
-    print(f"[DIAGNOSTIC] Portfolio review received in {elapsed}s.")
-
-    return PortfolioReview.model_validate_json(response.text)
+    if settings["provider"] == llm_models.DEEPSEEK:
+        review = asyncio.run(_ask_deepseek(api_key, settings, prompt_text, user_name))
+    else:
+        review = _ask_claude(api_key, settings, prompt_text, user_name)
+    print(f"[DIAGNOSTIC] Portfolio review received in {round(time.time() - start_time, 2)}s "
+          f"({settings['model']}, effort {settings['effort']}).")
+    return review
 
 # 5. Review the whole portfolio
 def review_portfolio(
@@ -205,7 +262,8 @@ def review_portfolio(
     """
     Returns (notes, key_error): at most `max_notes` notes reviewing the whole portfolio, or [] when there are no
     holdings or the request fails. key_error is set when the failure was the key (invalid, expired, no credits,
-    exhausted quota). Categories are normalized to WATCH / NOTE, and symbols are limited to tickers actually held.
+    spend limit). `api_key` is the user's own key for the holdings model's provider (2026-10-23: Anthropic by
+    default). Symbols are limited to tickers actually held.
     """
     max_notes = max_notes or DIGEST_PARAMS["PORTFOLIO_REVIEW_BULLETS"]
     summary = build_portfolio_summary(holdings or [], portfolio_beta, home)  # 2026-10-21: in the home currency
@@ -213,19 +271,21 @@ def review_portfolio(
         return [], None
 
     print(f"\n[DIAGNOSTIC] Reviewing portfolio of {len(summary['holdings'])} stocks (max {max_notes} notes)...")
-    client = genai.Client(api_key=api_key)  # The user's own key, never the shared GEMINI_API_KEY
     try:
-        review = fetch_portfolio_review(client, summary, max_notes, user_name)
-    except Exception as e:  # The review is optional: an API, network, or parsing failure must not stop the digest
-        key_error = gemini_key_error(e, user_name)
+        review = fetch_portfolio_review(api_key, summary, max_notes, user_name)
+    except (APIError, DeepSeekError) as e:
+        key_error = (deepseek_key_error if isinstance(e, DeepSeekError) else anthropic_key_error)(e, user_name)
         print(f"[ERROR] Could not fetch portfolio review: {key_error or e}")
         return [], key_error
+    except (ReviewFailed, ValidationError) as e:
+        print(f"[ERROR] Could not use the portfolio review: {e}")
+        return [], None
+    except Exception as e:  # The review is optional: a network or other failure must not stop the digest
+        print(f"[ERROR] Could not fetch portfolio review: {e}")
+        return [], None
 
     held = {stock["symbol"].upper(): stock["symbol"] for stock in summary["holdings"]}
     for note in review.notes:
-        note.category = note.category.strip().upper()
-        if note.category not in CATEGORIES:
-            note.category = "NOTE"
         note.symbols = list(dict.fromkeys(
             held[symbol.strip().upper()] for symbol in note.symbols if symbol.strip().upper() in held
         ))

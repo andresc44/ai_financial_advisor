@@ -37,7 +37,7 @@ Errors are contained per user: one user's failure is printed with a traceback, a
 
 ### Parallel users (watchdog and digest)
 
-Both the watchdog and the digest process several users at once (`MAX_PARALLEL_USERS`), and the digest also builds the universal content at the same time. Inside one user's digest, the Gemini news (several stocks at a time) runs while market data and Claude run, and the portfolio review waits for both. What keeps this safe:
+Both the watchdog and the digest process several users at once (`MAX_PARALLEL_USERS`), and the digest also builds the universal content at the same time. Inside one user's digest, the Gemini news (several holdings per request, several requests at a time; since 2026-10-23 news fetched earlier the same day is reused, see [Holding news](#holding-news-and-the-portfolio-review-2026-10-23)) runs while market data and Claude run, and the portfolio review waits for both. What keeps this safe:
 
 - **Shared data keys:** Finnhub and Twelve Data use one key each, so fetching from them is serialized by one lock (`src/shared_locks.py`). The request rate stays the same as a single-user run, and a user who waited finds symbols another user just fetched in the market-context cache.
 - **Shared files:** `data/watchdog_state.json` updates take an in-process lock, and the market-context cache is only read and written under the lock above. The crontab `flock` still keeps the watchdog and digest processes apart.
@@ -45,6 +45,8 @@ Both the watchdog and the digest process several users at once (`MAX_PARALLEL_US
 - Log lines from different users interleave; watchdog lines start with `[user]`.
 
 ## Settings
+
+Since 2026-10-23 every setting in `src/parameters.py` can also be changed from the sign-up spreadsheet, without editing the file: see [Changing settings from the spreadsheet](#changing-settings-from-the-spreadsheet-2026-10-23).
 
 ### Global (`src/parameters.py`)
 
@@ -69,6 +71,10 @@ Both the watchdog and the digest process several users at once (`MAX_PARALLEL_US
 | `DIGEST.SYMBOL_NEWS_BULLETS` | `2` | Gemini news stories per holding card (3 before 2026-10-20). |
 | `DIGEST.SYMBOL_NEWS_MIN_PRIORITY` | `"MEDIUM"` | Lowest story priority kept (added 2026-10-20): LOW stories, such as routine commentary and recaps, are left out. |
 | `DIGEST.SYMBOL_NEWS_CONCURRENCY` | `4` | Gemini news requests in flight at once per user. Lower it if a free-tier Gemini key keeps hitting per-minute limits. |
+| `DIGEST.SYMBOL_NEWS_BATCH_SIZE` | `5` | Holdings covered by one Gemini news request (2026-10-23; was one request each). |
+| `DIGEST.NEWS_REUSE` | `{"ENABLED": True, "MAX_MOVE_NATR": 1.0}` | Show news fetched earlier the same US Eastern day again instead of asking Gemini (2026-10-23). |
+| `DIGEST.PORTFOLIO_REVIEW_MAX_TOKENS` | `8000` | Cap on the portfolio review's answer, thinking included (2026-10-23). |
+| `GEMINI_CONFIG` | `{"effort": "low", "max_output_tokens": 8192}` | Thinking level and output cap for every Gemini call: holding news and macro news (2026-10-23). |
 | `DIGEST.REUSE_EVALUATION_MAX_AGE_MINUTES` | `60` | The digest reuses an evaluation this recent (if the stock moved less than `REEVAL_NATR_MULTIPLE` NATRs since) instead of calling Claude again. `0` turns reuse off. |
 | `ALLOWED_CLAUDE_MODELS` | see file | Models a user may pick, each with the effort levels it accepts. |
 | `CLAUDE_REFUSAL_FALLBACK` | `True` | On models that support it, a request refused by a safety classifier is re-run server-side on a recommended model. |
@@ -88,7 +94,7 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 | `receive_holding_news` | `ANDRES_RECEIVE_HOLDING_NEWS=True` | `True` / `False` (default `True`): Gemini news bullets for each holding |
 | `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic key (required when their model is Claude) |
 | `deepseek_api_key` | `ANDRES_DEEPSEEK_API_KEY=sk-...` | the user's own DeepSeek key (required when their model is DeepSeek) |
-| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news and the portfolio review |
+| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news (only needed with the news on since 2026-10-23, when the portfolio review moved to the holdings model) |
 | `home_currency` (added 2026-10-21) | `ANDRES_HOME_CURRENCY=CAD` | `HOLDINGS.HOME_CURRENCIES`: `USD` (the default, `HOLDINGS.DEFAULT_HOME_CURRENCY`), `CAD`, `EUR`, `GBP`, `AUD`, `COP`. The email's overview shows the portfolio in it, and also in USD |
 | `holdings_source` | `KOBY_HOLDINGS_SOURCE=NO_HOLDINGS` | `SNAPTRADE`, `SHEETS`, or `NO_HOLDINGS` (an ideas-only user, below) |
 
@@ -192,8 +198,8 @@ Missing, invalid, revoked, expired, unpermitted, out-of-credit, spend-limited, a
 | Where | What happens |
 |---|---|
 | Watchdog | Before any Finnhub / Twelve Data / Claude spend, the Anthropic key gets a free check (lists one model). A missing, invalid, expired, or unpermitted key stops there. An empty credit balance or a spend limit is only detectable on the first Claude request; the remaining requests are then skipped. Only evaluations that actually ran count toward `MAX_CLAUDE_CALLS_PER_USER_DAY`, and the scheduled check is not marked done, so it is retried next hour. The user gets one Telegram notice per `ALERT_COOLDOWN_HOURS` saying what to fix. |
-| Digest | The same Claude handling (market data is still fetched, because the holding cards use it). For Gemini, the per-stock news loop stops at the first key failure (keeping news already fetched), and the portfolio review is skipped without a request. The payload's `api_key_issues` list says which key failed and why. |
-| Gemini retries | Only timeouts, connection errors, per-minute 429s (honoring the API's retry delay), and 5xx are retried, up to 4 attempts. Key, billing, daily-quota, and other 4xx errors fail immediately. A 429 that survives the retries stops the news loop for that run but still lets the review try. |
+| Digest | The same Claude handling (market data is still fetched, because the holding cards use it). For Gemini, the news requests stop at the first key failure (keeping news already fetched). The portfolio review uses the holdings model's key (2026-10-23), so it's skipped without a request when the holdings evaluation already found that key unusable. The payload's `api_key_issues` list says which key failed and why. |
+| Gemini retries | Only timeouts, connection errors, per-minute 429s (honoring the API's retry delay), and 5xx are retried, up to 4 attempts. Key, billing, daily-quota, and other 4xx errors fail immediately. A 429 that survives the retries stops the news requests for that run. |
 
 #### Who is told how to fix it (`src/admins.py`, 2026-10-17)
 
@@ -270,6 +276,8 @@ A full fetch costs about 9 Finnhub calls and 6 Twelve Data credits per stock. A 
 | `data/market_context_cache.json` | `add_metrics.py` | Shared daily market context per stock. |
 | `data/alerts_sent/telegram_alerts_timestamped.csv` | `hourly_watchdog.py` | Alert log used for the cooldown (kept 30 days). |
 | `data/usage/api_usage.jsonl` | `usage_tracking.py` (watchdog + digest + universal) | One line per Claude or Gemini call: user, source, model, tokens, estimated cost. Append-only. |
+| `data/holding_news/<user>.json` | `news_reuse.py` (digest, 2026-10-23) | Each holding's news fetched today, with the price, NATR, signal, and earnings date it was fetched at, for later digests the same day. |
+| `data/remote_settings.json` | `remote_settings.py` (digest, 2026-10-23) | The settings accepted from the spreadsheet's Parameters tab, applied by every Finnbot process. |
 
 The first two files are written atomically (temp file, then rename) and are gitignored.
 
@@ -335,7 +343,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
      - **Tested:** in a browser with real taps. Whether the Gmail app lets the email scroll its own view is unconfirmed; if not, the row still opens and is highlighted.
      - **HTML version:** the chips stay plain there, because jump links don't work in the Gmail app or into closed dropdowns.
    - the connected brokerage, with each account's value in a small dropdown.
-4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes. Since 2026-10-21 the review writes its amounts in the home currency, like the overview: Gemini gets the portfolio summary in that currency (`money_currency`, `money_format`) and is told to write every amount in it.
+4. **Portfolio risk:** beta, the share of the portfolio's value under each signal, and the portfolio review's notes. Since 2026-10-21 the review writes its amounts in the home currency, like the overview: the model gets the portfolio summary in that currency (`money_currency`, `money_format`) and is told to write every amount in it.
 5. **Markets & macro:** since 2026-10-21, graded market signals (`create_html._signals`), followed by the top stories. Each indicator has a dot and a short grade (e.g. "Uptrend", "Calm", "Defensive") coloured like the dot, what the grade rests on, and its value and move. The four tiles and three gauges this replaced are gone.
    - **Key signals first:** when the section opens, `MARKET_SIGNALS["KEY_SIGNALS"]` show first: the S&P 500's trend, the market mood, breadth, the 10Y yield, and Nasdaq-100 vs Dow. The rest are under the "All indicators" dropdown, in their groups (Benchmarks, Sentiment, Macro), with a line above the sentiment group on how VIX and Fear & Greed differ.
    - **Links (`DIGEST.INDICATOR_LINKS`):** each indicator's name opens its chart. They replaced a table of 1-day, 5-day, and 1-month moves.
@@ -518,7 +526,8 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Holdings, prices, daily P/L | Fetched every run. Daily P/L covers each stock's most recent regular session on its own exchange (`daily_pnl_session`): today's from the open (live, vs the previous close), otherwise the last completed session at its official close. So the 7:00 digest shows the previous trading day's move, and extended-hours prices never mix in. Since 2026-10-20 the value and unrealized P/L are measured at that same price (`valuation_price`), so the value minus the day's change is the previous close's value. Before, they used the broker's latest price, a pre-market or after-hours quote outside regular hours, and a Monday 7:20 ET run was $175 off. The broker's price stays in `current_price` for the watchdog. |
 | Market data for holdings (`data/market_context_cache.json`) | Quote and headlines are re-fetched when older than `FRESH_CONTEXT_MAX_AGE_MINUTES` (30). Fundamentals and daily indicators are re-fetched after each market open and close; the close only counts from 16:01 ET, hence the digest at close + 10 minutes. |
 | Claude recommendations | Fresh, except a watchdog evaluation from the last `REUSE_EVALUATION_MAX_AGE_MINUTES` (60) for a stock that has moved less than 1 NATR since. Set it to `0` to always evaluate fresh. |
-| Gemini news and portfolio review | Fresh every run (no cache). |
+| Gemini news | Fetched once a day per holding (2026-10-23): a later digest the same US Eastern day shows the earlier news again, unless the stock moved more than `NEWS_REUSE.MAX_MOVE_NATR` NATRs, its signal changed, or it reported earnings since (`src/personalized/news_reuse.py`, `data/holding_news/`). |
+| Portfolio review | Fresh every run. |
 | Company names | Yahoo's name (`profile.name` in the market context) replaces the brokerage's description, which can be wrong (SnapTrade has called Agilent's "A" "AgileThought, Inc."). The holding news starts before the market context is fetched, so it uses the name cached from an earlier run (`cached_company_names`). |
 | Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. The email shows each holding card back in its own currency (2026-10-21). |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list. That list is downloaded once per morning and once per afternoon, and again whenever the stage-1 settings in `parameters.py` change. |
@@ -701,7 +710,7 @@ A section that can't be fetched holds `{"Error": ...}` and adds a `universal_iss
 
 ### API cost tracking (`src/usage_tracking.py`)
 
-Every Claude, DeepSeek and Gemini response is recorded in `data/usage/api_usage.jsonl`: holding evaluations (watchdog and digest), holding news, the portfolio review, and the universal scoring and macro news under the user `_shared`. Each user's digest payload gets an `api_usage` block with the estimated spend on their own keys and, under `admin`, on the admin's shared keys (2026-10-22, Andres), each for this run and the last 30 days:
+Every Claude, DeepSeek and Gemini response is recorded in `data/usage/api_usage.jsonl`: holding evaluations (watchdog and digest), holding news, the portfolio review (an Anthropic call since 2026-10-23), and the universal scoring and macro news under the user `_shared`. Each user's digest payload gets an `api_usage` block with the estimated spend on their own keys and, under `admin`, on the admin's shared keys (2026-10-22, Andres), each for this run and the last 30 days:
 
 ```json
 "api_usage": {
@@ -724,6 +733,65 @@ These are estimates from token counts and list prices. They can't see credits, d
 **When the section started:** each user's payload also has `personal_started_at`, the moment their personal section began. It's given in their home timezone (`<NAME>_TIMEZONE`) and in US Eastern: `{"home_timezone", "home", "home_iso", "us_eastern", "us_eastern_iso"}`. The display strings look like `Friday, October 16, 2026, 7:02 AM EDT`. If the timezone isn't a valid IANA name, the home fields are `null` and only Eastern time is shown; `check_config` reports the setting as INVALID.
 
 **Keeping prices current:** prices are in `params_dict["API_PRICES"]` as dated lists. To add a price change, append an entry with its `"from"` date. Usage before that date keeps the old price, so past months don't change. For example, the gemini-3.6-flash entry already holds the doubled price that starts 2027-01-01. Update `AS_OF` when you check the price pages listed in `SOURCES`. Model ids match on the longest prefix, so `claude-opus-5-5` gets its own price, not `claude-opus-5`'s.
+
+## Changing settings from the spreadsheet (2026-10-23)
+
+Every setting in `src/parameters.py` is also a row of the **Parameters** tab in the sign-up spreadsheet (`SIGNUP_FORM_SHEET_ID`; the tab is `SETTINGS_TAB_GID`, else the one named "Parameters"). Changing a setting there changes it for the next digest run, without editing or deploying `parameters.py`. Written at Andres's request (`src/remote_settings.py`, `src/settings_overrides.py`, `src/parameter_notes.py`).
+
+| Column | Who writes it | What it is |
+|---|---|---|
+| Parameter | Finnbot | The setting's keys joined by dots, e.g. `DIGEST.SYMBOL_NEWS_BATCH_SIZE`. A dict is split into one row per key; a list is one row. |
+| Value | **You** | The value to use. Write it the way Python does: `True` / `False`, `None`, numbers, text without quotes, and lists like `['Technology', 'Communication Services']`. Blank = the default. |
+| Default (parameters.py) | Finnbot | `parameters.py`'s own value. |
+| Finnbot status | Finnbot | `Default`, `✅ Applied since <time>`, or `❌ Not applied: <why>`. The header says when Finnbot last read the tab. |
+| What it does | Finnbot | A one-line note (`src/parameter_notes.py`). |
+
+**When it's read.** At the start of every cron digest run (hourly at :10), before the sign-up sync, and by hand with `python -m src.remote_settings --sync` (`--show` lists the values in force on this computer). Manual `--payload-only` runs don't read the tab; they use the values accepted last time.
+
+**How a value is checked.** It must have the default's type (a whole number where the default is one, `True`/`False`, a list shaped like the default's items), and pass the setting's own rules where it has them: allowed values (efforts, sector rules, sessions, signals, sections), a model that `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS` lists with an effort it accepts, a valid timezone or `HH:MM` time, counts of at least 1, no negative numbers where the default isn't negative, scores up to 100. A value that fails isn't applied: the status says why, and the value accepted before (or the default) stays in force.
+
+**Where it applies.** The accepted values are saved in `data/remote_settings.json` and laid over `parameters.py` at the end of that file, so every Finnbot process (digest, watchdog, `check_config`) starts with them. The run that read the tab also applies them in place, so that digest already uses them. A few settings are read only when a process starts (`FINNHUB_CALLS_PER_MINUTE`, `WATCHDOG.TIMEZONE`, `WATCHDOG.ALERT_COOLDOWN_HOURS`, `WATCHDOG.ALERT_LOG_RETENTION_DAYS`, `OPS.LOG_MAX_MB`, `OPS.LOG_BACKUPS`): their status says they take effect from the next run.
+
+**Defaults that change later.** A Value still equal to the Default Finnbot last wrote counts as untouched. If `parameters.py`'s default then changes, the row follows it (Value and Default are both updated), so only values you actually changed override the code.
+
+**Exceptions.**
+- `ACTIVE_USERS` is shown but read-only: the sign-up sync sets it from the form's answers. Edits there are ignored and overwritten.
+- `.env`'s `UNIVERSAL_LLM_MODEL` / `UNIVERSAL_LLM_EFFORT` still win over `LLM.UNIVERSAL` on the computer that has them; the status says so when they differ.
+- A row that isn't a setting (renamed or removed from `parameters.py`) is kept and marked ignored, so you can delete it.
+
+**When something goes wrong.** If the tab can't be read or written (network, permissions), the values accepted last time stay in force and the admins get a Telegram alert. The service account needs **Editor** access to the spreadsheet, because Finnbot writes the status back.
+
+**Telegram.** The admins hear once per change: which settings changed (old → new, or back to the default) and which values weren't applied, with the reason.
+
+**Layout.** The first sync sets up the tab: a frozen header, plain-text cells (so `07:00` or `1.50` aren't turned into a date or number), wrapped text, green and red status cells, and a warning (not a lock) when editing the columns Finnbot writes. A note on `A1` repeats the rules.
+
+**Adding a setting.** Add it to `parameters.py` as before, and a note for it to `src/parameter_notes.py` (`tests/test_remote_settings.py` fails until it has one). The next sync adds its row.
+
+## Holding news and the portfolio review (2026-10-23)
+
+Gemini was about 85% of a user's bill, and about 90% of that was output tokens, mostly thinking: no request set a thinking level, so gemini-3.6-flash thought as much as it liked. At Andres's request:
+
+1. **Thinking low, project-wide.** `GEMINI_CONFIG.effort` (`minimal`, `low`, `medium`, `high`, or `default`) sets the thinking level of every Gemini request, the holding news and the macro news (`src/gemini_settings.py`).
+2. **The portfolio review on the holdings model.** It's written by `LLM.HOLDINGS` (Claude Haiku 5.5, low) with the user's own Anthropic key, through a strict tool schema like the holdings evaluation, instead of Gemini. A user with the news off no longer needs a Gemini key.
+3. **The morning's news in the evening.** News fetched earlier the same US Eastern day is shown again (`DIGEST.NEWS_REUSE`), unless the stock moved more than `MAX_MOVE_NATR` normal days' ranges since, its signal changed, or it reported earnings; those are fetched again once the holdings are evaluated. Saved per user in `data/holding_news/<user>.json` (`src/personalized/news_reuse.py`).
+4. **Several holdings per request.** `DIGEST.SYMBOL_NEWS_BATCH_SIZE` (5) holdings share one Gemini request. A holding the answer leaves out, or every holding of an answer that can't be read, is asked for again on its own.
+5. **An output cap.** `GEMINI_CONFIG.max_output_tokens` (8,192) and `DIGEST.PORTFOLIO_REVIEW_MAX_TOKENS` (8,000) cap each answer, thinking included. Holding news cut off by the cap is asked for again one holding at a time.
+
+**Source links at low thinking.** In the first run with these settings, Gemini wrote the articles' own addresses instead of its search results' links, which Finnbot can't verify, so 0 of 10 holding-news links were kept. The prompts (holding and macro news) now ask for the grounding redirect link by name: in a test of 6 requests, 33 of 33 links were search links.
+
+**Measured** on Andres's 10 holdings, 2026-10-22:
+
+| | Before (that morning) | After |
+|---|---|---|
+| Holding news, one digest | 10 Gemini requests, $0.1165 | 2 requests, $0.0168 (with links) |
+| Holding news, a later digest the same day | Same as above | No Gemini request: all 10 reused |
+| Portfolio review | ~$0.017 (Gemini) | $0.0014 (Claude Haiku 5.5, low) |
+| Macro news request | 26 s | 6 s |
+| News links kept | 14 of 15 | 9 of 9 (holdings), 4 of 4 (macro) |
+
+Medium effort, tried twice on the same 5 stocks, cost 2.5 times as much as low and found no more stories (8-9 against 9-10), so low is the default. For a user with 10 holdings, news on, and both digests, the monthly estimate fell from about $6.60 to about $1.45 (`docs/new_user_guide.txt`, 3.10).
+
+**Not added: a count of the 5,000 free searches.** Finnbot can't know the true number: with a response schema Gemini doesn't report its searches, Google has no way to ask how much of a key's allowance is used, and the key could be used outside Finnbot.
 
 ## Known limitations
 

@@ -1,0 +1,190 @@
+"""
+The settings sheet (2026-10-23): every setting in parameters.py as a row of the sign-up spreadsheet's Parameters tab,
+with Finnbot's status. Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's request.
+"""
+import html
+import json
+import re
+from datetime import datetime, timezone
+
+import pytest
+
+import src.remote_settings as rs
+import src.settings_overrides as store
+from src.parameter_notes import own_note
+from src.parameters import params_dict
+
+NOW = datetime(2026, 10, 23, 20, 10, tzinfo=timezone.utc)  # 16:10 ET
+LATER = datetime(2026, 10, 24, 11, 10, tzinfo=timezone.utc)
+
+
+class FakeSheet:
+    """The settings tab in memory: read, write ranges like "A1:E3" or "D1", and clear."""
+
+    def __init__(self, values=None, fail=False):
+        self.values = [list(row) for row in values or []]
+        self.set_up_calls = 0
+        self.fail = fail
+
+    def read(self):
+        if self.fail:
+            raise RuntimeError("Sheets API 403")
+        return [list(row) for row in self.values]
+
+    def set_up(self, rows_needed):
+        self.set_up_calls += 1
+
+    def write(self, ranges):
+        for cells, rows in ranges.items():
+            match = re.match(r"([A-E])(\d+)", cells)
+            column, first = "ABCDE".index(match[1]), int(match[2]) - 1
+            for offset, row in enumerate(rows):
+                while len(self.values) <= first + offset:
+                    self.values.append([])
+                target = self.values[first + offset]
+                target += [""] * (5 - len(target))
+                target[column:column + len(row)] = row
+
+    def clear(self, cells):
+        first, last = (int(n) for n in re.findall(r"\d+", cells))
+        for index in range(first - 1, min(last, len(self.values))):
+            self.values[index] = [""] * 5
+
+    def row(self, name):
+        return next(row for row in self.values if row and row[0] == name)
+
+    def edit(self, name, value):
+        self.row(name)[1] = value
+
+
+@pytest.fixture
+def sheet(monkeypatch, telegram):
+    """A tab Finnbot has already filled in, and params_dict back to parameters.py's values afterwards."""
+    monkeypatch.setitem(params_dict["OPS"], "ALERT_USERS", ["Andres"])
+    seeded = FakeSheet()
+    rs.sync_settings(seeded, now=NOW)
+    yield seeded
+    store.apply_overrides(params_dict, {})
+
+
+def test_an_empty_tab_gets_every_setting_with_its_default_and_a_note(sheet):
+    assert sheet.set_up_calls == 1
+    header, rows = sheet.values[0], sheet.values[1:]
+    assert header[:3] == rs.HEADER[:3] and header[3] == "Finnbot status (read 2026-10-23 16:10 ET)"
+    names = [row[0] for row in rows]
+    assert names == [".".join(path) for path in store.leaf_paths(store.defaults())]
+    batch = sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")
+    assert batch[1] == batch[2] == "5" and batch[3] == "Default" and batch[4]
+    assert sheet.row("ACTIVE_USERS")[3].startswith("🔒")
+    assert json.loads(store.OVERRIDES_PATH.read_text(encoding="utf-8"))["overrides"] == []
+
+
+def test_every_setting_has_a_note_of_its_own_and_survives_the_round_trip():
+    for path in store.leaf_paths(store.defaults()):
+        name, default = ".".join(path), store.get_path(store.defaults(), path)
+        assert own_note(name), f"{name} needs a note in src/parameter_notes.py"
+        assert rs.parse_value(rs.format_value(default), default) == default
+
+
+def test_a_changed_value_applies_to_this_run_and_to_every_later_process(sheet, telegram):
+    digest = params_dict["DIGEST"]  # Modules keep references like this one
+    sheet.edit("DIGEST.SYMBOL_NEWS_BATCH_SIZE", "3")
+    sheet.edit("GEMINI_CONFIG.effort", "minimal")
+    plan = rs.sync_settings(sheet, now=NOW)
+    assert digest["SYMBOL_NEWS_BATCH_SIZE"] == 3 and params_dict["GEMINI_CONFIG"]["effort"] == "minimal"
+    assert sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[3] == "✅ Applied since 2026-10-23 16:10 ET"
+    assert sorted(plan.changes) == ["DIGEST.SYMBOL_NEWS_BATCH_SIZE: 5 → 3", "GEMINI_CONFIG.effort: low → minimal"]
+    assert len(telegram.messages) == 1 and "SYMBOL_NEWS_BATCH_SIZE: 5 → 3" in telegram.messages[0][1]
+    # A new process: parameters.py's values, then the saved file
+    fresh = json.loads(json.dumps(store.defaults()))
+    fresh["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] = 5
+    store.apply_overrides(fresh, store.load_overrides())
+    assert fresh["DIGEST"]["SYMBOL_NEWS_BATCH_SIZE"] == 3
+    # The next read changes nothing, keeps the time it was applied, and sends no second notice
+    rs.sync_settings(sheet, now=LATER)
+    assert sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[3] == "✅ Applied since 2026-10-23 16:10 ET"
+    assert len(telegram.messages) == 1
+
+
+@pytest.mark.parametrize("name, value, reason", [
+    ("DIGEST.SYMBOL_NEWS_BATCH_SIZE", "three", "must be a whole number"),
+    ("DIGEST.SYMBOL_NEWS_BATCH_SIZE", "0", "must be at least 1"),
+    ("MIN_SWING_SCORE", "120", "is a score out of 100"),
+    ("GEMINI_CONFIG.effort", "lots", "must be one of minimal, low, medium, high, default"),
+    ("DIGEST.OPEN_SECTIONS", "['risk', 'news']", "'news' isn't one of"),
+    ("LLM.UNIVERSAL.model", "gpt-9", "must be a model in ALLOWED_CLAUDE_MODELS"),
+    ("LLM.UNIVERSAL.effort", "xhigh", "deepseek-flash accepts none, low, high, max"),
+    ("DIGEST.PRE_MARKET_TIME_ET", "7am", "must be a time like 07:00"),
+    ("SWING_SCREEN.YAHOO_FILTERS", "[('forwardPE', '>')]", "isn't shaped like"),
+    ("OPS.HOLIDAY_NOTICE", "maybe", "must be True or False"),
+])
+def test_a_value_that_isnt_valid_is_not_applied_and_says_why(sheet, telegram, name, value, reason):
+    path = tuple(name.split("."))
+    default = store.get_path(store.defaults(), path)
+    sheet.edit(name, value)
+    rs.sync_settings(sheet, now=NOW)
+    status = sheet.row(name)[3]
+    assert status.startswith("❌ Not applied:") and reason in status and "Using the default" in status
+    assert store.get_path(params_dict, path) == default and sheet.row(name)[1] == value  # Left as typed
+    assert reason in html.unescape(telegram.messages[-1][1])
+
+
+def test_a_bad_edit_keeps_the_value_accepted_before(sheet):
+    sheet.edit("MIN_SWING_SCORE", "70")
+    rs.sync_settings(sheet, now=NOW)
+    sheet.edit("MIN_SWING_SCORE", "seventy")
+    rs.sync_settings(sheet, now=LATER)
+    assert params_dict["MIN_SWING_SCORE"] == 70.0
+    assert "Still using 70.0, accepted 2026-10-23 16:10 ET" in sheet.row("MIN_SWING_SCORE")[3]
+
+
+def test_clearing_a_value_goes_back_to_the_default(sheet, telegram):
+    sheet.edit("MIN_SWING_SCORE", "70")
+    rs.sync_settings(sheet, now=NOW)
+    sheet.edit("MIN_SWING_SCORE", "")
+    plan = rs.sync_settings(sheet, now=LATER)
+    assert params_dict["MIN_SWING_SCORE"] == 75.0 and sheet.row("MIN_SWING_SCORE")[1:4] == ["75.0", "75.0", "Default"]
+    assert plan.changes == ["MIN_SWING_SCORE: 70.0 → 75.0 (the default)"]
+
+
+def test_an_untouched_value_follows_a_new_default_in_parameters_py(sheet):
+    # The sheet still shows the old default (4) in both columns: parameters.py's 5 is used and shown
+    sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[1:3] = ["4", "4"]
+    plan = rs.sync_settings(sheet, now=NOW)
+    assert plan.overrides == {} and sheet.row("DIGEST.SYMBOL_NEWS_BATCH_SIZE")[1:3] == ["5", "5"]
+
+
+def test_active_users_and_unknown_rows_are_left_alone(sheet):
+    sheet.edit("ACTIVE_USERS", "['Mallory']")
+    sheet.values.append(["OLD_SETTING", "1", "", "", ""])
+    plan = rs.sync_settings(sheet, now=NOW)
+    assert params_dict["ACTIVE_USERS"] != ["Mallory"] and plan.overrides == {}
+    assert sheet.row("ACTIVE_USERS")[1] == repr(params_dict["ACTIVE_USERS"])
+    assert sheet.row("OLD_SETTING")[3].startswith("❓ Not a setting")
+
+
+def test_a_sheet_that_cant_be_read_keeps_the_values_accepted_before(sheet, telegram):
+    sheet.edit("MIN_SWING_SCORE", "70")
+    rs.sync_settings(sheet, now=NOW)
+    assert rs.sync_settings(FakeSheet(fail=True), now=LATER) is None
+    assert params_dict["MIN_SWING_SCORE"] == 70.0
+    assert store.load_overrides() == {("MIN_SWING_SCORE",): 70.0}
+    assert "settings sheet" in telegram.messages[-1][1]
+
+
+def test_saved_values_apply_when_parameters_py_is_imported(tmp_path, monkeypatch):
+    saved = tmp_path / "remote_settings.json"
+    saved.write_text(json.dumps({"overrides": [
+        {"path": ["MARKET_SIGNALS", "MOOD_MATRIX", "calm", "greed"], "value": repr(("Bold", "pos", "Text."))},
+        {"path": ["NOT_A_SETTING"], "value": "1"}]}), encoding="utf-8")
+    monkeypatch.setattr(store, "OVERRIDES_PATH", saved)
+    monkeypatch.setattr(store, "_defaults", None)
+    params = {"MARKET_SIGNALS": {"MOOD_MATRIX": {"calm": {"greed": ("Confident", "pos", "Old.")}}}}
+    monkeypatch.delenv(store.IGNORE_ENV)
+    store.apply_saved(params)
+    assert params["MARKET_SIGNALS"]["MOOD_MATRIX"]["calm"]["greed"] == ("Bold", "pos", "Text.")  # Still a tuple
+    assert "NOT_A_SETTING" not in params
+    monkeypatch.setenv(store.IGNORE_ENV, "1")
+    params = {"MARKET_SIGNALS": {"MOOD_MATRIX": {"calm": {"greed": ("Confident", "pos", "Old.")}}}}
+    store.apply_saved(params)
+    assert params["MARKET_SIGNALS"]["MOOD_MATRIX"]["calm"]["greed"][0] == "Confident"

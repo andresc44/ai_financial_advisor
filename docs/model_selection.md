@@ -169,6 +169,9 @@ Re-run on the same 29 holdings (Opus once, the others twice; DeepSeek Pro and So
    matched Opus closely, so the choice came down to cost and where users' data goes: Haiku keeps it with Anthropic.
    It applies to every user: the sign-up form no longer asks for a model, and the old per-user settings are ignored
    (so everyone with holdings needs an Anthropic key).
+6. **The portfolio review uses the holdings model too** (2026-10-23, to cut Gemini costs). It was on Gemini, which
+   charged mostly for thinking; Haiku 5.5 at low effort writes it with the key every user already has. This wasn't
+   part of the comparison above; details in `docs/watchdog.md` (Holding news and the portfolio review).
 
 ### Why the non-tech pick may score from 80
 

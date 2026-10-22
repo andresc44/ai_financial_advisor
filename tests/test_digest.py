@@ -144,6 +144,7 @@ def personal_env(monkeypatch):
     monkeypatch.setattr(pc, "PortfolioFetcher", FakeFetcher)
     monkeypatch.setattr(pc, "fetch_symbol_news", fake_news)
     monkeypatch.setattr(pc, "get_gemini_api_key", lambda user: "g")
+    monkeypatch.setattr(pc, "get_llm_api_key", lambda user, provider: "a")  # 2026-10-23: the review's key
     monkeypatch.setattr(pc, "review_portfolio", lambda holdings, beta, api_key, user_name=None, home=None: ([], None))
     yield SimpleNamespace(constructed=constructed, overlap=overlap, companies=companies_seen)
     for key in ("TESTUSER_INST", "TESTUSER_EMAIL", "TESTUSER_TZ"):

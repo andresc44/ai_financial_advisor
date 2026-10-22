@@ -11,10 +11,15 @@ Every test runs offline and touches nothing real:
 Anthropic, DeepSeek, and Gemini calls go through mock HTTP transports inside the tests that need them; every job
 uses Claude unless a test picks another model (2026-10-17).
 """
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# Claude-authored (2026-10-23): values accepted from the settings sheet (data/remote_settings.json) are left out, so
+# tests see parameters.py as it is on every machine
+os.environ["FINNBOT_IGNORE_SETTINGS_SHEET"] = "1"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -53,6 +58,12 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(track_record, "PERSONAL_PATH", tmp_path / "track" / "personal.jsonl")
     monkeypatch.setattr(track_record, "UNIVERSAL_PATH", tmp_path / "track" / "universal.jsonl")
     monkeypatch.setattr(usage_tracking, "LEDGER_PATH", tmp_path / "usage" / "api_usage.jsonl")
+    import src.personalized.news_reuse as news_reuse
+
+    monkeypatch.setattr(news_reuse, "CACHE_DIR", tmp_path / "holding_news")  # 2026-10-23
+    import src.settings_overrides as settings_overrides
+
+    monkeypatch.setattr(settings_overrides, "OVERRIDES_PATH", tmp_path / "remote_settings.json")  # 2026-10-23
 
     # 2026-10-17: rendered digests go to the temporary folder, and no test can email anyone by accident
     import smtplib
