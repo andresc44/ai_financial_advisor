@@ -253,8 +253,9 @@ def send_new_alerts(
         f"{html.escape(record.get('rationale') or '')}"
         for symbol, record, _ in pending
     ]
-    body = f"🚨🚨 ACTION REQUIRED: Finnbot urgent alerts for {html.escape(user_name)}:\n\n" + "\n\n".join(lines)
-    send_telegram_message(user_name, body)  # Raises on failure: nothing is logged, so it is retried next run
+    # 2026-10-23: urgent, so it starts "Urgent alert for <user>" (send_telegram_message), which names the user
+    body = "ACTION REQUIRED:\n\n" + "\n\n".join(lines)
+    send_telegram_message(user_name, body, urgent=True)  # Raises on failure: nothing is logged, so it is retried next run
     print(f"[SENT] {len(pending)} alert(s) sent to {user_name}.")
 
     sent_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

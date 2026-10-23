@@ -176,7 +176,7 @@ Details: [watchdog.md](watchdog.md), sections "How one run works" and "When Clau
 
 | Message | To | When | Starts with "Urgent alert"? |
 |---|---|---|---|
-| Sell alert (`WATCHDOG.ALERT_RECOMMENDATIONS`: urgent_sell) | User | Watchdog, once per stock per 24 h | Its own "🚨🚨 ACTION REQUIRED" heading |
+| Sell alert (`WATCHDOG.ALERT_RECOMMENDATIONS`: urgent_sell) | User | Watchdog, once per stock per 24 h | Yes |
 | A swing idea's stop or target reached | User | Digest or watchdog, once each | Yes |
 | Earnings reminder | User | Hourly digest run, about 24 h before, once per report | No |
 | Monthly idea scorecard (vs the S&P 500) | User | Once a month | No |
@@ -186,7 +186,7 @@ Details: [watchdog.md](watchdog.md), sections "How one run works" and "When Clau
 | US market holiday | Admins | Once, on the day | No |
 | Run failed or crashed, settings sheet unreadable, data source missing | Admins | At most once per 6 h per problem (`OPS.ALERT_COOLDOWN_HOURS`) | No |
 
-Admins are `OPS.ALERT_USERS` (Andres only). Everyone else's notices say "Contact Andres to address this issue." instead of the fix.
+Every message is addressed to its reader by name: "🚨 Urgent alert for <name>:" for the urgent ones, "Hi <name>," for the rest (`send_telegram.send_telegram_message`). Admins are `OPS.ALERT_USERS` (Andres only). Everyone else's notices say "Contact Andres to address this issue." instead of the fix.
 
 ---
 

@@ -134,6 +134,14 @@ def test_users_run_in_parallel_and_failures_alert_admins(monkeypatch, telegram):
 
 
 # --------------------------------------------------------------------------------------------- notices
+def test_a_sell_alert_is_sent_as_urgent(telegram):
+    # 2026-10-23 (Andres): urgent, so it starts "Urgent alert for <user>" (send_telegram_message)
+    states = {"XYZ": {"recommendation": "urgent_sell", "rationale": "Guidance cut.", "evaluated_at": NOW.isoformat()}}
+    logs = wd.send_new_alerts("Andres", states, {"XYZ"}, EMPTY_LOG, NOW)
+    assert telegram.urgent == [True] and len(logs) == 1
+    assert telegram.messages[0][1] == "ACTION REQUIRED:\n\n<b>XYZ</b> - URGENT SELL: Guidance cut."
+
+
 def test_alert_admins_cooldown_and_send_failures(telegram):
     notices.alert_admins("digest failed for Steven", "RuntimeError('boom')")
     notices.alert_admins("digest failed for Steven", "RuntimeError('boom')")

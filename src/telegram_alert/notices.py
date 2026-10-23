@@ -152,7 +152,8 @@ def send_user_notice(
     """
     Sends `body` (Telegram HTML) to the user, at most once per cooldown for each (subject, reason), and returns the
     alert log with the new row. A failed send is only a warning and isn't logged, so it is retried next run.
-    2026-10-23: `urgent` (only for something urgent and time-sensitive) starts it with "Urgent alert for <user>".
+    2026-10-23: `urgent` (only for something urgent and time-sensitive) starts it with "Urgent alert for <user>";
+    any other message starts "Hi <user>," (send_telegram_message).
     """
     key = alert_key(subject, reason)
     if is_alert_suppressed(alert_logs, user_name, key, cooldown_hours=cooldown_hours):

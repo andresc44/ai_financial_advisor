@@ -80,7 +80,8 @@ def test_an_empty_tab_gets_every_setting_with_its_default_and_a_note(sheet):
 
 
 def test_only_urgent_telegram_messages_say_so(monkeypatch):
-    # 2026-10-23 (Andres): "Urgent alert for <user>" only on something urgent and time-sensitive
+    # 2026-10-23 (Andres): "Urgent alert for <user>" only on something urgent and time-sensitive, and every message
+    # addressed to the user by name
     import src.telegram_alert.send_telegram as send_telegram
 
     sent = []
@@ -91,7 +92,7 @@ def test_only_urgent_telegram_messages_say_so(monkeypatch):
                         type("Ok", (), {"raise_for_status": lambda self: None})())
     send_telegram.send_telegram_message("Andres", "Settings changed.")
     send_telegram.send_telegram_message("Andres", "SWK fell to its stop.", urgent=True)
-    assert sent == ["Settings changed.", "<b>\U0001f6a8 Urgent alert for Andres:</b>\n\nSWK fell to its stop."]
+    assert sent == ["Hi Andres,\n\nSettings changed.", "<b>\U0001f6a8 Urgent alert for Andres:</b>\n\nSWK fell to its stop."]
 
 
 def test_every_setting_has_a_note_of_its_own_and_survives_the_round_trip():

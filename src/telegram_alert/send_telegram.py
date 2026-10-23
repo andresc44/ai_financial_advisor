@@ -1,3 +1,4 @@
+import html
 import os
 import sys
 from pathlib import Path
@@ -63,9 +64,10 @@ def send_telegram_column(
 def send_telegram_message(user_name: str, message: str, urgent: bool = False) -> bool:
     """
     Sends a custom message to the user's Telegram chat.
-    Claude-authored (2026-10-23, Andres): only an `urgent` message starts with "Urgent alert for <user>" (a swing idea's
-    position reaching its stop or target). Every message used to, notices about settings, sign-ups, and scorecards
-    included; each has its own heading, and the watchdog's sell alerts their own "ACTION REQUIRED" line.
+    Claude-authored (2026-10-23, Andres): every message is addressed to the user by name. Only an `urgent` one (a sell
+    alert, or a swing idea's position reaching its stop or target) starts with "Urgent alert for <user>"; every other
+    one starts "Hi <user>,". Before, every message said "Urgent Alert", notices about settings, sign-ups, and
+    scorecards included.
     """
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
 
@@ -86,7 +88,8 @@ def send_telegram_message(user_name: str, message: str, urgent: bool = False) ->
             "Missing credentials. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env"
         )
 
-    formatted_message = f"<b>🚨 Urgent alert for {user_name}:</b>\n\n{message}" if urgent else message
+    name = html.escape(user_name)
+    formatted_message = f"<b>🚨 Urgent alert for {name}:</b>\n\n{message}" if urgent else f"Hi {name},\n\n{message}"
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
