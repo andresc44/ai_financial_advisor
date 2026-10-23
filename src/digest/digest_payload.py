@@ -80,7 +80,7 @@ class DigestPayload:
         self.payload = {
             "date": curr_date,
             "period": digest_period,  # Claude-authored (2026-10-17): for create_html's header and file name
-            "subject": f"Finnbot {digest_period} Digest {curr_date}",
+            "subject": f"{digest_period} Digest {curr_date}",
             "title": "Daily Finnbot Digest",
         }
     def universal_content(self):
