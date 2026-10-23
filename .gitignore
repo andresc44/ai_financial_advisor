@@ -270,3 +270,6 @@ LLM_input*.json
 data/holding_news/
 # Claude-authored (2026-10-23): settings accepted from the settings sheet on this computer (src/config/remote_settings.py)
 data/remote_settings.json
+
+ai_financial_advisor.code-workspace
+client_secret_224142890699-so503l1s8rt9fudp6sqj6h9d0ssmlbkm.apps.googleusercontent.com.json
