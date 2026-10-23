@@ -17,8 +17,8 @@ import src.personalized.add_metrics as add_metrics
 import src.personalized.holdings_state as holdings_state
 import src.personalized.personalized_consolidated as pc
 import src.personalized.symbol_specific_news as news
-import src.track_record as track_record
-from src.check_config import check_user, env_template
+import src.tracking.track_record as track_record
+from src.config.check_config import check_user, env_template
 from src.personalized.portfolio_review import SYSTEM_PROMPT, build_portfolio_summary
 from src.personalized.user_profiles import USER_PROFILES, build_profile, env_prefix
 
@@ -159,7 +159,7 @@ def test_news_runs_while_claude_evaluates(personal_env):
 
 
 def test_payload_reports_only_this_users_api_spend(personal_env, monkeypatch):
-    import src.usage_tracking as usage
+    import src.tracking.usage_tracking as usage
 
     def call(user):
         return usage.record_anthropic_response(user, "digest", SimpleNamespace(model="claude-opus-5-5", usage=SimpleNamespace(
@@ -440,7 +440,7 @@ def test_missed_digest_fails_the_heartbeat_and_alerts(digest_run, monkeypatch, t
 
 
 def test_run_status_file(tmp_path, monkeypatch):
-    import src.run_logging as run_logging
+    import src.ops.run_logging as run_logging
 
     monkeypatch.setattr(run_logging, "LOG_DIR", tmp_path / "logs")
     run_logging.write_run_status("digest", "Pre-Market 2026-10-15: sent 2, failed 0 in 31s.\n")

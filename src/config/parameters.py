@@ -4,9 +4,9 @@ params_dict = {
     # profile in src/personalized/user_profiles.py. Their .env settings still decide what they get: the
     # pre-/post-market digest (Receive_*_Digest), and the watchdog (holdings source + Telegram chat ID, and
     # watchdog_interval_hours > 0).
-    # 2026-10-22: synced from the sign-up sheet at the start of every cron digest run (src/import_signup.py): the
+    # 2026-10-22: synced from the sign-up sheet at the start of every cron digest run (src/users/import_signup.py): the
     # sheet's users with nothing required missing. Changes made here are replaced; change the sheet instead.
-    "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/import_signup.py): edit the sheet
+    "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/users/import_signup.py): edit the sheet
         "Andres",
     ],
     # Lookback and Lookahead Windows (Days)
@@ -288,7 +288,7 @@ params_dict = {
         "MACRO_NEWS": "gemini-3.6-flash",        # Top macro stories in the universal content (src/universal/market_news.py)
     },
     # Claude-authored (2026-10-23, at Andres's request): settings for every Gemini call in the project
-    # (src/gemini_settings.py). Until then no call set a thinking level, so gemini-3.6-flash thought as much as it
+    # (src/llm/gemini_settings.py). Until then no call set a thinking level, so gemini-3.6-flash thought as much as it
     # liked: ~90% of the Gemini bill was output tokens, mostly thinking (~2.9K output tokens for ~1.1K in per holding).
     "GEMINI_CONFIG": {
         "effort": "low",            # How much Gemini thinks before answering: minimal | low | medium | high, or
@@ -298,7 +298,7 @@ params_dict = {
     },
 
     # Claude-authored (2026-10-16): which LLM does each job. "model" is any key of ALLOWED_CLAUDE_MODELS (Anthropic) or
-    # ALLOWED_DEEPSEEK_MODELS (DeepSeek); the provider follows from it (src/llm_models.py). "effort" must be one the
+    # ALLOWED_DEEPSEEK_MODELS (DeepSeek); the provider follows from it (src/llm/llm_models.py). "effort" must be one the
     # model accepts:
     #   Claude:   low | medium | high | xhigh | max
     #   DeepSeek: none (non-thinking, like the old V3 / deepseek-chat) | low | high | max (thinking, like the old R1 /
@@ -329,7 +329,7 @@ params_dict = {
         # <NAME>_HOLDINGS_LLM_MODEL / _EFFORT are ignored (user_settings.get_llm_settings). UNIVERSAL_LLM_MODEL /
         # UNIVERSAL_LLM_EFFORT in .env override UNIVERSAL on one machine.
     },
-    # Claude-authored (2026-10-16): DeepSeek request settings (src/deepseek_client.py). Note: prompts and the user's
+    # Claude-authored (2026-10-16): DeepSeek request settings (src/llm/deepseek_client.py). Note: prompts and the user's
     # holdings data go to DeepSeek's servers when a DeepSeek model is chosen.
     "DEEPSEEK_CONFIG": {
         "base_url": "https://api.deepseek.com",
@@ -585,7 +585,7 @@ params_dict = {
         # Claude-authored (2026-10-21): the currencies a user can set as their home currency (<NAME>_HOME_CURRENCY).
         # The digest's overview shows the portfolio in it, and also in USD when it isn't USD; the holdings stay in USD.
         # Holdings themselves can be in these currencies too (a .DE, .L, .AX, or .CL listing, or one SnapTrade or the
-        # sheet says is in EUR, GBP, AUD, or COP); src/fx_rates.py converts them to USD.
+        # sheet says is in EUR, GBP, AUD, or COP); src/market/fx_rates.py converts them to USD.
         "HOME_CURRENCIES": ["USD", "CAD", "EUR", "GBP", "AUD", "COP"],
         "DEFAULT_HOME_CURRENCY": "USD",  # For a user without a valid <NAME>_HOME_CURRENCY
     },
@@ -675,7 +675,7 @@ params_dict = {
         },
     },
 
-    # Claude-authored (2026-10-16): list prices for the cost estimates in each digest (src/usage_tracking.py).
+    # Claude-authored (2026-10-16): list prices for the cost estimates in each digest (src/tracking/usage_tracking.py).
     # USD per 1M tokens. Each model has a schedule of {"from": date, ...} entries so a published price change applies
     # from its date. Update AS_OF and the entries when prices change; models missing here are counted but not costed.
     "API_PRICES": {
@@ -719,7 +719,7 @@ params_dict = {
         "DEEPSEEK_PEAK_HOURS_UTC": [[1, 4], [6, 10]],
     },
 
-    # Claude-authored (2026-10-15): failure alerts and run logs (src/telegram_alert/notices.py, src/run_logging.py)
+    # Claude-authored (2026-10-15): failure alerts and run logs (src/telegram_alert/notices.py, src/ops/run_logging.py)
     "OPS": {
         "ALERT_USERS": ["Andres"],     # Users (with a Telegram chat ID) told when a digest or watchdog run fails
         "ALERT_COOLDOWN_HOURS": 6,     # The same failure is reported at most once per this many hours
@@ -860,7 +860,7 @@ params_dict = {
 
 # Claude-authored (2026-10-23, at Andres's request): values changed in the "Parameters" tab of the sign-up spreadsheet
 # replace the ones above. Each cron digest run reads that tab and keeps the accepted values in data/remote_settings.json
-# (src/remote_settings.py), and every Finnbot process applies them here as it starts. This file stays the defaults.
-from src.settings_overrides import apply_saved  # noqa: E402
+# (src/config/remote_settings.py), and every Finnbot process applies them here as it starts. This file stays the defaults.
+from src.config.settings_overrides import apply_saved  # noqa: E402
 
 apply_saved(params_dict)

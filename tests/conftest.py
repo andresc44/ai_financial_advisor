@@ -45,12 +45,12 @@ def isolated(tmp_path, monkeypatch):
     """Redirects every file the code writes, and blocks live Yahoo downloads."""
     import yfinance
 
-    import src.fx_rates as fx_rates
-    import src.idea_positions as idea_positions
+    import src.market.fx_rates as fx_rates
+    import src.tracking.idea_positions as idea_positions
     import src.personalized.add_metrics as add_metrics
     import src.telegram_alert.notices as notices
-    import src.track_record as track_record
-    import src.usage_tracking as usage_tracking
+    import src.tracking.track_record as track_record
+    import src.tracking.usage_tracking as usage_tracking
 
     monkeypatch.setattr(add_metrics, "CONTEXT_CACHE_PATH", tmp_path / "market_context_cache.json")
     monkeypatch.setattr(idea_positions, "STATE_PATH", tmp_path / "idea_positions.json")  # 2026-10-22
@@ -63,7 +63,7 @@ def isolated(tmp_path, monkeypatch):
     import src.personalized.news_reuse as news_reuse
 
     monkeypatch.setattr(news_reuse, "CACHE_DIR", tmp_path / "holding_news")  # 2026-10-23
-    import src.settings_overrides as settings_overrides
+    import src.config.settings_overrides as settings_overrides
 
     monkeypatch.setattr(settings_overrides, "OVERRIDES_PATH", tmp_path / "remote_settings.json")  # 2026-10-23
 
@@ -89,12 +89,12 @@ def isolated(tmp_path, monkeypatch):
     # key (with deepseek-flash the default, Claude-mocked tests had sent real requests).
     import httpx
 
-    import src.deepseek_client as deepseek_client
-    from src.parameters import params_dict
+    import src.llm.deepseek_client as deepseek_client
+    from src.config.parameters import params_dict
 
     monkeypatch.setitem(params_dict, "LLM", {"UNIVERSAL": {"model": "claude-sonnet-5-5", "effort": "medium"},
                                              "HOLDINGS": {"model": "claude-sonnet-5-5", "effort": "medium"}})
-    import src.llm_models as llm_models
+    import src.llm.llm_models as llm_models
 
     monkeypatch.setattr(llm_models, "ENV_OVERRIDES", {})  # .env's UNIVERSAL_LLM_MODEL / _EFFORT too
     # 2026-10-22: no extra LLM requests for borderline idea scores or for urgent / profit sells, so tests that count

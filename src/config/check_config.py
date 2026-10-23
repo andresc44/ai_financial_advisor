@@ -4,8 +4,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-15, a
 users routine.
 
 Usage (from the project root):
-  venv/bin/python -m src.check_config                   # check the shared keys and every user in ACTIVE_USERS
-  venv/bin/python -m src.check_config --template Maria  # print the .env lines to fill in for a new user
+  venv/bin/python -m src.config.check_config                   # check the shared keys and every user in ACTIVE_USERS
+  venv/bin/python -m src.config.check_config --template Maria  # print the .env lines to fill in for a new user
 
 Secret values are never printed; only settings like the holdings source or True/False flags are shown when they're
 invalid. Exits with code 1 when anything required is missing or invalid, so it can gate a deploy.
@@ -19,13 +19,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from src.personalized.user_profiles import PROFILE_ENV_SUFFIXES, build_profile, env_setting
-from src import llm_models
+from src.llm import llm_models
 from src.personalized.user_settings import get_active_users, get_llm_settings
 
 # Shared .env keys: (required, what it's for)
@@ -35,7 +35,7 @@ SHARED_KEYS = {
     # Claude-authored (2026-10-16): only the one LLM["UNIVERSAL"] needs is required (see run_check)
     "ANTHROPIC_API_KEY": (True, "Claude for the universal recommendations (shared), when LLM['UNIVERSAL'] is Claude"),
     "DEEPSEEK_API_KEY": (False, "DeepSeek for the universal recommendations (shared), when LLM['UNIVERSAL'] is DeepSeek"),
-    # Claude-authored (2026-10-17): override LLM["UNIVERSAL"] in parameters.py (src/llm_models.ENV_OVERRIDES)
+    # Claude-authored (2026-10-17): override LLM["UNIVERSAL"] in parameters.py (src/llm/llm_models.ENV_OVERRIDES)
     "UNIVERSAL_LLM_MODEL": (False, "LLM for the universal recommendations: a model in ALLOWED_CLAUDE_MODELS or "
                                     "ALLOWED_DEEPSEEK_MODELS (default LLM['UNIVERSAL'])"),
     "UNIVERSAL_LLM_EFFORT": (False, "Its effort. Claude: low, medium, high, xhigh, max; DeepSeek: none (no thinking), "
@@ -46,10 +46,10 @@ SHARED_KEYS = {
     "GOOGLE_APPLICATION_CREDENTIALS": (False, "Service-account JSON path; needed to read private Google Sheets"),
     "GEMINI_API_KEY": (False, "Gemini for the macro news (shared; only when headline news is enabled)"),
     "FRED_API_KEY": (False, "FRED yield curve (only when market indicators are enabled)"),
-    # Claude-authored (2026-10-22): src/import_signup.py, also run at the start of every cron digest run
+    # Claude-authored (2026-10-22): src/users/import_signup.py, also run at the start of every cron digest run
     "SIGNUP_FORM_SHEET_ID": (False, "The sign-up form's answers sheet, shared with the service account; without it "
                                     "new sign-ups aren't imported"),
-    # Claude-authored (2026-10-23): src/remote_settings.py, also run at the start of every cron digest run
+    # Claude-authored (2026-10-23): src/config/remote_settings.py, also run at the start of every cron digest run
     "SETTINGS_TAB_GID": (False, "The settings tab (gid) in that same spreadsheet; without it the tab named "
                                 "'Parameters' is used"),
     # Claude-authored (2026-10-16): monitoring and backups, read by scripts/cron_job.sh and scripts/backup_to_drive.sh
@@ -219,7 +219,7 @@ def run_check() -> bool:
 def env_template(user_name: str) -> str:
     """The .env lines to fill in for a new user, with what each value should be."""
     profile = build_profile(user_name)
-    lines = [f"# --- {user_name} (python -m src.check_config --template {user_name}) ---"]
+    lines = [f"# --- {user_name} (python -m src.config.check_config --template {user_name}) ---"]
     for key in PROFILE_ENV_SUFFIXES:
         rule, description = USER_KEYS[key]
         needed = {"always": "required", "holdings": "required with holdings", "optional": "optional",

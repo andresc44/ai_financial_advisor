@@ -13,7 +13,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
     
-from src.constants import (
+from src.universal.recommendations.constants import (
     INDUSTRIES,
     REGION_COUNTRY_MAP,
     SECTORS,

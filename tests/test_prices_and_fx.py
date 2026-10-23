@@ -5,9 +5,9 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-import src.fx_rates as fx_rates
+import src.market.fx_rates as fx_rates
 import src.personalized.pull_holdings_data as phd
-from src.market_session import exchange_calendar_code, latest_regular_session
+from src.market.market_session import exchange_calendar_code, latest_regular_session
 
 ET = ZoneInfo("America/New_York")
 

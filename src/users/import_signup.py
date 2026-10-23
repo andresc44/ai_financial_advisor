@@ -3,11 +3,11 @@
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-22, at Andres's request.
 
 Usage (from the project root):
-  venv/bin/python -m src.import_signup --list              # every answer: row, time, name, email, holdings
-  venv/bin/python -m src.import_signup Sam --dry-run       # what Sam's newest answer would change; writes nothing
-  venv/bin/python -m src.import_signup Sam                 # write it to .env, and activate Sam if nothing's missing
-  venv/bin/python -m src.import_signup Sam --enter-keys    # then type the keys still missing (hidden) to save them
-  venv/bin/python -m src.import_signup --sync              # sync everyone now, as every cron digest run does
+  venv/bin/python -m src.users.import_signup --list              # every answer: row, time, name, email, holdings
+  venv/bin/python -m src.users.import_signup Sam --dry-run       # what Sam's newest answer would change; writes nothing
+  venv/bin/python -m src.users.import_signup Sam                 # write it to .env, and activate Sam if nothing's missing
+  venv/bin/python -m src.users.import_signup Sam --enter-keys    # then type the keys still missing (hidden) to save them
+  venv/bin/python -m src.users.import_signup --sync              # sync everyone now, as every cron digest run does
 Options: --no-activate leaves ACTIVE_USERS alone; --overwrite replaces an existing user whose email differs;
 --sheet ID reads another answers sheet than SIGNUP_FORM_SHEET_ID.
 
@@ -29,7 +29,7 @@ What applying one answer (the user's newest, matched by first name or email) doe
 - Checks what's still missing or invalid for the user's choices, API keys included (check_config's rules, plus the
   Telegram chat ID when they chose Telegram). The form never asks for keys, which users send privately; secret
   values are never printed.
-- By hand (python -m src.import_signup Sam), adds the name to ACTIVE_USERS in src/parameters.py once nothing required
+- By hand (python -m src.users.import_signup Sam), adds the name to ACTIVE_USERS in src/config/parameters.py once nothing required
   is missing. The sync instead sets the whole list from the sheet. A sign-up still waiting for its keys becomes
   active at the first digest run after they're in .env.
 """
@@ -53,18 +53,18 @@ from typing import Optional
 import requests
 from dotenv import dotenv_values, load_dotenv
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import llm_models
-from src.admins import admins
-from src.check_config import USER_KEYS, VALUE_CHECKS, _required, news_on
-from src.parameters import params_dict
+from src.llm import llm_models
+from src.users.admins import admins
+from src.config.check_config import USER_KEYS, VALUE_CHECKS, _required, news_on
+from src.config.parameters import params_dict
 from src.personalized.user_profiles import MISSING_VALUE, USER_PROFILES, build_profile, env_prefix
 
 ENV_PATH = project_root / ".env"
-PARAMS_PATH = project_root / "src" / "parameters.py"
+PARAMS_PATH = project_root / "src" / "config" / "parameters.py"
 SHEET_ID_KEY = "SIGNUP_FORM_SHEET_ID"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly", "https://www.googleapis.com/auth/drive.readonly"]
 # Settings the form never asks for: sent privately, never printed, and offered by --enter-keys when missing
@@ -305,7 +305,7 @@ def update_env(path: Path, prefix: str, name: str, assignments: dict[str, Option
             lines[own[-1] + 1:own[-1] + 1] = additions
         else:
             lines += ["", f"# --- {name} (from the sign-up form, {date.today().isoformat()}; "
-                          f"python -m src.import_signup {name}) ---"] + additions
+                          f"python -m src.users.import_signup {name}) ---"] + additions
     if changes and not dry_run:
         _write_atomically(path, newline.join(lines) + newline)
     return changes
@@ -391,7 +391,7 @@ def set_active_users(path: Path, names: list[str], dry_run: bool = False) -> boo
         return False
     indent = re.match(r"^\s*", lines[start]).group(0)
     after = _code(lines[end]).split("]", 1)[1]  # Usually ","
-    block = ([f'{indent}"ACTIVE_USERS": [  # Synced from the sign-up sheet (src/import_signup.py): edit the sheet']
+    block = ([f'{indent}"ACTIVE_USERS": [  # Synced from the sign-up sheet (src/users/import_signup.py): edit the sheet']
              + [f'{indent}    "{name}",' for name in names] + [f"{indent}]{after.rstrip()}"])
     text = "\n".join(lines[:start] + block + lines[end + 1:])
     try:
@@ -620,7 +620,7 @@ def _activation_notice(result: Applied) -> tuple[str, str]:
 def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, sheet_id: Optional[str] = None) -> list[str]:
     """
     Claude-authored (2026-10-22): run first in every cron digest run (digest_payload.__main__), before the users are
-    read, and by `python -m src.import_signup --sync`. The sign-up sheet is the reference (Andres, 2026-10-22):
+    read, and by `python -m src.users.import_signup --sync`. The sign-up sheet is the reference (Andres, 2026-10-22):
     - Every user's newest answer is applied to .env each run. Only settings that differ from the sheet are written,
       so a hand edit to a setting the form covers goes back to the sheet's value: edit the answer instead.
     - ACTIVE_USERS becomes exactly the sheet's users with nothing required missing, in the sheet's order: in
@@ -698,7 +698,7 @@ def _report_answer(result: Applied, answer: Answer, notices: list[tuple[str, str
         notices.append((f"conflict {plan.name} {fingerprint}", (
             f"⚠️ Sign-up from {name} ({html.escape(plan.settings.get('destination_email', ''))}) wasn't "
             f"imported: {name} is already set up with another email. If it's the same person, run "
-            f"python -m src.import_signup {name} --overwrite; otherwise ask them to sign up with another name.")))
+            f"python -m src.users.import_signup {name} --overwrite; otherwise ask them to sign up with another name.")))
         return
     if not result.changes:
         return
@@ -754,7 +754,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if result.activated and not args.dry_run:  # 2026-10-22: a user added by hand is announced like the sync's
         _notify_admins(*_activation_notice(result))
     if not args.dry_run and result.status == "applied":
-        print("\nCheck everything with: venv/bin/python -m src.check_config")
+        print("\nCheck everything with: venv/bin/python -m src.config.check_config")
     ok = result.status == "applied" and not _incomplete(result.rows, result.plan)
     return 0 if ok else 1
 

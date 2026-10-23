@@ -33,13 +33,13 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import llm_models
-from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, inline_refs, validated_answer
-from src.fx_rates import CURRENCY_SYMBOLS
-from src.parameters import params_dict
+from src.llm import llm_models
+from src.llm.deepseek_client import DeepSeekClient, DeepSeekError, build_request, inline_refs, validated_answer
+from src.market.fx_rates import CURRENCY_SYMBOLS
+from src.config.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error
 from src.personalized.holdings_state import _clean_float
-from src.usage_tracking import record_anthropic_response, record_deepseek_response
+from src.tracking.usage_tracking import record_anthropic_response, record_deepseek_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
 CATEGORIES = ("WATCH", "NOTE")

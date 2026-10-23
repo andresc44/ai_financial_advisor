@@ -24,11 +24,11 @@ from zoneinfo import ZoneInfo
 import exchange_calendars as xcals
 import pandas as pd
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 WATCHDOG_PARAMS = params_dict["WATCHDOG"]
 MARKET_TZ = ZoneInfo(WATCHDOG_PARAMS["TIMEZONE"])

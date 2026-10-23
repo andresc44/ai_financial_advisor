@@ -16,7 +16,7 @@ Finnbot. Details:
   grounding is free for the first GEMINI_FREE_SEARCH_REQUESTS_PER_MONTH requests per key per month, so search cost
   is only counted for requests beyond that within the month (Finnbot's own requests only).
 The shared keys used for the universal content are recorded under user "_shared".
-- 2026-10-16: DeepSeek (when a job uses a DeepSeek model, src/llm_models.py): cache misses, cache hits, and output
+- 2026-10-16: DeepSeek (when a job uses a DeepSeek model, src/llm/llm_models.py): cache misses, cache hits, and output
   (thinking included) at the price in effect at the time of the call, peak or off-peak (API_PRICES["deepseek"],
   DEEPSEEK_PEAK_HOURS_UTC). The model recorded is the one requested, which is the one billed.
 """
@@ -27,11 +27,11 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 LEDGER_PATH = project_root / "data" / "usage" / "api_usage.jsonl"
 SHARED = "_shared"  # Ledger "user" for the universal content's shared keys

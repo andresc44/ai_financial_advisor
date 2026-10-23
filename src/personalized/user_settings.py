@@ -10,7 +10,7 @@ as part of the per-user watchdog scheduling and model selection plan (see docs/w
   way as an invalid, expired, or out-of-credit key. Added get_active_users (params_dict["ACTIVE_USERS"]), the
   one list of users shared by the digest and the watchdog.
 - 2026-10-16: get_llm_settings replaces get_claude_overrides: a user's holdings model can be Claude or DeepSeek
-  (src/llm_models.py), with their own key for that provider (get_llm_api_key). wants_holding_news reads the
+  (src/llm/llm_models.py), with their own key for that provider (get_llm_api_key). wants_holding_news reads the
   per-user switch for the digest's holding news.
 
 Why this module exists:
@@ -31,8 +31,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import llm_models
-from src.parameters import params_dict
+from src.llm import llm_models
+from src.config.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.user_profiles import USER_PROFILES, env_setting
 

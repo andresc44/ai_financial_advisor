@@ -23,9 +23,9 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.admins import admins
-from src.market_session import MARKET_TZ, _get_calendar, market_date
-from src.parameters import params_dict
+from src.users.admins import admins
+from src.market.market_session import MARKET_TZ, _get_calendar, market_date
+from src.config.parameters import params_dict
 from src.telegram_alert.notices import send_notice_now
 
 US_CALENDAR = "XNYS"

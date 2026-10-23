@@ -26,8 +26,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.market_session import MARKET_TZ, market_date
-from src.parameters import params_dict
+from src.market.market_session import MARKET_TZ, market_date
+from src.config.parameters import params_dict
 from src.personalized.add_metrics import _load_context_cache
 from src.personalized.holdings_state import get_user_state, load_state
 from src.personalized.LLM_hold_instr import current_recommendation

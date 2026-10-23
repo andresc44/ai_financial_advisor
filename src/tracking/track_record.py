@@ -9,7 +9,7 @@ advice was any good. Every recommendation is now appended (never rewritten) to d
 - universal.jsonl: each stock picked by the universal recommendations - time, list (long_term / swing), symbol,
   longScore, swingScore, price at the time.
 
-`python -m src.track_record [--since YYYY-MM-DD]` reports each recommendation's return 1, 5, and 20 trading days
+`python -m src.tracking.track_record [--since YYYY-MM-DD]` reports each recommendation's return 1, 5, and 20 trading days
 later (Yahoo daily closes; too-recent ones count as pending) next to the S&P 500 (SPY) over the same days,
 grouped by recommendation (personal) and by list (universal). Returns are percentages, so currency doesn't matter.
 """
@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 

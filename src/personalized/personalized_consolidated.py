@@ -13,18 +13,18 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.fx_rates import usd_rates
+from src.market.fx_rates import usd_rates
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import cached_company_names
 from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.news_reuse import as_items, news_to_refresh, remember_news, same_day_news
 from src.personalized.portfolio_review import review_portfolio, review_settings
-from src.idea_positions import attach_idea_origins
+from src.tracking.idea_positions import attach_idea_origins
 from src.personalized.symbol_specific_news import SymbolNewsItem, fetch_symbol_news
 from src.personalized.user_settings import get_gemini_api_key, get_home_currency, get_llm_api_key, wants_holding_news
 from src.telegram_alert.notices import holdings_issue_body, holdings_issue_subject, send_notice_now
-from src.usage_tracking import usage_summary
+from src.tracking.usage_tracking import usage_summary
 
 def _holding_companies(full_data: pd.DataFrame) -> dict[str, Optional[str]]:
     """
@@ -158,7 +158,7 @@ def section_started_at(started_at: datetime, home_timezone: str, user_name: str)
     Claude-authored (2026-10-16): when this user's personal section started, in their home timezone (the IANA name in
     their <NAME>_TIMEZONE setting) and in US Eastern, the market's clock. Display strings are ready for the email;
     the ISO values are there for any other formatting. An invalid timezone leaves the home fields None (with a
-    warning) instead of stopping the digest; `python -m src.check_config` reports it as INVALID.
+    warning) instead of stopping the digest; `python -m src.config.check_config` reports it as INVALID.
     """
     eastern = started_at.astimezone(US_EASTERN)
     try:
@@ -247,7 +247,7 @@ def get_personal_content(user_name: str = "Andres"):
     for issue in portfolio.holdings_issues:
         send_notice_now(user_name, holdings_issue_subject(issue), issue["reason"], holdings_issue_body(issue))
     # Claude-authored (2026-10-22): holdings bought from Finnbot's ideas (the card's label, the plan in the AI review,
-    # target / stop alerts), before anything is evaluated (src/idea_positions.py)
+    # target / stop alerts), before anything is evaluated (src/tracking/idea_positions.py)
     portfolio.full_data = attach_idea_origins(user_name, portfolio.full_data, datetime.now(timezone.utc))
     # Claude-authored (2026-10-15): Gemini news only needs each stock's symbol and name, so it runs in a background
     # thread while market data and Claude run below. The portfolio review then waits for both. Evaluations the
@@ -286,6 +286,6 @@ def get_personal_content(user_name: str = "Andres"):
         "api_key_issues": _key_issue_notices(holdings_dict, news_key_error, review_key_error),
         "data_source_issues": portfolio.holdings_issues,  # Claude-authored (2026-10-15): e.g. a disabled connection
         # Claude-authored (2026-10-16): estimated spend on this user's own Anthropic and Gemini keys - this digest,
-        # today, and the month so far (watchdog runs included); see src/usage_tracking.py
+        # today, and the month so far (watchdog runs included); see src/tracking/usage_tracking.py
         "api_usage": usage_summary(user_name, started_at),
     }

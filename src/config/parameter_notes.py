@@ -2,7 +2,7 @@
 """
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request.
 
-src/remote_settings.py writes these into the settings sheet next to each setting. Keys are the setting's name as the
+src/config/remote_settings.py writes these into the settings sheet next to each setting. Keys are the setting's name as the
 sheet shows it (its keys joined by dots); a key with "*" covers a group (fnmatch). A setting without a note here gets
 the comment written next to it in parameters.py instead, so a new setting is never left blank; tests/test_remote_settings.py
 checks that every setting has a note of its own. parameters.py's comments keep the history and the reasons.

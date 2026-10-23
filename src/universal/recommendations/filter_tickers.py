@@ -29,7 +29,7 @@ load_dotenv(dotenv_path=env_path, override=True)
 from src.universal.recommendations.yahoo_filter_helper import filter_yahoo_tickers
 from src.universal.recommendations.finnhub_filter_helper import filter_finnhub_tickers
 from src.universal.recommendations.twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from src.universal.recommendations.data_source_guard import (
     DataSourceIssues,
     GuardedFinnhubClient,
@@ -495,7 +495,7 @@ class DataFetcher:
     ) -> Dict[str, Dict[str, Any]]:
         """Fetches series data across Finnhub endpoints using ALL CAPS parameter keys.
 
-        Falls back to src.parameters.params_dict if no custom params_dict is passed.
+        Falls back to src.config.parameters.params_dict if no custom params_dict is passed.
         """
         if tickers is None:
             tickers = self.all_tickers

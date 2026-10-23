@@ -24,11 +24,11 @@ from typing import Any, Iterable, Optional
 import pandas as pd
 import yfinance as yf
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.market_session import listing
+from src.market.market_session import listing
 
 CACHE_PATH = project_root / "data" / "fx_rates.json"
 _LOCK = threading.Lock()  # Users' holdings load in parallel threads; one fetch and cache write at a time

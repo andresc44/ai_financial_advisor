@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 import requests
 
-import src.track_record as track_record
+import src.tracking.track_record as track_record
 import src.universal.macro_indicators as macro
 import src.universal.market_news as market_news
 import src.universal.recommendations.LLM_recommendation as universal_llm
@@ -433,7 +433,7 @@ def test_one_listing_per_company_keeps_the_most_traded():
 
 def test_configured_filters_are_well_formed():
     """A malformed rule would raise mid-run (unknown operator) or never match (wrong section)."""
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
 
     operators = {"<", "<=", ">", ">=", "==", "=", "!="}
     assert all(len(rule) == 3 and rule[1] in operators for rule in params_dict["YAHOO_FILTERS"])
@@ -682,7 +682,7 @@ def test_with_three_or_more_long_term_picks_at_most_two_are_tech(monkeypatch, ca
 
 
 def test_configured_sector_rules_are_known():
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
     from src.universal.recommendations.scorer import SECTOR_RULES
 
     assert set(params_dict["PICK_SECTOR_RULES"]) == {"LONG_TERM", "SWING"}
@@ -735,7 +735,7 @@ def test_daily_bars_reach_the_llm_input(monkeypatch):
 
 
 def test_daily_bars_setting():
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
 
     assert params_dict["DAILY_BARS_DAYS"] == 21
 

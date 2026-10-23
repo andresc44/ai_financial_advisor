@@ -17,25 +17,25 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users
 import os
 from src.digest.create_html import html_main
 from src.digest.send_gmail import send_html_email
 from src.universal.universal_consolidated import get_universal_content
-from src.usage_tracking import shared_usage  # Claude-authored (2026-10-22): the admin's costs
+from src.tracking.usage_tracking import shared_usage  # Claude-authored (2026-10-22): the admin's costs
 from src.personalized.personalized_consolidated import get_ideas_only_content, get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
-from src.market_session import market_date
-from src.run_logging import name_thread, start_run_log, write_run_status
+from src.market.market_session import market_date
+from src.ops.run_logging import name_thread, start_run_log, write_run_status
 from src.telegram_alert.earnings_reminder import send_earnings_reminders
-from src.idea_positions import send_idea_scorecards
+from src.tracking.idea_positions import send_idea_scorecards
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
-from src.import_signup import sync_signups
-from src.remote_settings import sync_settings
+from src.users.import_signup import sync_signups
+from src.config.remote_settings import sync_settings
 import copy
 
 # Claude-authored (2026-10-16): where --payload-only writes each user's payload (test_output/ is gitignored, since the
@@ -218,7 +218,7 @@ def run_daily_digests(
     if not (check_only or payload_only):
         send_holiday_notice(now)
         send_earnings_reminders(now)
-        send_idea_scorecards(now)  # Claude-authored (2026-10-22): once a month, on Telegram (src/idea_positions.py)
+        send_idea_scorecards(now)  # Claude-authored (2026-10-22): once a month, on Telegram (src/tracking/idea_positions.py)
     missed = [] if payload_only else missed_digests(recipients, now, alert=not check_only)
     missed_note = f" Missed today: {'; '.join(missed)}." if missed else ""
 
@@ -243,7 +243,7 @@ def run_daily_digests(
 
     # Claude-authored (2026-10-15): the universal content and up to DIGEST.MAX_PARALLEL_USERS users are built at the
     # same time. Each user's Claude and Gemini calls use their own keys; fetching from the shared Finnhub / Twelve Data
-    # keys is serialized by src/shared_locks.MARKET_DATA_LOCK. Emails go out as each user finishes, once the universal
+    # keys is serialized by src/ops/shared_locks.MARKET_DATA_LOCK. Emails go out as each user finishes, once the universal
     # content is ready.
     max_parallel_users = max(1, params_dict["DIGEST"]["MAX_PARALLEL_USERS"])
     print(
@@ -359,8 +359,8 @@ if __name__ == "__main__":
     start_run_log("digest")
     reports_status = not (args.check or args.payload_only)  # Only cron runs feed the healthchecks.io heartbeat
     # Claude-authored (2026-10-22): new or edited sign-up form answers go into .env first, and form users with
-    # nothing required missing into ACTIVE_USERS, before the users are read (src/import_signup.py). Cron runs only.
-    # 2026-10-23: before that, the settings changed in the spreadsheet's Parameters tab (src/remote_settings.py), on
+    # nothing required missing into ACTIVE_USERS, before the users are read (src/users/import_signup.py). Cron runs only.
+    # 2026-10-23: before that, the settings changed in the spreadsheet's Parameters tab (src/config/remote_settings.py), on
     # every run that builds a digest, manual ones included (Andres); not for --check, which builds nothing
     if not args.check:
         sync_settings()

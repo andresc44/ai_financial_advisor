@@ -22,15 +22,15 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.admins import notice_text
-from src.parameters import params_dict
+from src.users.admins import notice_text
+from src.config.parameters import params_dict
 from src.personalized.user_profiles import USER_PROFILES, env_setting
 from src.personalized.add_metrics import add_metrics_to_holdings
 from src.personalized.recommendation import add_recommendations
 from src.personalized.user_settings import get_llm_settings
 from src.personalized.digest_fields import add_digest_fields, portfolio_beta
-from src.market_session import exchange_calendar_code, latest_regular_session
-from src.fx_rates import normalize_currency, usd_rates
+from src.market.market_session import exchange_calendar_code, latest_regular_session
+from src.market.fx_rates import normalize_currency, usd_rates
 
 # Claude-authored (2026-10-15): convert_to_usd converts these money amounts to USD in place ...
 USD_MONEY_COLUMNS = ("market_value", "total_cost_basis", "unrealized_pnl", "daily_pnl")
@@ -841,7 +841,7 @@ class PortfolioFetcher:
     def add_session_prices(self, df: pd.DataFrame, market_phase: str) -> pd.DataFrame:
         """
         Adds session_price, session_price_as_of (UTC), and session_price_age_minutes for the given
-        market phase (see src/market_session.py). Pre-market / after-hours use extended-hours trades;
+        market phase (see src/market/market_session.py). Pre-market / after-hours use extended-hours trades;
         regular, overnight, and closed phases use current_price. Falls back to current_price per symbol.
         """
         if df is None or df.empty:
@@ -896,7 +896,7 @@ class PortfolioFetcher:
                 "daily_pnl_session",  # Date the daily P/L covers (pre-market: the previous trading day)
                 "daily_pnl_live",  # True when that session is still trading on the stock's exchange
                 "next_earnings_date",  # The next earnings date known, at any distance (None: no date known)
-                "idea_origin",  # 2026-10-22: the Finnbot idea the position was bought from (src/idea_positions.py)
+                "idea_origin",  # 2026-10-22: the Finnbot idea the position was bought from (src/tracking/idea_positions.py)
                 "portfolio_weight_pct",  # Stock's share of the whole portfolio's market value
                 "last_close",  # Close before that session, in the listing's currency
                 "last_close_usd",  # Same in USD; previous portfolio value = sum(last_close_usd x shares)

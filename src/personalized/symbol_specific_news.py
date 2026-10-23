@@ -21,7 +21,7 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-23: cheaper, at Andres's request (Gemini was ~85% of a user's bill, mostly output tokens spent thinking):
   - one request covers several stocks (DIGEST.SYMBOL_NEWS_BATCH_SIZE) instead of one per stock. A stock the answer
     leaves out, or every stock of an answer that is cut off or isn't the expected JSON, is asked for again on its own;
-  - every request uses GEMINI_CONFIG's effort (thinking level) and output cap (src/gemini_settings.py);
+  - every request uses GEMINI_CONFIG's effort (thinking level) and output cap (src/llm/gemini_settings.py);
   - fetch_symbol_news only returns the stocks it fetched, so a failed stock can be told apart from one without news
     (src/personalized/news_reuse.py keeps fetched news for the evening digest);
   - at low effort Gemini sometimes wrote the article's own address instead of the search result's link, which can't be
@@ -48,10 +48,10 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.gemini_settings import gemini_model, generation_config, max_output_tokens, was_cut_off
-from src.parameters import params_dict
+from src.llm.gemini_settings import gemini_model, generation_config, max_output_tokens, was_cut_off
+from src.config.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
-from src.usage_tracking import record_gemini_response
+from src.tracking.usage_tracking import record_gemini_response
 
 DIGEST_PARAMS = params_dict["DIGEST"]
 PRIORITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}

@@ -1,71 +1,88 @@
-# Running Finnbot on a VM
+# Running Finnbot on a VM (Google Cloud)
 
-Everything to move Finnbot from the Windows PC to an always-on Linux VM, step by step. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request. Monitoring and backups are covered in more depth in [operations.md](operations.md); the commands are in [admin_handbook.md](admin_handbook.md).
+Everything to move Finnbot from the Windows PC to an always-on Google Cloud VM, step by step. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request (Google Cloud only). Monitoring and backups are covered in more depth in [operations.md](operations.md); every command is in [admin_handbook.md](admin_handbook.md).
 
 Until the VM runs, nothing in Finnbot happens on a schedule: no hourly digest runs (so no digests, earnings reminders, sign-up sync, or settings sync), no watchdog, and no backups.
 
 ---
 
-## 0. Do you need a paid VM? No
+## 0. Which VM, and what it costs
 
-**Recommendation: Oracle Cloud's Always Free tier, an Ampere A1 (Arm) VM.** The free allowance (checked 2026-10-23 on [Oracle's Always Free page](https://docs.oracle.com/en-us/iaas/Content/FreeTier/resourceref.htm)) is up to 2 CPUs (OCPUs) and 12 GB of memory, 200 GB of disk, and 10 TB of outbound traffic a month. Finnbot needs a fraction of that: one Python process at a time, mostly waiting on APIs, about 1.4 MB of state. Your `.env` already has an Oracle login, so you have an account.
+**Start on Google Cloud's free e2-micro, and measure.** Google's [free tier](https://docs.cloud.google.com/free/docs/free-cloud-features) (checked 2026-10-23) includes, per billing account and month:
+- one **e2-micro** VM (2 shared vCPUs, 1 GB of memory), in **Oregon (`us-west1`), Iowa (`us-central1`), or South Carolina (`us-east1`)** only;
+- **30 GB of standard persistent disk**;
+- **1 GB of outbound traffic** from North America (traffic to China and Australia isn't included).
 
-**One catch, and the fix.** Oracle may reclaim an Always Free VM it considers idle: over 7 days, CPU under 20% at the 95th percentile, network under 20%, and (on A1) memory under 20%. Finnbot works in short hourly bursts, so it would look idle.
-- **The fix:** upgrade the account to **Pay As You Go** (step 1.2). Oracle still charges nothing for Always Free resources after the upgrade, only for use beyond them. It also lifts the "out of host capacity" errors free accounts often hit when creating A1 VMs.
-- **Guard against surprises:** set a budget alert of $1 a month.
-- Oracle's 2023 notice said a Pay As You Go account isn't reclaimed; its current page doesn't say either way. If the VM is ever stopped anyway, the healthchecks.io alerts (part 7) tell you within the hour, and the Drive backup (part 8) restores the state.
+**What Finnbot needs.** One Python process at a time, mostly waiting on APIs. Its outbound traffic (prompts to the LLMs, emails, Telegram) is a few tens of MB a month, and its state is about 1.4 MB. The open question is memory: 1 GB is tight for the idea screen, so the setup adds 2 GB of swap and measures a full run (part 6). If the run is too slow or uses more than about 800 MB, switch to a bigger machine type (part 6.3). That takes two minutes and changes nothing else.
 
-**Not recommended:**
-- Oracle's free AMD "Micro" VM: 1 GB of memory and 1/8 of a CPU, too tight for the idea screen.
-- Google Cloud's free e2-micro: also 1 GB, US regions only, and its public IPv4 address may be billed.
+| Machine type | Memory | Cost (on-demand, approximate) | When |
+|---|---|---|---|
+| **e2-micro** | 1 GB | **Free** (free tier) | Start here |
+| e2-small | 2 GB | about $12 a month | If the e2-micro is too slow or short of memory |
+| e2-medium | 4 GB | about $24 a month | Not expected to be needed |
 
-**If Oracle is a hassle:** a small paid VPS works the same way (2 GB of memory or more, Ubuntu 24.04), e.g. Hetzner's CX22 at about €4 a month or a $6 DigitalOcean droplet. Follow the same steps from part 2 on; the user is `root` or the one the provider gives you instead of `ubuntu`.
+**Charges that may still apply:**
+- **The public IP address.** Google lists in-use external IPv4 addresses at $0.005 an hour (about $3.65 a month), and its free-tier page doesn't say whether the free VM's address is included. Check the first month's bill. The VM needs a public address (or a paid Cloud NAT) to reach the APIs.
+- **The disk type.** The console's default boot disk is a **balanced** persistent disk, which is not free; choose **standard** (part 1.3).
+- **Backups and snapshots.** Turn off the console's VM backup options. Finnbot backs itself up to Google Drive (part 8).
+- **SSH sessions from Australia.** They count toward outbound traffic to Australia, which isn't free, but they're a few cents at most.
+
+Set a budget alert first (part 1.1), so any surprise shows within days.
 
 ---
 
-## 1. Create the VM (Oracle console, about 15 minutes)
+## 1. Create the VM (Google Cloud console, about 15 minutes)
 
-### 1.1 An SSH key on your PC
+Use the project Finnbot's service account already lives in (`finnbot-504921`), so everything stays in one place.
 
-In PowerShell on the PC:
+### 1.1 Billing and a budget alert
 
-```powershell
-ssh-keygen -t ed25519 -f $HOME\.ssh\finnbot_vm -C finnbot-vm
-```
+1. Open [console.cloud.google.com](https://console.cloud.google.com) and select the project `finnbot-504921` (top bar).
+2. **Billing**: make sure the project is linked to a billing account; the free tier needs one, even though the free VM costs nothing.
+3. **Billing** → **Budgets & alerts** → **Create budget**:
+   - scope: this project;
+   - amount: $5 a month;
+   - alerts at 50%, 90%, and 100% of actual spend, emailed to you.
 
-Press Enter twice for no passphrase (or set one; Windows' ssh-agent can remember it). This makes `finnbot_vm` (private, stays on the PC) and `finnbot_vm.pub` (public, goes to Oracle).
+### 1.2 Turn on Compute Engine
 
-### 1.2 Upgrade to Pay As You Go, and a budget alert
-
-1. Sign in at [cloud.oracle.com](https://cloud.oracle.com). Note your **home region** (top bar): free VMs can only be created there.
-2. Open the menu → **Billing & Cost Management** → **Upgrade and Manage Payment** → **Upgrade to Pay As You Go**. It uses the card from sign-up and can take a few minutes to a day to complete.
-3. **Billing & Cost Management** → **Budgets** → **Create Budget**: target your tenancy (root compartment), $1 a month, an alert at 100% of actual spend, sent to your email.
+**Compute Engine** → **VM instances**. If it asks, click **Enable** for the Compute Engine API. It takes a minute.
 
 ### 1.3 The instance
 
-**Compute** → **Instances** → **Create instance**:
+**Create instance**, then:
 
-| Field | Choose |
-|---|---|
-| Name | `finnbot` |
-| Placement | Any availability domain (try another if one says "Out of host capacity") |
-| Image | **Canonical Ubuntu 24.04** (the Arm build is picked automatically for A1) |
-| Shape | **Ampere** → **VM.Standard.A1.Flex**, **2 OCPUs, 12 GB memory** (the whole free allowance; 1 OCPU / 6 GB also works) |
-| Networking | Create a new virtual cloud network and a **public subnet**; **Assign a public IPv4 address**: yes |
-| SSH keys | **Paste public key**: the contents of `$HOME\.ssh\finnbot_vm.pub` (`Get-Content $HOME\.ssh\finnbot_vm.pub`) |
-| Boot volume | The default (about 47-50 GB) |
+| Section | Field | Choose |
+|---|---|---|
+| Machine configuration | Name | `finnbot` |
+| | Region / zone | `us-east1` (South Carolina) / `us-east1-b`. `us-central1` or `us-west1` are also free. |
+| | Series / machine type | **E2** → **e2-micro** (2 vCPU, 1 GB memory) |
+| | VM provisioning model | **Standard** (not Spot: a Spot VM can be stopped at any time) |
+| OS and storage | Image | **Change** → **Ubuntu** → **Ubuntu 24.04 LTS** (x86/64, `amd64`) |
+| | Boot disk type | **Standard persistent disk** (the free one) |
+| | Size | **30 GB** |
+| Data protection | Backups | **No backups** |
+| Networking | Firewall | Leave **Allow HTTP/HTTPS traffic** unticked |
+| | External IPv4 | **Ephemeral** (the default) |
+| Observability | Ops Agent | **Untick** "Install Ops Agent for Monitoring and Logging" (it needs memory the e2-micro doesn't have to spare) |
 
-Create it, wait for **Running**, and copy its **Public IP address**.
+The summary on the right should say "e2-micro" and a free-tier note. **Create** it and wait for the green tick.
 
-The default security list only lets SSH (port 22) in, which is all Finnbot needs: it only makes outgoing connections (APIs, Gmail on port 587, Telegram). Don't open any other port.
+Google's default firewall only lets SSH in, which is all Finnbot needs: it only makes outgoing connections (the APIs, Gmail on port 587, Telegram). Google blocks outgoing port 25, which Finnbot doesn't use. Don't open any other port.
 
-### 1.4 Connect
+### 1.4 The Google Cloud CLI on the PC, and connecting
+
+The `gcloud` command handles the SSH keys and copies files. In PowerShell on the PC:
 
 ```powershell
-ssh -i $HOME\.ssh\finnbot_vm ubuntu@<public IP>
+winget install Google.CloudSDK
+# Open a new PowerShell window, then:
+gcloud init                                         # Sign in with your Google account; pick project finnbot-504921
+gcloud config set compute/zone us-east1-b           # The zone from 1.3, so the commands below don't need it
+gcloud compute ssh finnbot                          # First time: creates an SSH key (Enter for no passphrase)
 ```
 
-Answer `yes` to the fingerprint question the first time. Everything in parts 2-8 runs in this session unless it says "on the PC".
+You're now on the VM, as a Linux user with your Windows user name (e.g. `andre`), or one derived from your Google account if the project uses OS Login. Everything in parts 2-9 runs in this session unless it says "on the PC". The console's **SSH** button next to the VM opens the same session in a browser.
 
 ---
 
@@ -73,17 +90,17 @@ Answer `yes` to the fingerprint question the first time. Everything in parts 2-8
 
 ```bash
 sudo apt update && sudo apt -y upgrade
-sudo apt -y install git build-essential curl unattended-upgrades
+sudo apt -y install git build-essential curl time unattended-upgrades
 sudo dpkg-reconfigure -plow unattended-upgrades   # Yes: security updates install themselves
 timedatectl                                       # "Time zone: Etc/UTC" (keep UTC; the crontab times assume it)
 
-# A 2 GB swap file, a safety net if a run ever needs more memory
+# 2 GB of swap: on the e2-micro's 1 GB this is what keeps a large run from running out of memory
 sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-free -h                                           # Shows the memory and the swap
+free -h                                           # About 1 GB of memory and 2 GB of swap
 ```
 
-If `apt upgrade` asks to restart services or mentions a new kernel, accept the defaults, then `sudo reboot` and reconnect.
+If `apt upgrade` mentions a new kernel, run `sudo reboot`, wait a minute, and reconnect with `gcloud compute ssh finnbot`.
 
 ---
 
@@ -107,21 +124,21 @@ cd ~/ai_financial_advisor && git checkout main && git log --oneline -1
 
 ---
 
-## 4. Python (about 5 minutes)
+## 4. Python (about 10 minutes on the e2-micro)
 
-Finnbot is developed on Python 3.14, so the VM uses the same version, installed with `uv` (Ubuntu 24.04's own Python is 3.12):
+Finnbot is developed on Python 3.14 (`CONVENTIONS.md`), so the VM uses the same version, installed with `uv` (Ubuntu 24.04's own Python is 3.12):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.local/bin/env
 cd ~/ai_financial_advisor
 uv python install 3.14
-uv venv --python 3.14 venv                                  # The scripts expect venv/bin/python
+uv venv --python 3.14 venv                                        # The scripts expect venv/bin/python
 uv pip install --python venv/bin/python -r requirements-dev.txt   # requirements.txt plus pytest
-venv/bin/python --version                                   # Python 3.14.x
+venv/bin/python --version                                         # Python 3.14.x
 ```
 
-On an Arm VM almost every package installs ready-made; any that has to be built uses `build-essential` from part 2. If one still fails, copy the error into a Claude session.
+If a package fails to install, copy the error into a Claude session.
 
 ---
 
@@ -132,51 +149,76 @@ On an Arm VM almost every package installs ready-made; any that has to be built 
 Stop anything Finnbot is doing on the PC first (no digest or watchdog running), so the state you copy is final. Then, **on the PC**, in PowerShell:
 
 ```powershell
-$ip = "<public IP>"; $key = "$HOME\.ssh\finnbot_vm"; $repo = "C:\Users\Andre\Documents\git\ai_financial_advisor"
+$repo = "C:\Users\Andre\Documents\git\ai_financial_advisor"
 # The service account's JSON file: its path is GOOGLE_APPLICATION_CREDENTIALS in the PC's .env
 $json = ((Get-Content "$repo\.env" | Select-String '^GOOGLE_APPLICATION_CREDENTIALS=').Line -split '=', 2)[1].Trim('"', ' ')
-scp -i $key "$repo\.env" "ubuntu@${ip}:~/ai_financial_advisor/.env"
-scp -i $key "$json" "ubuntu@${ip}:~/finnbot-service.json"
-scp -i $key -r "$repo\data" "ubuntu@${ip}:~/ai_financial_advisor/"
+gcloud compute scp "$repo\.env" finnbot:~/ai_financial_advisor/.env
+gcloud compute scp "$json" finnbot:~/finnbot-service.json
+gcloud compute scp --recurse "$repo\data" finnbot:~/ai_financial_advisor/
 ```
 
-`scp` sends them encrypted over SSH. The `data/` folder (about 1.4 MB) carries on the PC's state: who already received today's digest, the watchdog's last reviews, the track record, the API usage ledger, the holdings bought from ideas, and the accepted settings.
+They travel encrypted over SSH. The `data/` folder (about 1.4 MB) carries on the PC's state:
+- who already received today's digest;
+- the watchdog's last reviews;
+- the track record and the API usage ledger;
+- the holdings bought from ideas;
+- the settings accepted from the Parameters tab.
 
 ### 5.2 Adjust them on the VM
 
 ```bash
 cd ~/ai_financial_advisor
 chmod 600 .env ~/finnbot-service.json
-sed -i 's/\r$//' .env                                       # Windows line endings to Linux (harmless either way)
+sed -i 's/\r$//' .env                                              # Windows line endings to Linux (harmless either way)
 sed -i "s|^GOOGLE_APPLICATION_CREDENTIALS=.*|GOOGLE_APPLICATION_CREDENTIALS=$HOME/finnbot-service.json|" .env
-sed -i '/^UNIVERSAL_LLM_MODEL=/d;/^UNIVERSAL_LLM_EFFORT=/d' .env   # So the Parameters tab decides the ideas' model
-grep -E '^(GOOGLE_APPLICATION_CREDENTIALS|UNIVERSAL_LLM)' .env     # Shows the new path, and no UNIVERSAL_LLM lines
+sed -i '/^UNIVERSAL_LLM_MODEL=/d;/^UNIVERSAL_LLM_EFFORT=/d' .env    # So the Parameters tab decides the ideas' model
+grep -E '^(GOOGLE_APPLICATION_CREDENTIALS|UNIVERSAL_LLM)' .env      # The new path, and no UNIVERSAL_LLM lines
 ```
 
-`.env` holds every key: never print it whole, and keep it out of git (it already is). The PC's copy can stay, for manual test runs; keep both in step when a key changes.
+`.env` holds every key: never print it whole, and keep it out of git (it already is). The PC's copy can stay, for manual test runs; when a key changes, change it in both.
 
 ---
 
-## 6. Test before scheduling (about 10 minutes)
+## 6. Test, and measure the machine (about 45 minutes, mostly waiting)
+
+### 6.1 The quick checks
 
 ```bash
 cd ~/ai_financial_advisor
-venv/bin/python -m src.check_config                      # Every required setting OK; fix anything MISSING or INVALID
-venv/bin/python -m pytest                                # About 380 tests, a minute, offline
-venv/bin/python -m src.remote_settings --sync            # Reads the Parameters tab: proves the service account works
+venv/bin/python -m src.config.check_config                      # Every required setting OK; fix anything MISSING or INVALID
+venv/bin/python -m pytest                                # About 380 tests, offline (a few minutes on the e2-micro)
+venv/bin/python -m src.config.remote_settings --sync            # Reads the Parameters tab: proves the service account works
 venv/bin/python src/digest/digest_payload.py --check     # Says whether a digest is due and for whom; sends nothing
 venv/bin/python src/telegram_alert/hourly_watchdog.py --dry-run   # Which users and stocks it would check; sends nothing
 ```
 
-Then one full test, which costs about $0.20 and proves the market data, the LLMs, Gmail, and the email layout all work from the VM:
+### 6.2 One full run, measured (costs about $0.20)
+
+This proves the market data, the LLMs, Gmail, and the email all work from the VM, and shows whether the e2-micro is big enough:
 
 ```bash
-venv/bin/python src/digest/digest_payload.py --payload-only --period Post-Market
+/usr/bin/time -v venv/bin/python src/digest/digest_payload.py --payload-only --period Post-Market 2> ~/run_measure.txt
+grep -E "Maximum resident set size|Elapsed \(wall clock\)" ~/run_measure.txt
 ls -t test_output/digest_payloads | head -1              # The payload it just saved
 venv/bin/python src/digest/digest_payload.py --from-payload test_output/digest_payloads/<that file>
 ```
 
 A `[Test]` digest should reach your inbox within a minute of the last command.
+
+### 6.3 Is the e2-micro enough?
+
+| Result | Then |
+|---|---|
+| Maximum resident set size under about 800,000 kB (800 MB), and the run under about 45 minutes | Keep the e2-micro (free). |
+| More memory than that, a run killed ("Killed", or "Out of memory" in `sudo dmesg \| tail`), or well over 45 minutes | Move to e2-small, below. |
+
+To change the machine type, **on the PC** (about two minutes; the disk, the files, and the crontab stay as they are):
+
+```powershell
+gcloud compute instances stop finnbot
+gcloud compute instances set-machine-type finnbot --machine-type e2-small
+gcloud compute instances start finnbot
+```
 
 ---
 
@@ -184,30 +226,40 @@ A `[Test]` digest should reach your inbox within a minute of the last command.
 
 `HEALTHCHECKS_PING_KEY` is already in `.env`, so each cron job creates its check on its first ping. Full walkthrough: [operations.md](operations.md), "Your steps: healthchecks.io".
 
-1. If not done yet: sign up at [healthchecks.io](https://healthchecks.io) (free plan), add the **Telegram** integration, and create the project's **Ping key** (Settings). It must match `HEALTHCHECKS_PING_KEY`.
-2. After part 9 has run each job once, set each check's schedule (click it → **Change Schedule**):
+1. If not done yet:
+   - sign up at [healthchecks.io](https://healthchecks.io) (the free plan);
+   - add the **Telegram** integration;
+   - create the project's **Ping key** (Settings). It must match `HEALTHCHECKS_PING_KEY`.
+2. Once part 9 has run each job, set each check's schedule (click it, then **Change Schedule**):
 
    | Check | Period | Grace |
    |---|---|---|
    | `finnbot-watchdog` | 1 hour | 45 minutes |
-   | `finnbot-digest` | 1 hour | 45 minutes |
+   | `finnbot-digest` | 1 hour | 45 minutes (60-90 if the run in 6.2 took over 40 minutes) |
    | `finnbot-backup` | 1 day | 2 hours |
 
-3. Test an alert: `curl -fsS https://hc-ping.com/<ping key>/finnbot-watchdog/fail` should reach Telegram; the next real run turns it green.
+   The grace is also the longest a run may take after its start ping, so on a slower machine give the digest more.
+3. Test an alert: `curl -fsS https://hc-ping.com/<ping key>/finnbot-watchdog/fail` should reach Telegram. The next real run turns the check green again.
 
 ---
 
 ## 8. Backups to Google Drive (about 15 minutes)
 
-Nightly, encrypted, 90 days of previous versions, with rclone. Full walkthrough: [operations.md](operations.md), "Your steps: rclone backups to Google Drive". In short:
+Each night, encrypted, keeping 90 days of previous versions, with rclone. Full walkthrough: [operations.md](operations.md), "Your steps: rclone backups to Google Drive". In short:
 
 1. On the VM: `sudo -v ; curl https://rclone.org/install.sh | sudo bash`
 2. On the PC: `winget install Rclone.Rclone` (for the one-time Google sign-in).
-3. On the VM: `rclone config` → new remote `gdrive`, storage `drive`, scope **`drive.file`**, no web browser; run the `rclone authorize ...` command it prints **on the PC**, sign in, paste the token back.
-4. `rclone config` again → new remote `finnbot-backup`, storage `crypt`, remote `gdrive:finnbot-backup`, standard filename encryption, encrypted directory names, generated passwords. **Save both passwords in your password manager**: without them the backups can't be decrypted.
+3. On the VM, run `rclone config` and create a new remote:
+   - name `gdrive`, storage `drive`, scope **`drive.file`**;
+   - answer no to using a web browser;
+   - run the `rclone authorize ...` command it prints **on the PC**, sign in, and paste the token back.
+4. Run `rclone config` again and create a second remote:
+   - name `finnbot-backup`, storage `crypt`, remote `gdrive:finnbot-backup`;
+   - standard filename encryption, encrypted directory names, generated passwords;
+   - **save both passwords in your password manager**: without them the backups can't be decrypted.
 5. Test: `bash scripts/backup_to_drive.sh`, then `rclone ls finnbot-backup:current`.
 
-The run logs are also copied to a `finnbot-logs` folder in your Drive each night, readable on your phone (not encrypted unless you set `FINNBOT_LOGS_REMOTE=finnbot-backup:logs`).
+The run logs are also copied each night to a `finnbot-logs` folder in your Drive, so you can read them on your phone. They aren't encrypted unless you set `FINNBOT_LOGS_REMOTE=finnbot-backup:logs`.
 
 ---
 
@@ -225,43 +277,49 @@ Pick an editor (nano is easiest) and add:
 30 2 * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh backup
 ```
 
-Save and exit (nano: Ctrl+O, Enter, Ctrl+X). `crontab -l` shows them.
+Save and exit (nano: Ctrl+O, Enter, Ctrl+X); `crontab -l` shows them.
 
-- **The digest line runs every hour.** Finnbot decides from the exchange calendars when a Pre-Market (from 07:00 ET) or Post-Market (16:10 ET) digest is due, so daylight saving needs nothing. Every run also does the settings and sign-up syncs, earnings reminders, the holiday notice, and the monthly scorecards.
+- **The digest line runs every hour.** Finnbot decides from the exchange calendars when a Pre-Market (from 07:00 ET) or Post-Market (16:10 ET) digest is due, so daylight saving needs nothing. Every run also does the settings and sign-up syncs, the earnings reminders, the holiday notice, and the monthly scorecards.
 - **The backup at 02:30 UTC** is after the Post-Market window has closed.
-- **The shared lock:** all three jobs take one lock, `/tmp/finnbot.lock`, so they never overlap. Each waits up to 15 minutes for it.
+- **The shared lock:** the three jobs share one lock (`/tmp/finnbot.lock`), so they never overlap; each waits up to 15 minutes for it.
 
-**From now on the VM is the only scheduled runner.** Make sure the PC isn't also scheduled:
+**From now on the VM is the only scheduled runner.** Make sure the PC isn't scheduled too:
 
 ```powershell
 schtasks /query /fo LIST | Select-String -Pattern "finnbot|digest_payload|hourly_watchdog"
 ```
 
-It should print nothing. Manual test runs on the PC stay fine. Each `--payload-only` run also syncs the Parameters tab from the PC's `parameters.py`, so keep the PC's copy up to date (`git pull`).
+It should print nothing.
+
+Manual test runs on the PC are still fine. Each `--payload-only` run also syncs the Parameters tab from the PC's `parameters.py`, so keep the PC's copy up to date (`git pull`).
 
 ---
 
 ## 10. The first day
 
-- **Within the hour:** `cat ~/ai_financial_advisor/logs/digest.status` and `logs/watchdog.status` show one line per run; the healthchecks.io checks turn green.
-- **At 07:10 ET and 16:20 ET** (allow up to 30 minutes): the digests arrive.
-- **Telegram:** earnings reminders and any alerts as before.
-- **After the first Pre-Market and Post-Market digests:** check the news cost. Ask Claude to "confirm the news cost"; it will read the usage ledger.
+- **Within the hour:** `cat ~/ai_financial_advisor/logs/digest.status` and `logs/watchdog.status` show one line per run, and the healthchecks.io checks turn green.
+- **About 07:10 and 16:20 ET** (allow up to 45 minutes on the e2-micro): the digests arrive.
+- **Telegram:** earnings reminders and any alerts, as before.
+- **After the first Pre-Market and Post-Market digests:** ask Claude to "confirm the news cost". It reads the usage ledger.
+- **After the first month:** open **Billing** → **Reports** and check the line items. You should see nothing beyond the possible external IP charge (part 0).
 
 ---
 
 ## 11. Day to day
 
-| Task | Command (on the VM) |
+| Task | How |
 |---|---|
-| Update after a change is merged on GitHub | `cd ~/ai_financial_advisor && git pull` (plus `uv pip install --python venv/bin/python -r requirements-dev.txt` when `requirements.txt` changed). Takes effect at the next cron run; nothing needs restarting. A change in `parameters.py` reaches the Parameters tab at the next digest run. |
+| Connect | On the PC: `gcloud compute ssh finnbot` (or the console's **SSH** button) |
+| Update after a change is merged on GitHub | `cd ~/ai_financial_advisor && git pull`. If `requirements.txt` changed, also run `uv pip install --python venv/bin/python -r requirements-dev.txt`. Takes effect at the next cron run, with nothing to restart. A change in `parameters.py` reaches the Parameters tab at the next digest run. |
 | Follow a run | `tail -f logs/digest.log` (or `logs/watchdog.log`); Ctrl+C to stop |
 | Last run's result | `cat logs/digest.status logs/watchdog.status logs/backup.status` |
 | Memory and disk | `free -h`, `df -h /` |
-| Settings in force | `venv/bin/python -m src.remote_settings --show` |
-| Add a new user's keys | `venv/bin/python -m src.import_signup <name> --enter-keys` |
-| Any command from the handbook | the same as on the PC, with `venv/bin/python` |
+| Settings in force | `venv/bin/python -m src.config.remote_settings --show` |
+| Add a new user's keys | `venv/bin/python -m src.users.import_signup <name> --enter-keys` |
+| Copy a file to or from the VM | On the PC: `gcloud compute scp <file> finnbot:~/` or `gcloud compute scp finnbot:~/<file> .` |
+| Any command from the handbook | The same as on the PC, with `venv/bin/python` |
 | Reboot | `sudo reboot`; cron and swap come back by themselves |
+| Stop paying for a bigger machine | Part 6.3 in reverse: `--machine-type e2-micro` |
 
 Security updates install themselves (part 2). A monthly `sudo apt update && sudo apt -y upgrade` catches the rest.
 
@@ -271,10 +329,10 @@ Security updates install themselves (part 2). A monthly `sudo apt update && sudo
 
 | Symptom | What to do |
 |---|---|
-| healthchecks.io says a check is late | `ssh` in: is the VM up? Then `crontab -l`, and `tail -50 logs/digest.log`. Exit code 75 means a job waited 15 minutes for the lock: another run may be stuck (`ps aux | grep python`). |
-| The VM is stopped or gone (Oracle reclaimed it, or it broke) | Start it in the console if it exists. Otherwise create a new one (parts 1-4), restore the state with `rclone copy finnbot-backup:current/data data` after recreating both rclone remotes with the **same** passwords (part 8), copy `.env` and the JSON again (part 5), and add the crontab (part 9). |
+| healthchecks.io says a check is late | `gcloud compute ssh finnbot`: is the VM up (console: VM instances)? Then `crontab -l` and `tail -50 logs/digest.log`. Exit code 75 means a job waited 15 minutes for the lock and another run may be stuck (`ps aux \| grep python`). On a slow machine, a long digest can also make the 10:45 watchdog wait: see 6.3. |
+| A run is killed, or `sudo dmesg \| tail` says "Out of memory" | The e2-micro is too small that day: move to e2-small (6.3). |
+| The VM is gone, or its disk is broken | Create a new one (parts 1-4). Restore the state with `rclone copy finnbot-backup:current/data data`, after recreating both rclone remotes with the **same** passwords (part 8). Copy `.env` and the JSON again (part 5), and add the crontab (part 9). |
 | `Permission denied (publickey)` on `git pull` | The deploy key or `~/.ssh/config` (part 3). |
-| Emails stop, the log says "Username and Password not accepted" | The Gmail app password (`GMAIL_APP_PASSWORD`) was revoked or changed: create a new one for the digest account and update `.env`. |
+| Emails stop, and the log says "Username and Password not accepted" | The Gmail app password (`GMAIL_APP_PASSWORD`) was revoked or changed. Create a new one for the digest account and update `.env`. |
 | The settings sync fails with 403 | The sign-up spreadsheet must stay shared with the service account as an **Editor**. |
-| Memory warnings, or runs killed | `free -h`; with 6 GB or more plus swap this shouldn't happen. Check `dmesg | tail` for "Out of memory". |
-| `out of host capacity` when creating the VM | Another availability domain, retry later, or finish the Pay As You Go upgrade (part 1.2). |
+| An unexpected charge | **Billing** → **Reports**, grouped by SKU. The usual suspects are a balanced (not standard) disk, a snapshot schedule, a second VM, or the external IP. |

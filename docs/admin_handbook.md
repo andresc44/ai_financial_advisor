@@ -36,14 +36,14 @@ A full test run is the last two together: `--payload-only --period Post-Market`,
 
 | Command | What it does |
 |---|---|
-| `python -m src.remote_settings --sync` | Reads the Parameters tab now, applies what's valid, writes the status back, and messages the admins about changes. Every digest run does this first. |
-| `python -m src.remote_settings --show` | Lists the settings from the sheet in force on this computer (`data/remote_settings.json`). |
-| `python -m src.import_signup --list` | Lists every sign-up answer and stops. |
-| `python -m src.import_signup --sync` | Syncs every user from the sign-up sheet into `.env` and `ACTIVE_USERS`, as each cron run does. Add `--dry-run` to only show what would change. |
-| `python -m src.import_signup <first name or email>` | Imports one person's answer. Options: `--dry-run` (show only), `--no-activate` (leave `ACTIVE_USERS` alone), `--overwrite` (replace an existing user whose email differs), `--enter-keys` (then type their missing keys, hidden, to save them), `--sheet <ID>` (another answers sheet). |
-| `python -m src.check_config` | Checks every shared and per-user `.env` setting: OK, MISSING, INVALID, or unset. Run it after adding or changing a user. |
-| `python -m src.check_config --template <Name>` | Prints the `.env` block for a new user, to fill in. |
-| `python -m src.track_record [--since 2026-10-01]` | How past recommendations played out (holdings signals and ideas), from `data/track_record/`. |
+| `python -m src.config.remote_settings --sync` | Reads the Parameters tab now, applies what's valid, writes the status back, and messages the admins about changes. Every digest run does this first. |
+| `python -m src.config.remote_settings --show` | Lists the settings from the sheet in force on this computer (`data/remote_settings.json`). |
+| `python -m src.users.import_signup --list` | Lists every sign-up answer and stops. |
+| `python -m src.users.import_signup --sync` | Syncs every user from the sign-up sheet into `.env` and `ACTIVE_USERS`, as each cron run does. Add `--dry-run` to only show what would change. |
+| `python -m src.users.import_signup <first name or email>` | Imports one person's answer. Options: `--dry-run` (show only), `--no-activate` (leave `ACTIVE_USERS` alone), `--overwrite` (replace an existing user whose email differs), `--enter-keys` (then type their missing keys, hidden, to save them), `--sheet <ID>` (another answers sheet). |
+| `python -m src.config.check_config` | Checks every shared and per-user `.env` setting: OK, MISSING, INVALID, or unset. Run it after adding or changing a user. |
+| `python -m src.config.check_config --template <Name>` | Prints the `.env` block for a new user, to fill in. |
+| `python -m src.tracking.track_record [--since 2026-10-01]` | How past recommendations played out (holdings signals and ideas), from `data/track_record/`. |
 
 ### Tests and checks on the email
 
@@ -125,7 +125,7 @@ Details: [watchdog.md](watchdog.md), sections "Swing screen" and "Universal pick
 
 **One user's section:**
 1. **Fetch holdings.** Problems (an expired connection, an unshared sheet, no sync for 96 h) go to the user on Telegram and appear in the email.
-2. **Link new positions to recent ideas.** A position bought by the end of the next trading day after an idea gets the idea's label and plan, stop/target alerts, and the monthly scorecard (`src/idea_positions.py`).
+2. **Link new positions to recent ideas.** A position bought by the end of the next trading day after an idea gets the idea's label and plan, stop/target alerts, and the monthly scorecard (`src/tracking/idea_positions.py`).
 3. **Fetch the news**, in the background while the next step runs:
    - Gemini, low thinking, 3 holdings per request (`DIGEST.SYMBOL_NEWS_BATCH_SIZE`).
    - News fetched earlier the same day is reused (`DIGEST.NEWS_REUSE`), except for a stock that moved more than 1 NATR, changed signal, or reported earnings.
@@ -193,7 +193,7 @@ Admins are `OPS.ALERT_USERS` (Andres only). Everyone else's notices say "Contact
 ## 7. Settings
 
 **Three layers, last wins:**
-1. `src/parameters.py`: the defaults, in git.
+1. `src/config/parameters.py`: the defaults, in git.
 2. The **Parameters tab** of the sign-up spreadsheet (`SETTINGS_TAB_GID` 402243155):
    - every setting has a row with its value, default, Finnbot's status, and a note;
    - values are checked, saved in `data/remote_settings.json`, and applied by every process;
@@ -205,7 +205,7 @@ Admins are `OPS.ALERT_USERS` (Andres only). Everyone else's notices say "Contact
 
 **Adding a setting:**
 1. Add it to `parameters.py`.
-2. Add a note to `src/parameter_notes.py` (a test fails until it has one).
+2. Add a note to `src/config/parameter_notes.py` (a test fails until it has one).
 3. The next sync adds its row.
 
 **Keep every machine's `parameters.py` the same:** each machine that runs a digest syncs the same tab, and an older copy would put its old defaults back. Pull on the VM after each change.
@@ -223,7 +223,7 @@ Details: [watchdog.md](watchdog.md), "Changing settings from the spreadsheet".
    - Gemini, only with holding news on;
    - SnapTrade or a sheet ID, depending on the holdings source;
    - Telegram is optional.
-4. **Check:** `python -m src.check_config`.
+4. **Check:** `python -m src.config.check_config`.
 5. **Removing a user:** delete their sign-up answer. They drop out of `ACTIVE_USERS` at the next sync, and their `.env` settings stay.
 
 ---
@@ -277,7 +277,7 @@ Details: [watchdog.md](watchdog.md), "Changing settings from the spreadsheet".
 |---|---|
 | No email arrived | `logs/digest.log`; `python src/digest/digest_payload.py --check`; the healthchecks.io `finnbot-digest` check (once on the VM). |
 | A user's section is empty or says a key failed | The top of their email, and your Telegram (the full fix). |
-| A setting change didn't apply | Its status in the Parameters tab (❌ says why); `python -m src.remote_settings --show`; `.env` overrides. |
+| A setting change didn't apply | Its status in the Parameters tab (❌ says why); `python -m src.config.remote_settings --show`; `.env` overrides. |
 | Ideas list short or empty | The log lists each stock left out and why (score, sector rule, tech limit, too far along). |
 | News missing a link | Only links Google Search actually returned are kept; the log shows "N/M source links verified". |
 | Dropdowns don't open in Gmail | The reader hasn't allowed `finnbot107@gmail.com` (guide 1.4), the AMP version failed validation, or the email is over 30 days old. |
@@ -287,7 +287,7 @@ Details: [watchdog.md](watchdog.md), "Changing settings from the spreadsheet".
 
 ## 12. Pending (2026-10-23)
 
-1. **VM:** set it up and decide whether it needs to be paid. Until it exists, nothing runs on a schedule.
+1. **VM:** set it up on Google Cloud ([vm_setup.md](vm_setup.md)): the free e2-micro first, measured on one full run, and e2-small (about $12 a month) only if that's too small. Until it exists, nothing runs on a schedule.
 2. **Heartbeat:** connect healthchecks.io to the VM's cron.
 3. **Drive backup:** set it up on the VM.
 

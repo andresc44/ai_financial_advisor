@@ -25,7 +25,7 @@
  *   9. Your keys (confirmations) . -> submit
  *
  * The AI model isn't asked (2026-10-22): every user's holdings are reviewed by Claude Haiku 5.5 at
- * low effort (LLM["HOLDINGS"] in src/parameters.py), so everyone with holdings needs an Anthropic key.
+ * low effort (LLM["HOLDINGS"] in src/config/parameters.py), so everyone with holdings needs an Anthropic key.
  *
  * API keys, SnapTrade keys, and Telegram chat IDs are never asked for: the form's answers are
  * stored in a spreadsheet, so users send those separately through a private channel. Free-text

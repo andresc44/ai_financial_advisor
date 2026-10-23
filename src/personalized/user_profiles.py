@@ -5,9 +5,9 @@ Claude-authored (2026-10-15), at Andres's request: profiles are generated instea
 the same ones the hand-written profiles used, so existing .env files keep working.
 
 To add a user:
-  1. Add their name to ACTIVE_USERS in src/parameters.py.
-  2. Print the .env lines to fill in:   venv/bin/python -m src.check_config --template <Name>
-  3. Check nothing required is missing: venv/bin/python -m src.check_config
+  1. Add their name to ACTIVE_USERS in src/config/parameters.py.
+  2. Print the .env lines to fill in:   venv/bin/python -m src.config.check_config --template <Name>
+  3. Check nothing required is missing: venv/bin/python -m src.config.check_config
 Use PROFILE_OVERRIDES only for a user whose .env key names don't follow the pattern.
 """
 import os
@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 # Profile key -> .env key suffix, with what the value should be
 PROFILE_ENV_SUFFIXES = {
@@ -39,7 +39,7 @@ PROFILE_ENV_SUFFIXES = {
     "watchdog_interval_hours": "WATCHDOG_INTERVAL_HOURS",      # int hours between checks; 0 = off
     "watchdog_session": "WATCHDOG_SESSION",                    # "regular" | "extended" | "24_7"
     "watchdog_tripwire": "WATCHDOG_TRIPWIRE",                  # true/false: hourly price check between checks
-    # Claude-authored (2026-10-16): the LLM for this user's holdings, Claude or DeepSeek (src/llm_models.py)
+    # Claude-authored (2026-10-16): the LLM for this user's holdings, Claude or DeepSeek (src/llm/llm_models.py)
     "holdings_llm_model": "HOLDINGS_LLM_MODEL",                # a model in ALLOWED_CLAUDE_MODELS or ALLOWED_DEEPSEEK_MODELS
     "holdings_llm_effort": "HOLDINGS_LLM_EFFORT",              # Claude: low..max; DeepSeek: none (no thinking) | low | high | max
     "holdings_claude_model": "HOLDINGS_CLAUDE_MODEL",          # Older name for HOLDINGS_LLM_MODEL, still read when that's unset
@@ -52,7 +52,7 @@ PROFILE_ENV_SUFFIXES = {
     "gemini_api_key": "GEMINI_API_KEY",
 }
 
-# Claude-authored (2026-10-22): the sign-up sync (src/import_signup.py) writes a required API key it found missing as
+# Claude-authored (2026-10-22): the sign-up sync (src/users/import_signup.py) writes a required API key it found missing as
 # KEY=None, so the gap shows in .env; env_setting, which every reader of users' settings goes through, treats it
 # as unset
 MISSING_VALUE = "None"

@@ -9,7 +9,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 if TYPE_CHECKING:
     from filter_tickers import DataFetcher

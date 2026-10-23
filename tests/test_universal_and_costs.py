@@ -12,8 +12,8 @@ from google.genai import errors as genai_errors
 import src.universal.market_news as market_news
 import src.universal.recommendations.LLM_recommendation as universal_llm
 import src.universal.universal_consolidated as universal
-import src.usage_tracking as usage
-from src.parameters import params_dict
+import src.tracking.usage_tracking as usage
+from src.config.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
 from src.universal.recommendations import data_source_guard as guard
 from src.universal.recommendations import enriched_rec
@@ -400,7 +400,7 @@ def test_score_thresholds_and_news_limit():
     assert params_dict["LONG_TERM_N_AMOUNT"] == 3 and params_dict["LONG_TERM_MIN_NON_TECH_PICKS"] == 1
     # The ideas model (the tests' conftest swaps params_dict["LLM"], so read the settings file itself)
     from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / "src" / "parameters.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "src" / "config" / "parameters.py").read_text(encoding="utf-8")
     assert '"UNIVERSAL": {"model": "deepseek-flash", "effort": "high"}' in source
     assert params_dict["MAX_NEWS_ARTICLES"] == 20
 

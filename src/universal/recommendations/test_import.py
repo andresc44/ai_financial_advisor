@@ -20,7 +20,7 @@ if str(project_root) not in sys.path:
 env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from filter_tickers import DataFetcher
 
 ticker_client = Tickers()

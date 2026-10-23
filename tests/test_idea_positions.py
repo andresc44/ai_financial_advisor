@@ -1,12 +1,12 @@
-# Claude-authored (2026-10-22): holdings bought from Finnbot's ideas (src/idea_positions.py) and where they show
+# Claude-authored (2026-10-22): holdings bought from Finnbot's ideas (src/tracking/idea_positions.py) and where they show
 import json
 from datetime import date, datetime, timezone
 
 import pandas as pd
 import pytest
 
-import src.idea_positions as ip
-import src.track_record as track_record
+import src.tracking.idea_positions as ip
+import src.tracking.track_record as track_record
 from src.digest import create_html as ch
 from src.personalized.LLM_hold_instr import SYSTEM_PROMPT
 from src.personalized.recommendation import build_holding_payloads

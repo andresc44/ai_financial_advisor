@@ -35,10 +35,10 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.admins import contact_admin, is_admin, notice_text
-from src.fx_rates import CURRENCY_SYMBOLS, usd_rate_change, usd_rates
-from src.idea_positions import idea_label
-from src.parameters import params_dict
+from src.users.admins import contact_admin, is_admin, notice_text
+from src.market.fx_rates import CURRENCY_SYMBOLS, usd_rate_change, usd_rates
+from src.tracking.idea_positions import idea_label
+from src.config.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 from src.personalized.LLM_hold_instr import current_recommendation
 from src.digest.glossary import GLOSSARY, HOLDINGS_ONLY_TERMS, IDEAS_ONLY_CATEGORY_NAMES, terms_in_use, visible_text
@@ -698,7 +698,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         # US); a date past the cards' CATALYST_WINDOW_DAYS isn't shown or mentioned. Payloads from before
         # next_earnings_date existed say nothing.
         # Claude-authored (2026-10-22): the Finnbot idea it was bought from, e.g. "Swing idea · Oct 21 · entry $100.00
-        # · stop $95.00 · target $112.00" (src/idea_positions.py); "" for the rest
+        # · stop $95.00 · target $112.00" (src/tracking/idea_positions.py); "" for the rest
         "idea": idea_label(first.get("idea_origin")),
         "earnings_note": ("No earnings date available" if not catalysts and "next_earnings_date" in first
                           and not _text(first.get("next_earnings_date")) else ""),

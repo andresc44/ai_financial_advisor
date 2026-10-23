@@ -5,13 +5,13 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-import src.deepseek_client as ds
-import src.llm_models as llm_models
+import src.llm.deepseek_client as ds
+import src.llm.llm_models as llm_models
 import src.personalized.api_errors as api_errors
 import src.personalized.recommendation as rec
 import src.universal.recommendations.LLM_recommendation as universal_llm
-import src.usage_tracking as usage
-from src.check_config import check_user
+import src.tracking.usage_tracking as usage
+from src.config.check_config import check_user
 from src.personalized.user_settings import get_llm_settings
 from src.universal.recommendations.scorer import select_top_candidates
 
@@ -259,7 +259,7 @@ def test_universal_model_and_effort_come_from_env_first(universal_env, env, expe
 
 
 def test_check_config_flags_an_unusable_universal_override(universal_env, capsys):
-    import src.check_config as check_config
+    import src.config.check_config as check_config
 
     universal_env.setattr(check_config, "load_dotenv", lambda *args, **kwargs: None)
     universal_env.setenv("UNIVERSAL_LLM_MODEL", "deepseek-flash")

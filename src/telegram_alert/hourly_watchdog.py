@@ -45,9 +45,9 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.idea_positions import attach_idea_origins
-from src.market_session import block_id, is_in_session, market_date, market_phase
-from src.parameters import params_dict
+from src.tracking.idea_positions import attach_idea_origins
+from src.market.market_session import block_id, is_in_session, market_date, market_phase
+from src.config.parameters import params_dict
 from src.personalized.add_metrics import HoldingsDataFetcher
 from src.personalized.LLM_hold_instr import current_recommendation
 from src.personalized.api_errors import ApiKeyUnusable
@@ -62,8 +62,8 @@ from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.recommendation import resolve_llm_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
-from src.run_logging import name_thread, start_run_log, write_run_status
-from src.shared_locks import MARKET_DATA_LOCK
+from src.ops.run_logging import name_thread, start_run_log, write_run_status
+from src.ops.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert import notices
 from src.telegram_alert.notices import (  # Shared alert log; names kept importable from this module
     COOLDOWN_HOURS,

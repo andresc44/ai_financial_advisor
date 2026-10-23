@@ -9,11 +9,11 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-16: the same handling for the shared keys used by the universal content (ANTHROPIC_API_KEY for the
   candidate scoring, GEMINI_API_KEY for the macro news): ApiKeyUnusable with user_name=None names the shared
   variable, and shared_api_key() raises it when the key isn't set.
-- 2026-10-16: DeepSeek, which can now do any job a Claude model does (src/llm_models.py): deepseek_key_error,
+- 2026-10-16: DeepSeek, which can now do any job a Claude model does (src/llm/llm_models.py): deepseek_key_error,
   verify_deepseek_key (the free balance check), and verify_llm_key, which picks the provider's check.
 - 2026-10-17: the problem and its fix are kept apart (ApiKeyUnusable.problem / .fix), and text_for(reader) words
   the error for its reader: only the admins can change .env or the provider accounts, so anyone else gets
-  "Contact Andres to address this issue." instead of the fix (src/admins.py).
+  "Contact Andres to address this issue." instead of the fix (src/users/admins.py).
 
 Error formats (checked 2026-10-15):
 - Anthropic (platform.claude.com/docs/en/api/errors, /api/rate-limits): 401 invalid/revoked/expired key;
@@ -26,7 +26,7 @@ Error formats (checked 2026-10-15):
   (retryable, short RetryInfo delay) and daily quotas (quotaId "...PerDay...", status "quota_exceeded").
   The google-genai SDK does not retry by default, so GEMINI_RETRY below is the only retry layer.
 - DeepSeek (api-docs.deepseek.com/quick_start/error_codes, checked 2026-10-16): 401 wrong key; 402 insufficient
-  balance; 429 too fast (retried by src/deepseek_client.py); 400 / 422 are per-request. GET /user/balance reports
+  balance; 429 too fast (retried by src/llm/deepseek_client.py); 400 / 422 are per-request. GET /user/balance reports
   is_available: false when the balance can't pay for calls.
 """
 import hashlib
@@ -45,7 +45,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.admins import is_admin, notice_text
+from src.users.admins import is_admin, notice_text
 from src.personalized.user_profiles import USER_PROFILES
 
 PROFILE_KEYS = {"Anthropic": "anthropic_api_key", "Gemini": "gemini_api_key", "DeepSeek": "deepseek_api_key"}
@@ -230,7 +230,7 @@ def deepseek_key_error(error: BaseException, user_name: Optional[str]) -> Option
     ApiKeyUnusable when `error` (a deepseek_client.DeepSeekError, after its retries) means the key can't be used this
     run: a wrong key, no balance, or rate limits that outlasted the retries. None for per-request errors.
     """
-    from src.deepseek_client import DeepSeekError  # Imported here: api_errors is imported before it by most callers
+    from src.llm.deepseek_client import DeepSeekError  # Imported here: api_errors is imported before it by most callers
 
     if not isinstance(error, DeepSeekError):
         return None
@@ -247,7 +247,7 @@ def verify_deepseek_key(api_key: str, user_name: Optional[str]) -> None:
     before any market data is fetched for the evaluation. Outages don't block: the real request decides. A key that
     passes is not re-checked in the same process.
     """
-    from src.deepseek_client import check_balance
+    from src.llm.deepseek_client import check_balance
 
     fingerprint = key_fingerprint(api_key)
     if fingerprint in _VERIFIED_DEEPSEEK_KEYS:

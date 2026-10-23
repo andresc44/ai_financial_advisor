@@ -7,7 +7,7 @@ import pytest
 import src.universal.recommendations.scorer as scorer
 from src.digest import create_html as ch
 from src.digest.glossary import terms_in_use
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from src.personalized.LLM_hold_instr import current_recommendation  # noqa: F401  (the labels' module)
 from src.personalized.recommendation import HoldingEvaluation, ParallelHoldingEvaluator, majority_review
 from tests.test_create_html import TEMPLATE_DIR, holding, payload

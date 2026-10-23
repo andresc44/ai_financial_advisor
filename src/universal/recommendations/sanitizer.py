@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, date
 import json
 import sys
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 
 def process_news(news):

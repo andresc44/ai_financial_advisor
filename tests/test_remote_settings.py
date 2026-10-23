@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 
 import pytest
 
-import src.remote_settings as rs
-import src.settings_overrides as store
-from src.parameter_notes import own_note
-from src.parameters import params_dict
+import src.config.remote_settings as rs
+import src.config.settings_overrides as store
+from src.config.parameter_notes import own_note
+from src.config.parameters import params_dict
 
 NOW = datetime(2026, 10, 23, 20, 10, tzinfo=timezone.utc)  # 16:10 ET
 LATER = datetime(2026, 10, 24, 11, 10, tzinfo=timezone.utc)
@@ -97,7 +97,7 @@ def test_only_urgent_telegram_messages_say_so(monkeypatch):
 def test_every_setting_has_a_note_of_its_own_and_survives_the_round_trip():
     for path in store.leaf_paths(store.defaults()):
         name, default = ".".join(path), store.get_path(store.defaults(), path)
-        assert own_note(name), f"{name} needs a note in src/parameter_notes.py"
+        assert own_note(name), f"{name} needs a note in src/config/parameter_notes.py"
         assert rs.parse_value(rs.format_value(default), default) == default
 
 

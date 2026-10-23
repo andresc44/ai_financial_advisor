@@ -18,8 +18,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
   watchdog and digest can react (see api_errors.py).
 - 2026-10-15: the digest can reuse a watchdog evaluation from the last hour (reuse_recent_evaluations), so
   stocks that were just evaluated and haven't moved aren't sent to Claude twice.
-- 2026-10-16: the model can be Claude or DeepSeek (src/llm_models.py), per user (PortfolioFetcher.llm_settings,
-  formerly claude_overrides). DeepSeek requests go through src/deepseek_client.py with the same tool schema, the
+- 2026-10-16: the model can be Claude or DeepSeek (src/llm/llm_models.py), per user (PortfolioFetcher.llm_settings,
+  formerly claude_overrides). DeepSeek requests go through src/llm/deepseek_client.py with the same tool schema, the
   same validation, and the same stop-at-the-first-key-error handling; resolve_llm_key checks the user's key for
   whichever provider their model needs (formerly resolve_anthropic_key), and the error is self.llm_key_error.
 """
@@ -41,11 +41,11 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import llm_models
-from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
-from src.idea_positions import prompt_view
-from src.market_session import market_phase
-from src.parameters import params_dict
+from src.llm import llm_models
+from src.llm.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
+from src.tracking.idea_positions import prompt_view
+from src.market.market_session import market_phase
+from src.config.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable, anthropic_key_error, deepseek_key_error, verify_llm_key
 from src.personalized.holding_checks import holding_checks
 from src.personalized.holdings_state import record_evaluations, reusable_evaluations
@@ -59,8 +59,8 @@ from src.personalized.LLM_hold_instr import (
     format_user_prompt,
 )
 from src.personalized.user_settings import get_llm_api_key
-from src.track_record import log_personal
-from src.usage_tracking import record_anthropic_response, record_deepseek_response
+from src.tracking.track_record import log_personal
+from src.tracking.usage_tracking import record_anthropic_response, record_deepseek_response
 
 logging.basicConfig(
     level=logging.INFO,
@@ -164,7 +164,7 @@ class ParallelHoldingEvaluator:
         self.deepseek = DeepSeekClient(api_key=api_key) if self.provider == llm_models.DEEPSEEK else None
         self.client = AsyncAnthropic(api_key=api_key) if self.deepseek is None else None
         self.user_name = user_name
-        self.source = source  # "digest" or "watchdog", for the usage ledger (src/usage_tracking.py)
+        self.source = source  # "digest" or "watchdog", for the usage ledger (src/tracking/usage_tracking.py)
         self.key_error: Optional[ApiKeyUnusable] = None  # First key failure; later requests are skipped
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
         self.evaluated_at = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z")
@@ -464,7 +464,7 @@ def add_recommendations(
     if user_name and evaluations:
         evaluated = df[df["symbol"].isin(evaluations)]
         record_evaluations(user_name, evaluated, evaluated_at=now)
-        # Claude-authored (2026-10-15): append to the long-term track record (src/track_record.py). Only the digest
+        # Claude-authored (2026-10-15): append to the long-term track record (src/tracking/track_record.py). Only the digest
         # reuses recent evaluations, so the flag also tells which run made them.
         log_personal(
             user_name,

@@ -10,10 +10,10 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-import src.run_logging as run_logging
+import src.ops.run_logging as run_logging
 import src.telegram_alert.hourly_watchdog as wd
 import src.telegram_alert.notices as notices
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from src.personalized.api_errors import ApiKeyUnusable
 from src.personalized.holdings_state import get_user_state
 from src.personalized.pull_holdings_data import PortfolioFetcher

@@ -37,12 +37,12 @@ from typing import Any, Optional
 
 import pandas as pd
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import track_record
-from src.market_session import _get_calendar, market_date
+from src.tracking import track_record
+from src.market.market_session import _get_calendar, market_date
 from src.personalized.user_profiles import USER_PROFILES, env_setting
 
 STATE_PATH = project_root / "data" / "idea_positions.json"

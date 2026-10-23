@@ -23,7 +23,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 _LEVELS = params_dict.get("MARKET_SIGNALS") or {}
 _WINDOW = {"1D": "a day", "5D": "5 days", "1M": "a month"}.get(_LEVELS.get("RELATIVE_WINDOW", "5D"), "5 days")

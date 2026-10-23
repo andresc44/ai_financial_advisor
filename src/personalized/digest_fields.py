@@ -24,8 +24,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.market_session import market_date
-from src.parameters import params_dict
+from src.market.market_session import market_date
+from src.config.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
 
 DIGEST_PARAMS = params_dict["DIGEST"]

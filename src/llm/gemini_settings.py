@@ -8,7 +8,7 @@ params_dict["GEMINI_CONFIG"] now sets the effort for every Gemini call in the pr
 and caps each answer's length as a safety net.
 
 Everything is read when a request is built, not at import, so a setting changed from the settings sheet
-(src/remote_settings.py) applies to the run that read it.
+(src/config/remote_settings.py) applies to the run that read it.
 """
 import sys
 from pathlib import Path
@@ -16,11 +16,11 @@ from typing import Any, Optional
 
 from google.genai import types
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 # Gemini 3's thinking levels, least to most; "default" leaves it to the model (as before 2026-10-23)
 EFFORTS = ("minimal", "low", "medium", "high")

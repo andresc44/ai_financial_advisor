@@ -3,7 +3,7 @@
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request.
 
 parameters.py holds the defaults. Each cron digest run reads the "Parameters" tab of the sign-up spreadsheet
-(src/remote_settings.py), checks every changed value, and keeps the accepted ones in data/remote_settings.json. This
+(src/config/remote_settings.py), checks every changed value, and keeps the accepted ones in data/remote_settings.json. This
 module applies that file:
 - at the end of parameters.py, so every process (digest, watchdog, check_config) starts with the sheet's values;
 - again in the digest run that read the sheet, in place, so the change applies to that run's digest too. Values are
@@ -20,10 +20,10 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 OVERRIDES_PATH = project_root / "data" / "remote_settings.json"
 IGNORE_ENV = "FINNBOT_IGNORE_SETTINGS_SHEET"
-# Set elsewhere and never from the settings sheet: the sign-up sync owns ACTIVE_USERS (src/import_signup.py)
+# Set elsewhere and never from the settings sheet: the sign-up sync owns ACTIVE_USERS (src/users/import_signup.py)
 READ_ONLY = {("ACTIVE_USERS",)}
 
 _defaults: Optional[dict] = None  # parameters.py's own values, kept before anything is laid over them

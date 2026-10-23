@@ -33,7 +33,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict  # noqa: E402
+from src.config.parameters import params_dict  # noqa: E402
 
 # Seconds between retries of a rate-limited Finnhub call. The last outlasts Finnhub's one-minute window (2026-10-18)
 FINNHUB_RETRY_DELAYS = (2, 5, 15, 60)

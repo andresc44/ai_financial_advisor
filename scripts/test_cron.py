@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 import os
 import sys
 
-# 0 * * * * /home/andres_cervera_rozo/ai_financial_advisor/venv/bin/python /home/andres_cervera_rozo/ai_financial_advisor/test_cron.py >> /home/andres_cervera_rozo/ai_financial_advisor/cron.log 2>&1
+# 0 * * * * /home/andres_cervera_rozo/ai_financial_advisor/venv/bin/python /home/andres_cervera_rozo/ai_financial_advisor/scripts/test_cron.py >> /home/andres_cervera_rozo/ai_financial_advisor/cron.log 2>&1
 def get_aest_timestamp():
     """Generates a formatted timestamp in Australian Eastern Standard Time (AEST, UTC+10)."""
     aest_tz = timezone(timedelta(hours=10))

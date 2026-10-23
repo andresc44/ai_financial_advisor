@@ -28,9 +28,9 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.market_session import last_refresh_boundary
-from src.parameters import params_dict
-from src.shared_locks import MARKET_DATA_LOCK
+from src.market.market_session import last_refresh_boundary
+from src.config.parameters import params_dict
+from src.ops.shared_locks import MARKET_DATA_LOCK
 from src.universal.recommendations.filter_tickers import DataFetcher
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
 
@@ -154,7 +154,7 @@ def add_metrics_to_holdings(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
     fresh_cutoff = now - timedelta(minutes=WATCHDOG_PARAMS["FRESH_CONTEXT_MAX_AGE_MINUTES"])
     # Claude-authored (2026-10-15): users can run in parallel threads. The lock keeps the shared Finnhub /
     # Twelve Data keys at single-user request rates, makes this cache read-modify-write safe, and lets a user who
-    # waited find symbols another user just fetched (see src/shared_locks.py).
+    # waited find symbols another user just fetched (see src/ops/shared_locks.py).
     with MARKET_DATA_LOCK:
         cache = _load_context_cache()
 

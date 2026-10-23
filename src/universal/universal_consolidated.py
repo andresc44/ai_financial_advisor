@@ -25,8 +25,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
-from src import llm_models
+from src.config.parameters import params_dict
+from src.llm import llm_models
 from src.personalized.api_errors import ApiKeyUnusable, shared_api_key, shared_key_issue, verify_llm_key
 from src.universal.recommendations.ticker_fetcher import Tickers
 from src.universal.recommendations.sanitizer import sanitize_ticker_payload
@@ -37,9 +37,9 @@ from src.universal.recommendations.data_source_guard import missing_data_issues
 from src.universal.recommendations import swing_screen
 from src.universal.market_news import get_macro_stories
 from src.universal.macro_indicators import get_market_dashboard
-from src.shared_locks import MARKET_DATA_LOCK
+from src.ops.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert.notices import alert_admins
-from src.track_record import log_universal
+from src.tracking.track_record import log_universal
 
 NO_RECOMMENDATIONS = {"top_long_term": [], "top_swing": []}
 
@@ -186,7 +186,7 @@ def _get_recommendations() -> dict:
     )
     # Claude-authored (2026-10-15): the digest now builds this universal content while users run in parallel.
     # Finnhub / Twelve Data use one shared key, so this fetch takes the same lock as the holdings fetch
-    # (src/shared_locks.py); Claude scoring below runs outside it.
+    # (src/ops/shared_locks.py); Claude scoring below runs outside it.
     with MARKET_DATA_LOCK:
         print("Initializing DataFetcher instance...")
         try:

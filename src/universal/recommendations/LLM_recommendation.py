@@ -13,13 +13,13 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import llm_models
-from src.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
-from src.parameters import params_dict
+from src.llm import llm_models
+from src.llm.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
+from src.config.parameters import params_dict
 from src.personalized.api_errors import (
     ApiKeyUnusable, anthropic_key_error, deepseek_key_error, shared_api_key, shared_key_issue,
 )
-from src.usage_tracking import record_anthropic_response, record_deepseek_response
+from src.tracking.usage_tracking import record_anthropic_response, record_deepseek_response
 from src.universal.recommendations.LLM_rec_instr import (
     VALUATION_SCORE_DESCRIPTION,
     FINANCIAL_HEALTH_SCORE_DESCRIPTION,
@@ -248,7 +248,7 @@ class ParallelStockEvaluator:
         # Claude-authored (2026-10-13): CLAUDE_CONFIG supplies model settings only. Its "system_prompt" key (if
         # present) is ignored so the rubric in LLM_rec_instr (2026-10-20: its prompt for the evaluator's horizon) is always what Claude receives.
         # A caller can still pass a different system_prompt explicitly via `config`.
-        # 2026-10-16: the model and effort are params_dict["LLM"]["UNIVERSAL"] (Claude or DeepSeek, src/llm_models.py);
+        # 2026-10-16: the model and effort are params_dict["LLM"]["UNIVERSAL"] (Claude or DeepSeek, src/llm/llm_models.py);
         # the provider's request settings (CLAUDE_CONFIG / DEEPSEEK_CONFIG) fill in the rest.
         chosen = {**llm_models.job_settings("UNIVERSAL"), **(config or {})}
         efforts = llm_models.allowed_models().get(chosen["model"])

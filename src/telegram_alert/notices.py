@@ -25,7 +25,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 from src.telegram_alert.send_telegram import send_telegram_message
 
 WATCHDOG_PARAMS = params_dict["WATCHDOG"]

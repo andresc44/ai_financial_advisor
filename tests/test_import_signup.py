@@ -1,11 +1,11 @@
-# Claude-authored (2026-10-22): importing sign-up form answers into .env and ACTIVE_USERS (src/import_signup.py)
+# Claude-authored (2026-10-22): importing sign-up form answers into .env and ACTIVE_USERS (src/users/import_signup.py)
 import ast
 
 import pytest
 from dotenv import dotenv_values
 
-import src.import_signup as signup
-from src.parameters import params_dict
+import src.users.import_signup as signup
+from src.config.parameters import params_dict
 
 # The answers sheet's header, as the first form (docs/finnbot_signup_form.gs) created it: titles repeat. The model
 # questions were dropped on 2026-10-22 (NEW_HEADER); an answer from either form clears per-user model choices
@@ -251,7 +251,7 @@ def test_the_sync_never_stops_the_digest_or_empties_the_list(files, monkeypatch,
 
 def test_a_none_placeholder_counts_as_missing_everywhere(monkeypatch):
     # Claude-authored (2026-10-22): KEY=None marks a key the sync found missing; nothing may use it as a real key
-    from src.check_config import _env
+    from src.config.check_config import _env
     from src.personalized.user_profiles import env_setting
     for value, expected in (("None", None), ("  ", None), ("sk-real", "sk-real"), (" AIza-x ", "AIza-x")):
         monkeypatch.setenv("X_GEMINI_API_KEY", value)

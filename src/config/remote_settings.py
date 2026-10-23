@@ -10,20 +10,20 @@ parameters.py, one per row:
 
 Every digest run reads it first (sync_settings; cron runs and manual ones, since 2026-10-23) and:
 - checks every Value that differs from its Default (type, allowed values, ranges). A valid one replaces parameters.py's
-  value from that run on, in every Finnbot process (src/settings_overrides.py, data/remote_settings.json);
+  value from that run on, in every Finnbot process (src/config/settings_overrides.py, data/remote_settings.json);
 - a blank Value, or one equal to the Default, follows parameters.py;
 - 2026-10-23 (Andres): when parameters.py's default changes (by Andres or Claude), the newest change wins: the sheet's
   Value becomes the new default even if it had been changed there, and the admins are told. The Default column Finnbot
   last wrote is how a change in parameters.py is noticed;
 - a Value that isn't valid isn't applied: its status says why, and the value accepted before (or the default) stays;
-- writes back the Default, Finnbot status, and What it does columns (src/parameter_notes.py), and adds a row for each
+- writes back the Default, Finnbot status, and What it does columns (src/config/parameter_notes.py), and adds a row for each
   new setting. A row that isn't a setting is kept, marked as ignored;
-- shows ACTIVE_USERS read-only: the sign-up sync sets it from the form's answers (src/import_signup.py);
+- shows ACTIVE_USERS read-only: the sign-up sync sets it from the form's answers (src/users/import_signup.py);
 - tells the admins on Telegram what changed or was rejected.
 If the tab can't be read, the values accepted last time stay in force. Values are written the way Python writes them:
 True / False, None, numbers, text without quotes, and lists such as ['Technology', 'Communication Services'].
 
-By hand: python -m src.remote_settings --sync (read the tab, apply, write the status) or --show (the values in force).
+By hand: python -m src.config.remote_settings --sync (read the tab, apply, write the status) or --show (the values in force).
 """
 import argparse
 import ast
@@ -45,13 +45,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 from dotenv import load_dotenv
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src import settings_overrides as store
-from src.parameter_notes import note_for
-from src.parameters import params_dict
+from src.config import settings_overrides as store
+from src.config.parameter_notes import note_for
+from src.config.parameters import params_dict
 
 load_dotenv(project_root / ".env")
 
@@ -67,7 +67,7 @@ NOTICE_COOLDOWN_HOURS = 24 * 365  # Each notice is keyed by its changes, so it's
 DEFAULT_STATUS = "Default"
 READ_ONLY_STATUS = "🔒 Set by the sign-up form: change the form's answers instead"
 
-# .env keys that win over a setting on the machine that has them (src/llm_models.ENV_OVERRIDES)
+# .env keys that win over a setting on the machine that has them (src/llm/llm_models.ENV_OVERRIDES)
 ENV_WINS = {("LLM", "UNIVERSAL", "model"): "UNIVERSAL_LLM_MODEL", ("LLM", "UNIVERSAL", "effort"): "UNIVERSAL_LLM_EFFORT"}
 # Read once when a Finnbot process starts, so a change applies from the next run rather than the one that read it
 NEXT_RUN_ONLY = {("FINNHUB_CALLS_PER_MINUTE",), ("WATCHDOG", "TIMEZONE"), ("WATCHDOG", "ALERT_COOLDOWN_HOURS"),
@@ -527,7 +527,7 @@ def _write_back(sheet: Any, values: list[list[str]], plan: SyncPlan, now: dateti
 def _notify(plan: SyncPlan) -> None:
     if not plan.changes and not plan.new_rejections:
         return
-    from src.admins import admins
+    from src.users.admins import admins
     from src.telegram_alert.notices import send_notice_now
 
     body = "⚙️ <b>Finnbot settings changed in the sheet</b>"

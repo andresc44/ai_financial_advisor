@@ -22,7 +22,7 @@ In the email, Buy more is green and comes after the sell-side signals. It gets a
 
 ## How one run works
 
-Cron starts `src/telegram_alert/hourly_watchdog.py` every hour at :45. For each user in `ACTIVE_USERS` (`src/parameters.py`, the same list the digest uses) with a holdings source (`SNAPTRADE` or `SHEETS`) and a Telegram chat ID, it checks the gates below in order, cheapest first, and stops at the first one that says skip:
+Cron starts `src/telegram_alert/hourly_watchdog.py` every hour at :45. For each user in `ACTIVE_USERS` (`src/config/parameters.py`, the same list the digest uses) with a holdings source (`SNAPTRADE` or `SHEETS`) and a Telegram chat ID, it checks the gates below in order, cheapest first, and stops at the first one that says skip:
 
 1. **Watchdog on?** `watchdog_interval_hours` is above 0.
 2. **In session?** The time falls inside the user's session (`regular`, `extended` or `24_7`), using real exchange calendars, so holidays and 13:00 half-days are handled.
@@ -39,20 +39,20 @@ Errors are contained per user: one user's failure is printed with a traceback, a
 
 Both the watchdog and the digest process several users at once (`MAX_PARALLEL_USERS`), and the digest also builds the universal content at the same time. Inside one user's digest, the Gemini news (several holdings per request, several requests at a time; since 2026-10-23 news fetched earlier the same day is reused, see [Holding news](#holding-news-and-the-portfolio-review-2026-10-23)) runs while market data and Claude run, and the portfolio review waits for both. What keeps this safe:
 
-- **Shared data keys:** Finnhub and Twelve Data use one key each, so fetching from them is serialized by one lock (`src/shared_locks.py`). The request rate stays the same as a single-user run, and a user who waited finds symbols another user just fetched in the market-context cache.
+- **Shared data keys:** Finnhub and Twelve Data use one key each, so fetching from them is serialized by one lock (`src/ops/shared_locks.py`). The request rate stays the same as a single-user run, and a user who waited finds symbols another user just fetched in the market-context cache.
 - **Shared files:** `data/watchdog_state.json` updates take an in-process lock, and the market-context cache is only read and written under the lock above. The crontab `flock` still keeps the watchdog and digest processes apart.
 - **Per-user keys:** Claude, Gemini, SnapTrade, and Telegram calls use each user's own credentials, so they run fully in parallel.
 - Log lines from different users interleave; watchdog lines start with `[user]`.
 
 ## Settings
 
-Since 2026-10-23 every setting in `src/parameters.py` can also be changed from the sign-up spreadsheet, without editing the file: see [Changing settings from the spreadsheet](#changing-settings-from-the-spreadsheet-2026-10-23).
+Since 2026-10-23 every setting in `src/config/parameters.py` can also be changed from the sign-up spreadsheet, without editing the file: see [Changing settings from the spreadsheet](#changing-settings-from-the-spreadsheet-2026-10-23).
 
-### Global (`src/parameters.py`)
+### Global (`src/config/parameters.py`)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `ACTIVE_USERS` | Synced from the sign-up sheet (`src/import_signup.py`, 2026-10-22) | Users the digest **and** the watchdog run for. Each needs a profile in `user_profiles.py`; unknown names are skipped with a warning. Their `.env` settings still decide which digests they get and whether the watchdog runs for them. |
+| `ACTIVE_USERS` | Synced from the sign-up sheet (`src/users/import_signup.py`, 2026-10-22) | Users the digest **and** the watchdog run for. Each needs a profile in `user_profiles.py`; unknown names are skipped with a warning. Their `.env` settings still decide which digests they get and whether the watchdog runs for them. |
 | `WATCHDOG.SESSION` | `"regular"` | Default session for all users. |
 | `WATCHDOG.SESSIONS` | see file | `pre_open_minutes` / `post_close_minutes` are measured from each day's actual open and close. `extended` = 330 / 240, which is 4:00–20:00 ET on a full day. Set `pre_open_minutes` to 150 to start at 7:00. |
 | `WATCHDOG.EXCHANGE_CALENDARS` | `["XNYS", "XTSE"]` | A day counts as a trading day if **any** listed exchange trades, so US Thanksgiving is a trading day because the TSX is open. |
@@ -112,7 +112,7 @@ The API keys are the only settings with no default: they never fall back to the 
 
 #### Choosing the LLM: Claude or DeepSeek (added 2026-10-16)
 
-Every job that took a Claude model can take a DeepSeek model instead. `src/llm_models.py` picks the provider from the model name, and `src/deepseek_client.py` makes the DeepSeek calls.
+Every job that took a Claude model can take a DeepSeek model instead. `src/llm/llm_models.py` picks the provider from the model name, and `src/llm/deepseek_client.py` makes the DeepSeek calls.
 
 | Job | Set in | Key |
 |---|---|---|
@@ -171,9 +171,9 @@ The first full run with it (2026-10-19) scored 95 candidates for $0.28 instead o
 **Setting the scoring model in `.env`.** `UNIVERSAL_LLM_MODEL` and `UNIVERSAL_LLM_EFFORT` override `LLM["UNIVERSAL"]`, so each machine can choose without editing `parameters.py`:
 - **Model:** any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS`. A model that isn't allowed is ignored with a warning, and `parameters.py` is used.
 - **Effort:** if it's unset or the model doesn't accept it, the effort is `parameters.py`'s when that's the same model, and otherwise the provider's default (`low` for DeepSeek).
-- **Checking:** `python -m src.check_config` shows the model in use, and reports a set but unusable value as INVALID.
+- **Checking:** `python -m src.config.check_config` shows the model in use, and reports a set but unusable value as INVALID.
 
-**Misshapen answers** (`validated_answer` in `src/deepseek_client.py`, added 2026-10-17). Without thinking, `deepseek-flash` sometimes breaks the schema's shape: in that run it nested the swing section inside `long_term` (4 stocks) or added keys like `valuation_score_note` (2), and those stocks were never scored.
+**Misshapen answers** (`validated_answer` in `src/llm/deepseek_client.py`, added 2026-10-17). Without thinking, `deepseek-flash` sometimes breaks the schema's shape: in that run it nested the swing section inside `long_term` (4 stocks) or added keys like `valuation_score_note` (2), and those stocks were never scored.
 - **Repair:** `repair_arguments` moves a section back beside its sibling and drops keys the schema doesn't allow, using the tool's schema. It never changes values, so an out-of-range score still fails validation. Each fix is logged as a warning, e.g. "Fixed the answer's shape: moved long_term.swing to swing".
 - **One retry:** an answer that is missing, not JSON, or still invalid is asked for once more (`INVALID_ANSWER_RETRIES`). One cut off at `max_tokens` or withheld by the content filter isn't, since it would fail the same way. Both answers are billed.
 - **Scope:** new-stock scoring and holdings evaluations on DeepSeek. Claude's strict tool use already keeps its answers in shape.
@@ -201,7 +201,7 @@ Missing, invalid, revoked, expired, unpermitted, out-of-credit, spend-limited, a
 | Digest | The same Claude handling (market data is still fetched, because the holding cards use it). For Gemini, the news requests stop at the first key failure (keeping news already fetched). The portfolio review uses the holdings model's key (2026-10-23), so it's skipped without a request when the holdings evaluation already found that key unusable. The payload's `api_key_issues` list says which key failed and why. |
 | Gemini retries | Only timeouts, connection errors, per-minute 429s (honoring the API's retry delay), and 5xx are retried, up to 4 attempts. Key, billing, daily-quota, and other 4xx errors fail immediately. A 429 that survives the retries stops the news requests for that run. |
 
-#### Who is told how to fix it (`src/admins.py`, 2026-10-17)
+#### Who is told how to fix it (`src/users/admins.py`, 2026-10-17)
 
 Only the admins (`OPS.ALERT_USERS`, Andres) can change `.env`, the provider accounts, or the SnapTrade and sheet setup. So key and holdings notices are worded for their reader, in Telegram and in the email:
 - **An admin** gets the problem, the fix, and the API's own message, e.g. "Gemini API key for 'Andres' has expired. Create a new key in Google AI Studio and update ANDRES_GEMINI_API_KEY in .env."
@@ -393,7 +393,7 @@ On Windows, run `venv\Scripts\python.exe` instead, and set `$env:PYTHONUTF8 = "1
 | The overview: portfolio total, the day's change, unrealized P/L, account values | The user's home currency (2026-10-21), plus the total in USD when that isn't USD | `home_currency` in `create_html.py`: `<NAME>_HOME_CURRENCY` from the payload, at the current rate |
 | The home currency's week (2026-10-21) | For a non-USD home currency: its move against the dollar over the past 5 trading days, after the rate on the overview's USD line, e.g. "$8,466.64 USD · 1 AUD = 0.703 USD · AUD +0.6% this week" | `fx_rates.usd_rate_change` (Yahoo `<CODE>USD=X` daily closes); left out when Yahoo has no history. Added because DXY (the dollar against the euro, yen, pound, Canadian dollar, krona, and franc) says how the dollar affects US stocks, not what it does to a holder whose currency is another |
 | Holding cards: value, price, unrealized P/L (2026-10-21) | Each stock's own currency, at Andres's request: "C$1,000.00", "€200.00", "COP$2,800". London shows its price in pence as quoted ("Price · pence", "418.5p") and its value and P/L in pounds. Since 2026-10-23 the line under the name also gives the average price paid ("10 shares · avg cost $290.36 · Individual RRSP"; in pence for London; a stock in several accounts is averaged over them; left out when the broker reported no cost basis). The line atop Your holdings says "Values in each stock's currency" (or "Values in USD" when every holding is in USD) | `_own_currency` in `create_html.py`: the card's USD amounts back at the rate they were converted at. Before 2026-10-21 cards were in USD, with a "Listed in CAD at C$64.50 · 1 CAD = 0.707 USD" note |
-| Totals behind the overview, weights, beta (any currency) | USD at the current rate, then the home currency for the overview | `pull_holdings_data` converts money amounts to USD (`USD_MONEY_COLUMNS`); `holdings_in_usd` in `create_html.py` restates them at the current rate just before the email is built (rates from `src/fx_rates.py`: live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so |
+| Totals behind the overview, weights, beta (any currency) | USD at the current rate, then the home currency for the overview | `pull_holdings_data` converts money amounts to USD (`USD_MONEY_COLUMNS`); `holdings_in_usd` in `create_html.py` restates them at the current rate just before the email is built (rates from `src/market/fx_rates.py`: live from Yahoo, else the last cached rate, else the payload's own rate). If there's no rate at all, the holding stays in its currency and a notice says so |
 | The portfolio review's notes (2026-10-21) | The home currency | `build_portfolio_summary(..., home)` and the review prompt |
 | Ideas: prices, trade levels, targets | "Prices in USD" | Always USD: the ideas come from the US screener (`IDEAS_CURRENCY`) |
 | Market dashboard ETF and oil prices | $ (US ETFs, e.g. "S&P 500 · SPY $771.79") | Always USD: US ETFs and WTI |
@@ -530,23 +530,23 @@ The pre- and post-market digests on the same day are built independently; nothin
 | Gemini news | Fetched once a day per holding (2026-10-23): a later digest the same US Eastern day shows the earlier news again, unless the stock moved more than `NEWS_REUSE.MAX_MOVE_NATR` NATRs, its signal changed, or it reported earnings since (`src/personalized/news_reuse.py`, `data/holding_news/`). |
 | Portfolio review | Fresh every run. |
 | Company names | Yahoo's name (`profile.name` in the market context) replaces the brokerage's description, which can be wrong (SnapTrade has called Agilent's "A" "AgileThought, Inc."). The holding news starts before the market context is fetched, so it uses the name cached from an earlier run (`cached_company_names`). |
-| Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. The email shows each holding card back in its own currency (2026-10-21). |
+| Currency | Money amounts (market value, cost basis, unrealized and daily P/L) are in USD, converted at the latest Yahoo rate (`src/market/fx_rates.py`; the last good rate in `data/fx_rates.json` if Yahoo fails). Per-share prices stay in the listing's currency, with `*_usd` copies. Unrealized P/L uses today's rate, so it excludes currency moves since purchase. The email shows each holding card back in its own currency (2026-10-21). |
 | Universal content | Fresh every run, except the NASDAQ screener's ticker list. That list is downloaded once per morning and once per afternoon, and again whenever the stage-1 settings in `parameters.py` change. |
 
-### Track record (`src/track_record.py`)
+### Track record (`src/tracking/track_record.py`)
 
 Every new holding evaluation (digest or watchdog) is appended to `data/track_record/personal.jsonl`, and every universal pick to `data/track_record/universal.jsonl`, with the price at the time. The files are never rewritten. To see how the advice played out:
 
 ```bash
-venv/bin/python -m src.track_record                 # all recommendations
-venv/bin/python -m src.track_record --since 2026-11-01
+venv/bin/python -m src.tracking.track_record                 # all recommendations
+venv/bin/python -m src.tracking.track_record --since 2026-11-01
 ```
 
 It prints, per recommendation (buy_more / hold / risky / profit_sell / urgent_sell; older rows keep hold / trim / risk_alert) and per universal list (long_term / swing): how many, the average return 1, 5, and 20 trading days later, the share that went up, the average return minus SPY's over the same days, and how many are still pending. A good `urgent_sell` record shows negative returns; a good `long_term` list beats SPY.
 
 ### Logs and failure alerts
 
-Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py`): one line per message with a timestamp and the user it belongs to, rotating at `OPS.LOG_MAX_MB` (5 MB) and keeping `OPS.LOG_BACKUPS` (5) old files. Under cron the output no longer also goes to `digest.log` / `watchdog.log` in the project root, which now only catch crashes before logging starts; set `FINNBOT_LOG_ECHO=1` to see the output when piping it. Each run ends with a summary line (who was sent or checked, who failed, how long it took).
+Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/ops/run_logging.py`): one line per message with a timestamp and the user it belongs to, rotating at `OPS.LOG_MAX_MB` (5 MB) and keeping `OPS.LOG_BACKUPS` (5) old files. Under cron the output no longer also goes to `digest.log` / `watchdog.log` in the project root, which now only catch crashes before logging starts; set `FINNBOT_LOG_ECHO=1` to see the output when piping it. Each run ends with a summary line (who was sent or checked, who failed, how long it took).
 
 `OPS.ALERT_USERS` (default `["Andres"]`) get a Telegram alert when the digest's universal content fails, a user's digest or watchdog check fails, or a run crashes, at most once per `OPS.ALERT_COOLDOWN_HOURS` (6) for each kind of failure. The traceback is in the log.
 
@@ -556,7 +556,7 @@ Each run writes to `logs/digest.log` or `logs/watchdog.log` (`src/run_logging.py
 - **Every day:** it runs at weekends too, so a Monday-morning report is caught on Sunday.
 - **Code:** `src/telegram_alert/earnings_reminder.py`, called by `run_daily_digests`.
 
-**Holdings bought from Finnbot's ideas (added 2026-10-22).** When a user buys a stock Finnbot suggested, Finnbot remembers the idea and uses it (`src/idea_positions.py`, state in the gitignored `data/idea_positions.json`, which the Drive backup includes):
+**Holdings bought from Finnbot's ideas (added 2026-10-22).** When a user buys a stock Finnbot suggested, Finnbot remembers the idea and uses it (`src/tracking/idea_positions.py`, state in the gitignored `data/idea_positions.json`, which the Drive backup includes):
 - **What counts:** a new position (a symbol held now that wasn't at the user's previous digest or watchdog check; adding shares to a stock already held doesn't count), bought by the end of the next trading day after the idea. A purchase is only seen at the next check, so the test is that the previous check came before the NYSE close of the first trading day after the idea's date. The ideas are the track record's (`data/track_record/universal.jsonl`). A user's first check only remembers what they hold, so stocks owned before this existed are never linked.
 - **The holding card:** one grey line, e.g. "Swing idea · Oct 21 · entry $100.00 · stop $95.00 · target $112.00" ("· target reached" or "· stop hit" once the price gets there), or "Long-term idea · Oct 16 · score 93". About 0.26 KB per stock that has one.
 - **The AI review:** the stock's payload carries `opened_from_finnbot_idea` (list, date, score, what was paid, and a swing idea's entry, stop, and target), and the review's instructions say to weigh the plan without following it blindly.
@@ -710,7 +710,7 @@ A section that can't be fetched holds `{"Error": ...}` and adds a `universal_iss
 - **Stages without rules:** a filter stage with no rules lets everything through, so it's left out.
 - **No picks possible:** when no picks could be made (no LLM or Finnhub key), `screening` is `{}` and the email leaves the section out.
 
-### API cost tracking (`src/usage_tracking.py`)
+### API cost tracking (`src/tracking/usage_tracking.py`)
 
 Every Claude, DeepSeek and Gemini response is recorded in `data/usage/api_usage.jsonl`: holding evaluations (watchdog and digest), holding news, the portfolio review (an Anthropic call since 2026-10-23), and the universal scoring and macro news under the user `_shared`. Each user's digest payload gets an `api_usage` block with the estimated spend on their own keys and, under `admin`, on the admin's shared keys (2026-10-22, Andres), each for this run and the last 30 days:
 
@@ -738,7 +738,7 @@ These are estimates from token counts and list prices. They can't see credits, d
 
 ## Changing settings from the spreadsheet (2026-10-23)
 
-Every setting in `src/parameters.py` is also a row of the **Parameters** tab in the sign-up spreadsheet (`SIGNUP_FORM_SHEET_ID`; the tab is `SETTINGS_TAB_GID`, else the one named "Parameters"). Changing a setting there changes it for the next digest run, without editing or deploying `parameters.py`. Written at Andres's request (`src/remote_settings.py`, `src/settings_overrides.py`, `src/parameter_notes.py`).
+Every setting in `src/config/parameters.py` is also a row of the **Parameters** tab in the sign-up spreadsheet (`SIGNUP_FORM_SHEET_ID`; the tab is `SETTINGS_TAB_GID`, else the one named "Parameters"). Changing a setting there changes it for the next digest run, without editing or deploying `parameters.py`. Written at Andres's request (`src/config/remote_settings.py`, `src/config/settings_overrides.py`, `src/config/parameter_notes.py`).
 
 | Column | Who writes it | What it is |
 |---|---|---|
@@ -746,9 +746,9 @@ Every setting in `src/parameters.py` is also a row of the **Parameters** tab in 
 | Value | **You** | The value to use. Write it the way Python does: `True` / `False`, `None`, numbers, text without quotes, and lists like `['Technology', 'Communication Services']`. Blank = the default. |
 | Default (parameters.py) | Finnbot | `parameters.py`'s own value. |
 | Finnbot status | Finnbot | `Default`, `✅ Applied since <time>`, or `❌ Not applied: <why>`. The header says when Finnbot last read the tab. |
-| What it does | Finnbot | A one-line note (`src/parameter_notes.py`). |
+| What it does | Finnbot | A one-line note (`src/config/parameter_notes.py`). |
 
-**When it's read.** At the start of every digest run, before the sign-up sync: the hourly cron run (at :10, whether or not a digest is due) and manual `--payload-only` runs alike (Andres, 2026-10-23; `--check` and `--from-payload` don't build a digest, so they don't). By hand: `python -m src.remote_settings --sync` (`--show` lists the values in force on this computer).
+**When it's read.** At the start of every digest run, before the sign-up sync: the hourly cron run (at :10, whether or not a digest is due) and manual `--payload-only` runs alike (Andres, 2026-10-23; `--check` and `--from-payload` don't build a digest, so they don't). By hand: `python -m src.config.remote_settings --sync` (`--show` lists the values in force on this computer).
 
 **How a value is checked.** It must have the default's type (a whole number where the default is one, `True`/`False`, a list shaped like the default's items), and pass the setting's own rules where it has them: allowed values (efforts, sector rules, sessions, signals, sections), a model that `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS` lists with an effort it accepts, a valid timezone or `HH:MM` time, counts of at least 1, no negative numbers where the default isn't negative, scores up to 100. A value that fails isn't applied: the status says why, and the value accepted before (or the default) stays in force.
 
@@ -767,13 +767,13 @@ Every setting in `src/parameters.py` is also a row of the **Parameters** tab in 
 
 **Layout.** The first sync sets up the tab: a frozen header, plain-text cells (so `07:00` or `1.50` aren't turned into a date or number), wrapped text, green and red status cells, and a warning (not a lock) when editing the columns Finnbot writes. A note on `A1` repeats the rules.
 
-**Adding a setting.** Add it to `parameters.py` as before, and a note for it to `src/parameter_notes.py` (`tests/test_remote_settings.py` fails until it has one). The next sync adds its row.
+**Adding a setting.** Add it to `parameters.py` as before, and a note for it to `src/config/parameter_notes.py` (`tests/test_remote_settings.py` fails until it has one). The next sync adds its row.
 
 ## Holding news and the portfolio review (2026-10-23)
 
 Gemini was about 85% of a user's bill, and about 90% of that was output tokens, mostly thinking: no request set a thinking level, so gemini-3.6-flash thought as much as it liked. At Andres's request:
 
-1. **Thinking low, project-wide.** `GEMINI_CONFIG.effort` (`minimal`, `low`, `medium`, `high`, or `default`) sets the thinking level of every Gemini request, the holding news and the macro news (`src/gemini_settings.py`).
+1. **Thinking low, project-wide.** `GEMINI_CONFIG.effort` (`minimal`, `low`, `medium`, `high`, or `default`) sets the thinking level of every Gemini request, the holding news and the macro news (`src/llm/gemini_settings.py`).
 2. **The portfolio review on the holdings model.** It's written by `LLM.HOLDINGS` (Claude Haiku 5.5, low) with the user's own Anthropic key, through a strict tool schema like the holdings evaluation, instead of Gemini. A user with the news off no longer needs a Gemini key.
 3. **The morning's news in the evening.** News fetched earlier the same US Eastern day is shown again (`DIGEST.NEWS_REUSE`), unless the stock moved more than `MAX_MOVE_NATR` normal days' ranges since, its signal changed, or it reported earnings; those are fetched again once the holdings are evaluated. Saved per user in `data/holding_news/<user>.json` (`src/personalized/news_reuse.py`).
 4. **Several holdings per request.** `DIGEST.SYMBOL_NEWS_BATCH_SIZE` (3) holdings share one Gemini request. A holding the answer leaves out, or every holding of an answer that can't be read, is asked for again on its own. It was 5 at first; on Andres's 10 holdings that kept 11 stories against 13 with one holding per request, at about half the cost ($0.012 against $0.022 a run), so Andres chose 3.
@@ -809,7 +809,7 @@ Everything below was written by Claude (Claude Opus 5.5 via Claude Code) on 2026
 
 | File | What Claude wrote | Why |
 |---|---|---|
-| `src/market_session.py` (new) | Market phases, session windows, N-hour block ids, cache refresh boundary | Lets one hourly cron serve per-user intervals and sessions, with holidays, half-days and DST handled by exchange calendars. Pure functions of `now` so they can be tested at fixed times. |
+| `src/market/market_session.py` (new) | Market phases, session windows, N-hour block ids, cache refresh boundary | Lets one hourly cron serve per-user intervals and sessions, with holidays, half-days and DST handled by exchange calendars. Pure functions of `now` so they can be tested at fixed times. |
 | `src/personalized/user_settings.py` (new) | Reads, validates and defaults per-user settings | One place that turns `.env` values into settings, so a typo can't crash the run or send an invalid API request. |
 | `src/personalized/holdings_state.py` (new) | `data/watchdog_state.json` storage | The memory needed to evaluate "only when needed", shared by the watchdog and the digest. |
 | `src/personalized/add_metrics.py` | Whole file: market context for holdings, plus the daily cache | Gives the sell-side LLM the same evidence as the buy-side LLM, and keeps API use bounded at higher check frequencies. |
@@ -819,5 +819,5 @@ Everything below was written by Claude (Claude Opus 5.5 via Claude Code) on 2026
 | `src/personalized/pull_holdings_data.py` | `src.*` imports, `user_name` / `claude_overrides` in `__init__`, session-price methods, `symbols` parameter on `get_holdings_digest_payload`, guard for a missing `GOOGLE_APPLICATION_CREDENTIALS` | Needed by the watchdog. The guard fixes a `TypeError` crash. |
 | `src/telegram_alert/send_telegram.py` | Imports only | The watchdog couldn't import it from the project root. |
 | `src/personalized/user_profiles.py` | Five new profile keys per user | Per-user settings. |
-| `src/parameters.py` | `WATCHDOG`, `CLAUDE_REFUSAL_FALLBACK`, `ALLOWED_CLAUDE_MODELS` | Global defaults and limits. |
+| `src/config/parameters.py` | `WATCHDOG`, `CLAUDE_REFUSAL_FALLBACK`, `ALLOWED_CLAUDE_MODELS` | Global defaults and limits. |
 | `requirements.txt`, `.gitignore`, this document | New pins and ignore rules; documentation | Reproducible installs, and no runtime state committed to the repo. |

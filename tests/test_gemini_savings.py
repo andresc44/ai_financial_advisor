@@ -15,8 +15,8 @@ import src.personalized.news_reuse as news_reuse
 import src.personalized.personalized_consolidated as pc
 import src.personalized.portfolio_review as review
 import src.universal.market_news as market_news
-from src import gemini_settings
-from src.parameters import params_dict
+from src.llm import gemini_settings
+from src.config.parameters import params_dict
 from src.personalized.symbol_specific_news import SymbolNewsItem
 
 MORNING = datetime(2026, 10, 23, 11, 10, tzinfo=timezone.utc)  # 07:10 US Eastern
@@ -156,7 +156,7 @@ def test_the_portfolio_review_is_written_by_the_holdings_model(claude_review, mo
     sent = claude_review["requests"][0]
     assert sent["model"] == "claude-haiku-5-5" and sent["output_config"] == {"effort": "low"}
     assert sent["tools"][0]["strict"] and sent["max_tokens"] == params_dict["DIGEST"]["PORTFOLIO_REVIEW_MAX_TOKENS"]
-    import src.usage_tracking as usage
+    import src.tracking.usage_tracking as usage
     assert usage.usage_summary("Andres", started)["this_digest"]["anthropic"]["calls"] == 1  # On the user's bill
 
 

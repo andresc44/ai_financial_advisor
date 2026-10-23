@@ -4,7 +4,7 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-16, a
 
 Any job that took a Claude model can take a DeepSeek model instead. The provider follows from the model name:
 models in params_dict["ALLOWED_CLAUDE_MODELS"] use Anthropic, models in params_dict["ALLOWED_DEEPSEEK_MODELS"] use
-DeepSeek (src/deepseek_client.py). Each model lists the efforts it accepts:
+DeepSeek (src/llm/deepseek_client.py). Each model lists the efforts it accepts:
 - Claude: low / medium / high / xhigh / max (output_config.effort).
 - DeepSeek: none (non-thinking, like the old V3 / deepseek-chat) or low / high / max (thinking, like the old R1 /
   deepseek-reasoner).
@@ -23,11 +23,11 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 load_dotenv(dotenv_path=project_root / ".env")
 
@@ -65,7 +65,7 @@ def job_settings(job: str) -> dict[str, str]:
     """
     {"provider", "model", "effort"} for params_dict["LLM"][job] ("UNIVERSAL" or "HOLDINGS"). An unknown model falls
     back to FALLBACK_MODEL and an effort the model doesn't accept to the provider's default, with a warning, so a
-    typo in parameters.py can't send an invalid request (src/check_config.py reports both).
+    typo in parameters.py can't send an invalid request (src/config/check_config.py reports both).
     2026-10-17: the job's ENV_OVERRIDES keys in .env win over parameters.py. A model there that isn't allowed is
     ignored with a warning; one without an effort key gets parameters.py's effort if it's the same model, else the
     provider's default.

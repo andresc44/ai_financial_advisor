@@ -3,7 +3,7 @@
 Authorship: Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-16, at Andres's request.
 
 Why: Claude scoring cost ~$1.23 a run for ~37 candidates. Any job that takes a Claude model (params_dict["LLM"],
-each user's HOLDINGS_LLM_MODEL) can take a DeepSeek model instead; src/llm_models.py decides which provider a
+each user's HOLDINGS_LLM_MODEL) can take a DeepSeek model instead; src/llm/llm_models.py decides which provider a
 model belongs to, and the evaluators call this module for DeepSeek models.
 
 API facts this relies on (api-docs.deepseek.com, checked 2026-10-16):
@@ -37,11 +37,11 @@ from typing import Any, Callable, Optional, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-project_root = Path(__file__).resolve().parents[1]
+project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 RETRYABLE_STATUS = {429, 500, 503}
 RETRY_DELAYS_SECONDS = (2, 5, 15)  # Waits before the 2nd, 3rd, and 4th attempt

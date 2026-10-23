@@ -11,7 +11,7 @@ the macro news on:
   matches a page Google Search grounding returned, else None), and the prompt states today's date.
 - 2026-10-20: STORY_COUNT stories (UNIVERSAL_EXTRAS.MACRO_NEWS_STORIES, 4; was 5), each with a one-sentence
   market impact (was 1-2 sentences), at Andres's request: the stories were about 6% of the email.
-- 2026-10-23: the request uses GEMINI_CONFIG's effort (thinking level) and output cap (src/gemini_settings.py), and
+- 2026-10-23: the request uses GEMINI_CONFIG's effort (thinking level) and output cap (src/llm/gemini_settings.py), and
   the model and story count are read when the request is built, so a change from the settings sheet applies at once.
   The prompt asks for the search result's grounding redirect link by name, which low effort otherwise often replaced
   with the article's own address (which can't be verified, so it was dropped).
@@ -34,11 +34,11 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.gemini_settings import gemini_model, generation_config
-from src.parameters import params_dict
+from src.llm.gemini_settings import gemini_model, generation_config
+from src.config.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error, shared_api_key, shared_key_issue
 from src.personalized.symbol_specific_news import _grounded_urls, _verify_source_urls
-from src.usage_tracking import record_gemini_response
+from src.tracking.usage_tracking import record_gemini_response
 
 
 def story_count() -> int:

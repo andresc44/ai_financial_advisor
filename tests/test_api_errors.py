@@ -11,7 +11,7 @@ from google.genai import types
 
 import src.personalized.api_errors as api_errors
 import src.personalized.symbol_specific_news as news
-from src.parameters import params_dict
+from src.config.parameters import params_dict
 
 USER = "Andres"
 

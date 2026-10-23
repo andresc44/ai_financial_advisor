@@ -252,7 +252,7 @@ data/ticker_data/
 data/track_record/
 data/digest_state.json
 data/fx_rates.json
-# Claude-authored (2026-10-22): holdings bought from Finnbot's ideas, per user (src/idea_positions.py)
+# Claude-authored (2026-10-22): holdings bought from Finnbot's ideas, per user (src/tracking/idea_positions.py)
 data/idea_positions.json
 logs/
 *.log
@@ -260,7 +260,7 @@ test_output/
 *_interactive_chart.html
 *_news.csv
 
-# Claude-authored (2026-10-16): estimated API spend per user (see src/usage_tracking.py), and market-data dumps
+# Claude-authored (2026-10-16): estimated API spend per user (see src/tracking/usage_tracking.py), and market-data dumps
 # written by the universal pipeline's debugging scripts (test_import.py, sanitizer.py). The dumps are large and
 # regenerated on demand, so they don't belong in history.
 data/usage/
@@ -268,5 +268,5 @@ LLM_input*.json
 
 # Claude-authored (2026-10-23): holding news kept for later digests the same day (src/personalized/news_reuse.py)
 data/holding_news/
-# Claude-authored (2026-10-23): settings accepted from the settings sheet on this computer (src/remote_settings.py)
+# Claude-authored (2026-10-23): settings accepted from the settings sheet on this computer (src/config/remote_settings.py)
 data/remote_settings.json

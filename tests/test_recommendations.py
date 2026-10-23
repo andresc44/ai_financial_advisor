@@ -12,7 +12,7 @@ import pytest
 import src.personalized.api_errors as api_errors
 import src.personalized.holdings_state as holdings_state
 import src.personalized.recommendation as rec
-import src.track_record as track_record
+import src.tracking.track_record as track_record
 from src.personalized.pull_holdings_data import portfolio_weights
 
 OK_MESSAGE = {

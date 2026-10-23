@@ -46,7 +46,7 @@ def test_each_setup_is_recognised_and_a_stretched_stock_is_not():
 
 
 def test_a_setup_can_be_switched_off(monkeypatch):
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
 
     screen = {**params_dict["SWING_SCREEN"]}
     screen["SETUP"] = {**screen["SETUP"], "NEW_UPTREND": {"ENABLED": False}}
@@ -92,7 +92,7 @@ GOOD = {"averageVolume": 2_000_000, "numberOfAnalystOpinions": 12, "recommendati
 
 
 def test_the_screen_counts_each_stage_and_sends_the_best_plans(monkeypatch):
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
 
     infos = {"PULL": GOOD, "TURN": {**GOOD, "longName": "Turn Co"}, "RUN": {**GOOD, "longName": "Run Co"},
              "LOSS": {**GOOD, "profitMargins": -0.02, "longName": "Loss Co"},     # Not profitable: fails fundamentals
@@ -200,7 +200,7 @@ FALLING = list(np.linspace(100, 150, 250)) + [150 - 0.5 * day for day in range(1
 def test_the_screen_leaves_out_falling_knives_reports_due_and_stretched_plans(monkeypatch):
     from datetime import datetime
 
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
 
     facts = sw.setup_facts(frame(FALLING))
     assert facts["rsi_at_10_day_low"] and not any(sw.turn_signs(facts).values())
@@ -237,7 +237,7 @@ def test_the_rubric_states_the_numbers_the_checks_use():
 
 
 def test_the_swing_settings_are_well_formed():
-    from src.parameters import params_dict
+    from src.config.parameters import params_dict
     from src.universal.recommendations.yahoo_filter_helper import OPERATORS
 
     screen = params_dict["SWING_SCREEN"]
