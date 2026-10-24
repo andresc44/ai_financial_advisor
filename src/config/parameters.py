@@ -8,6 +8,8 @@ params_dict = {
     # sheet's users with nothing required missing. Changes made here are replaced; change the sheet instead.
     "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/users/import_signup.py): edit the sheet
         "Andres",
+        "Mauricio",
+        "Claudia",
     ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
