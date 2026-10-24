@@ -41,6 +41,7 @@ load_dotenv(dotenv_path=project_root / ".env")
 T = TypeVar("T")
 
 WATCHDOG_PARAMS = params_dict["WATCHDOG"]
+MAX_IDEAS_PER_LIST = 10  # Claude-authored (2026-10-24): the most ideas of one kind <NAME>_LONG_RECS / _SWING_RECS can ask for
 TRUE_VALUES = {"true", "1", "yes", "on"}
 FALSE_VALUES = {"false", "0", "no", "off"}
 
@@ -151,6 +152,17 @@ def get_home_currency(user_name: str) -> str:
 def wants_holding_news(user_name: str) -> bool:
     """Claude-authored (2026-10-16): <NAME>_RECEIVE_HOLDING_NEWS (default True): Gemini news bullets per holding."""
     return _resolve(user_name, "receive_holding_news", True, parse=_parse_bool, is_valid=lambda v: True)
+
+
+def get_idea_counts(user_name: str) -> tuple[int, int]:
+    """
+    Claude-authored (2026-10-24, Andres): (long-term, swing) ideas this user's digest shows: <NAME>_LONG_RECS and
+    <NAME>_SWING_RECS (1 to MAX_IDEAS_PER_LIST), each falling back to LONG_TERM_N_AMOUNT / SWING_TERM_N_AMOUNT. These
+    are the most it shows: a day with fewer stocks above the minimum score has fewer ideas, as for everyone.
+    """
+    in_range = lambda v: 1 <= v <= MAX_IDEAS_PER_LIST  # noqa: E731
+    return (_resolve(user_name, "long_recs", params_dict["LONG_TERM_N_AMOUNT"], parse=int, is_valid=in_range),
+            _resolve(user_name, "swing_recs", params_dict["SWING_TERM_N_AMOUNT"], parse=int, is_valid=in_range))
 
 
 def get_active_users() -> list[str]:

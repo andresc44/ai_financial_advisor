@@ -304,9 +304,10 @@ def test_generated_profiles_keep_the_existing_env_names():
     profile = build_profile("Andres")
     assert profile["account_company"] == "ANDRES_INSTITUTION" and profile["google_sheets_id"] == "ANDRES_SHEETS_ID"
     assert profile["Receive_Premarket_Digest"] == "ANDRES_RECEIVE_PREMARKET_DIGEST"
-    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 22
+    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 24
     assert profile["deepseek_api_key"] == "ANDRES_DEEPSEEK_API_KEY" and profile["holdings_llm_model"] == "ANDRES_HOLDINGS_LLM_MODEL"
     assert profile["home_currency"] == "ANDRES_HOME_CURRENCY"  # 2026-10-21
+    assert profile["long_recs"] == "ANDRES_LONG_RECS" and profile["swing_recs"] == "ANDRES_SWING_RECS"  # 2026-10-24
     assert env_prefix("Mary-Jo") == "MARY_JO"
 
 
@@ -501,7 +502,7 @@ def test_payload_only_saves_json_and_changes_nothing(digest_run, monkeypatch, tm
         raise ValueError(f"not valid JSON: {constant}")
 
     payload = json.loads(files[0].read_text(encoding="utf-8"), parse_constant=strict)
-    assert payload["subject"] == "Finnbot Post-Market Digest 2026-10-15" and payload["user_name"] == "U0"
+    assert payload["subject"] == "Post-Market Digest 2026-10-15" and payload["user_name"] == "U0"
     assert "recommendations" in payload
     assert payload["holdings"][0] == {"symbol": "AAA", "rsi": None, "shares": 2.5,
                                       "next_earnings": "2026-10-20T00:00:00", "ex_date": None}

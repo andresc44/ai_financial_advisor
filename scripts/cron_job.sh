@@ -15,6 +15,11 @@
 #              (one line with counts only, written by the job) as the message.
 # `?create=1` creates the check on its first ping. Without HEALTHCHECKS_PING_KEY the job still runs, just unmonitored.
 # A failed ping never fails the job.
+#
+# 2026-10-24 (Claude, at Andres's request): maintenance mode. While scripts/maintenance.sh is on, the watchdog and the
+# digest are skipped (reported to healthchecks.io as a success with the reason), so a run never starts on code that's
+# half-edited on the VM. It's checked once this job holds the lock, so a run that was waiting behind another job is
+# skipped too. The backup still runs: it doesn't run Finnbot's code. The ulimit is also set here (see below).
 set -u
 
 JOB="${1:-}"
@@ -29,6 +34,18 @@ case "$JOB" in
 esac
 
 source scripts/env_value.sh  # env_value KEY: reads .env without running it as shell code
+
+# 2026-10-24: cron starts jobs with a soft limit of 1024 open files, and on 2026-10-23 every digest run hit it
+# ("[Errno 24] Too many open files"). The crontab lines raise it too; here it also holds for a manual run and survives
+# a rewritten crontab. A failure (a lower hard limit) leaves the limit as it was.
+ulimit -n 65536 2> /dev/null || true
+
+MAINTENANCE_FILE="data/maintenance_until"  # Written by scripts/maintenance.sh: when maintenance mode ends (epoch seconds)
+paused_until() {  # Prints when maintenance mode ends, and succeeds, while it's on
+  local end
+  end="$(cat "$MAINTENANCE_FILE" 2> /dev/null)" || return 1
+  [[ "$end" =~ ^[0-9]+$ ]] && [ "$(date +%s)" -lt "$end" ] && echo "$end"
+}
 
 PING_KEY="${HEALTHCHECKS_PING_KEY:-$(env_value HEALTHCHECKS_PING_KEY)}"
 PING_BASE="${HEALTHCHECKS_PING_URL:-$(env_value HEALTHCHECKS_PING_URL)}"
@@ -48,9 +65,19 @@ ping_hc() {  # $1: "/start" or "/<exit code>"; $2: message
 }
 
 ping_hc /start ""
-# -w 900: wait up to 15 minutes for another job to finish; -E 75: a distinct exit code when that wait times out
-flock -w 900 -E 75 /tmp/finnbot.lock "${CMD[@]}" >> "$OUT" 2>&1
-CODE=$?
+exec 9> /tmp/finnbot.lock
+# Wait up to 15 minutes for another job to finish; 75 is a distinct exit code for when that wait times out
+if ! flock -w 900 9; then
+  CODE=75
+elif [ "$JOB" != backup ] && UNTIL="$(paused_until)"; then
+  echo "Skipped: maintenance mode until $(date -u -d "@$UNTIL" +%H:%MZ) (scripts/maintenance.sh)." > "$STATUS_FILE"
+  echo "$(date -u +%FT%TZ) $(cat "$STATUS_FILE")" >> "$OUT"
+  CODE=0
+else
+  "${CMD[@]}" >> "$OUT" 2>&1
+  CODE=$?
+fi
+exec 9>&-
 
 if [ -s "$STATUS_FILE" ]; then
   MESSAGE="$(head -c 2000 "$STATUS_FILE")"

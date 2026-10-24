@@ -703,7 +703,8 @@ def test_the_glossary_is_static_and_left_out_first():
     assert html.index(">Glossary<") > html.index(">Long-term ideas ")  # At the very bottom
     assert "<b>RSI 14</b><br>Relative Strength Index" in html and "<b>Beta</b><br>" in html
     # 2026-10-21: "About this digest" goes first, then the glossary
-    assert [step.__name__ for step in ch.TRIM_STEPS[:2]] == ["_drop_about", "_drop_glossary"]
+    # 2026-10-24: the ideas' company blurbs go between them
+    assert [step.__name__ for step in ch.TRIM_STEPS[:3]] == ["_drop_about", "_drop_pick_about", "_drop_glossary"]
     trimmed = ch.build_view(payload(screening={"stages": [{"stage": "listings", "count": 7012}]}))
     ch._drop_about(trimmed)
     assert trimmed["usage"] == [] and trimmed["screening"] == []
@@ -1026,3 +1027,29 @@ def test_about_shows_the_users_and_the_admins_costs():
     api_usage["admin"]["last_30_days"] = {"total_cost_usd": 3.0, "deepseek": {"cost_usd": 1.0}, "anthropic": {"cost_usd": 2.0}}
     rows = dict(ch.build_view(payload(api_usage=api_usage))["usage"])
     assert rows["Last 30 days · admin"] == "$3.00 USD (DeepSeek $1.00 · Gemini $0.00 · Anthropic $2.00)"
+
+
+def test_ideas_have_a_short_about_the_company_dropdown():
+    # Claude-authored (2026-10-24): from Yahoo's business summary, cut to whole sentences that fit
+    summary = ("C.H. Robinson Worldwide, Inc., together with its subsidiaries, provides freight transportation in the "
+               "U.S. and internationally. It operates in two segments, North American Surface Transportation and "
+               "Global Forwarding. The company was founded in 1905 and is headquartered in Eden Prairie, Minnesota. "
+               "It also offers customs brokerage, warehousing, and supply chain consulting to its customers worldwide.")
+    assert ch._brief(summary) == summary[:summary.index(" The company was")]
+    assert ch._brief("Short summary.") == "Short summary."
+    assert ch._brief(None) == "" and ch._brief(float("nan")) == ""
+    long_sentence = ch._brief("Word " * 100)
+    assert long_sentence.endswith("…") and len(long_sentence) <= ch.ABOUT_MAX_CHARS + 1
+
+    digest = payload(recommendations={"top_long_term": [long_pick(business_summary=summary)],
+                                      "top_swing": [swing_pick(business_summary=summary), swing_pick("SWB")]})
+    view, html = render(digest)
+    assert [card["about"] for card in view["swing"]] == [ch._brief(summary), ""]
+    assert view["long_term"][0]["about"] == ch._brief(summary)
+    assert html.count("About the company") == 2  # Not on the pick without a summary
+    assert "Global Forwarding." in html and "Eden Prairie" not in html
+    assert "About the company" in ch.render_amp(ch.build_view(digest), TEMPLATE_DIR)
+    assert f"  About: {ch._brief(summary)}" in ch.render_text(view)
+
+    ch._drop_pick_about(view)
+    assert "About the company" not in ch.render_html(view, TEMPLATE_DIR)

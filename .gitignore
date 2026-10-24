@@ -273,3 +273,5 @@ data/remote_settings.json
 
 ai_financial_advisor.code-workspace
 client_secret_224142890699-so503l1s8rt9fudp6sqj6h9d0ssmlbkm.apps.googleusercontent.com.json
+# Claude-authored (2026-10-24): when maintenance mode ends (scripts/maintenance.sh); this VM only
+data/maintenance_until

@@ -781,3 +781,68 @@ def test_swing_picks_already_far_along_are_left_out(monkeypatch):
     assert (stages["swing_score"], stages["swing_early"]) == (3, 1)
     stats.update(swing_qualified=0, swing_early=0)  # No 80+ swing: no "still early" row
     assert "swing_early" not in {s["stage"] for s in universal.screening_counts(fetcher, stats, picks)["stages"]}
+
+
+def test_each_users_number_of_ideas_gets_its_own_list(monkeypatch):
+    # Claude-authored (2026-10-24, Andres): <NAME>_LONG_RECS / _SWING_RECS. Each size is chosen from the same scores
+    import src.universal.recommendations.scorer as scorer
+    import src.universal.universal_consolidated as universal
+
+    monkeypatch.setitem(scorer.params_dict, "PICK_SECTOR_RULES", {"LONG_TERM": "all_different", "SWING": "any"})
+    monkeypatch.setitem(scorer.params_dict, "LONG_TERM_MAX_TECH_PICKS", 2)
+    monkeypatch.setitem(scorer.params_dict, "LONG_TERM_MIN_NON_TECH_PICKS", 1)
+    monkeypatch.setitem(scorer.params_dict, "TECH_SECTORS", ["Technology", "Communication Services"])
+    sectors = {"TSM": "Technology", "NVDA": "Technology", "JPM": "Financial Services", "VRT": "Industrials",
+               "NBIX": "Healthcare", "ROST": "Consumer Cyclical"}
+    inputs = {t: {"profile": {"sector": sector}} for t, sector in sectors.items()}
+    calls = []
+    scores = fake_scores({"TSM": (95, 90), "NVDA": (94, 89), "JPM": (88, 88), "VRT": (87, 87), "NBIX": (86, 86),
+                          "ROST": (60, 85)})
+    monkeypatch.setattr(scorer, "run_llm_evaluation", lambda *a, **k: calls.append(1) or scores(*a, **k))
+    other = {"top_long_term": {2: [], 5: []}, "top_swing": {1: []}}
+    picks = scorer.select_top_candidates(inputs, long_n=3, swing_n=5, min_long_score=85, min_swing_score=80,
+                                         swing_setups={t: {} for t in inputs}, other_counts=other)
+    tickers = lambda lst: [p["ticker"] for p in lst]  # noqa: E731
+    assert tickers(picks["top_long_term"]) == ["TSM", "NVDA", "JPM"]
+    # A list of 2 isn't the first two of the list of 3: the non-tech rule puts JPM in for NVDA
+    assert tickers(other["top_long_term"][2]) == ["TSM", "JPM"]
+    assert tickers(other["top_long_term"][5]) == ["TSM", "NVDA", "JPM", "VRT", "NBIX"]
+    assert tickers(other["top_swing"][1]) == ["TSM"] and len(picks["top_swing"]) == 5
+    assert len(calls) == 2  # One scoring call per horizon, whatever the sizes
+
+    # Each user's payload gets their size, and "About this digest" counts what they see
+    payload = {"recommendations": picks, "recommendations_by_count": other,
+               "screening": {"stages": [{"stage": "picked", "count": 8, "long_term": 3, "swing": 5}]}}
+    mine = universal.recommendations_for(payload, (5, 5))
+    assert tickers(mine["recommendations"]["top_long_term"]) == tickers(other["top_long_term"][5])
+    assert mine["recommendations"]["top_swing"] == picks["top_swing"]
+    assert mine["screening"]["stages"][-1] == {"stage": "picked", "count": 10, "long_term": 5, "swing": 5}
+    assert payload["screening"]["stages"][-1]["count"] == 8  # The shared payload is left as it was
+    usual = universal.recommendations_for(payload, (3, 5))
+    assert usual["recommendations"] == picks
+    # A saved payload's sizes are strings; a size that wasn't built (the picks failed) cuts the usual list
+    saved = {**payload, "recommendations_by_count": {"top_long_term": {"5": other["top_long_term"][5]}}}
+    assert len(universal.recommendations_for(saved, (5, 2))["recommendations"]["top_long_term"]) == 5
+    assert tickers(universal.recommendations_for(saved, (5, 2))["recommendations"]["top_swing"]) == ["TSM", "NVDA"]
+    # The track record gets every stock any user was shown, once
+    every = universal._every_pick(picks, other)
+    assert tickers(every["top_long_term"]) == ["TSM", "NVDA", "JPM", "VRT", "NBIX"]
+
+
+def test_idea_counts_come_from_env_with_defaults(monkeypatch):
+    from src.config.parameters import params_dict
+    from src.personalized import user_settings
+
+    monkeypatch.setitem(params_dict, "LONG_TERM_N_AMOUNT", 3)
+    monkeypatch.setitem(params_dict, "SWING_TERM_N_AMOUNT", 5)
+    monkeypatch.setitem(user_settings.USER_PROFILES, "Tester", {"long_recs": "TESTER_LONG_RECS",
+                                                                "swing_recs": "TESTER_SWING_RECS"})
+    monkeypatch.delenv("TESTER_LONG_RECS", raising=False)
+    monkeypatch.delenv("TESTER_SWING_RECS", raising=False)
+    assert user_settings.get_idea_counts("Tester") == (3, 5)  # Unset: the defaults
+    monkeypatch.setenv("TESTER_LONG_RECS", "5")
+    monkeypatch.setenv("TESTER_SWING_RECS", "")
+    assert user_settings.get_idea_counts("Tester") == (5, 5)  # Empty: the default
+    for bad in ("0", "11", "five", "None"):
+        monkeypatch.setenv("TESTER_LONG_RECS", bad)
+        assert user_settings.get_idea_counts("Tester") == (3, 5), bad

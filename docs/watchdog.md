@@ -92,6 +92,7 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 | `holdings_llm_effort` | `ANDRES_HOLDINGS_LLM_EFFORT=low` | Claude: `low` `medium` `high` `xhigh` `max`; DeepSeek: `none` (no thinking) `low` (the default) `high` `max` |
 | `holdings_claude_model` / `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-sonnet-5-5` | older names, still read when the `LLM` ones above are unset |
 | `receive_holding_news` | `ANDRES_RECEIVE_HOLDING_NEWS=True` | `True` / `False` (default `True`): Gemini news bullets for each holding |
+| `long_recs` / `swing_recs` | `MAURICIO_LONG_RECS=5` | `1` to `10`: the most long-term / swing ideas their digest shows (default `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT`). Added 2026-10-24; `.env` only, not on the sign-up form. Each size is picked from the same scores (no extra LLM cost, beyond re-scoring close calls for the longest list) |
 | `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic key (required when their model is Claude) |
 | `deepseek_api_key` | `ANDRES_DEEPSEEK_API_KEY=sk-...` | the user's own DeepSeek key (required when their model is DeepSeek) |
 | `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news (only needed with the news on since 2026-10-23, when the portfolio review moved to the holdings model) |

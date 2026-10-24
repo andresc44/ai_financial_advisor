@@ -128,6 +128,12 @@ SWING_SCORES = (
 SWING_EARNINGS_WARNING_DAYS = 14  # A swing pick reporting earnings this soon gets a visible warning
 # Claude-authored (2026-10-20): swing_screen.setup_kind's setups, as the swing card names them
 SWING_SETUPS = {"pullback": "Dip in an uptrend", "new_uptrend": "Fresh turn up"}
+# Claude-authored (2026-10-24, Andres): the company blurb on each idea's "About the company" dropdown, cut from Yahoo's
+# business summary (often over 1,000 characters). 10 ideas at this length add about 4 KB toward Gmail's limit.
+ABOUT_MAX_CHARS = 280
+# Words that end in a period without ending the sentence, besides initials ("C.H. Robinson", "U.S.")
+NOT_SENTENCE_ENDS = {"inc", "corp", "co", "cos", "ltd", "plc", "bros", "no", "st", "jr", "sr", "dr", "mr", "mrs",
+                     "vs", "etc", "approx"}
 
 
 # ---------------------------------------------------------------------------
@@ -1258,6 +1264,23 @@ def _range(pick: dict) -> Optional[dict]:
     return {"low": _money(low), "high": _money(high), "left": position, "right": 100 - position, "note": note}
 
 
+def _brief(text: Any, limit: int = ABOUT_MAX_CHARS) -> str:
+    """
+    Claude-authored (2026-10-24, Andres): the opening sentences of a business summary that fit in `limit` characters.
+    A first sentence longer than that is cut at a word, with an ellipsis.
+    """
+    text = " ".join(text.split()) if isinstance(text, str) else ""
+    if len(text) <= limit:
+        return text
+    words = {match.end(): text[:match.start()].rsplit(" ", 1)[-1] for match in re.finditer(r"\.(?= [A-Z\"'(])", text)}
+    ends = [end for end, word in words.items()
+            if len(word) > 1 and "." not in word and word.lower() not in NOT_SENTENCE_ENDS]
+    fitting = [end for end in ends if end <= limit]
+    if fitting:
+        return text[:fitting[-1]]
+    return text[:limit].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+
+
 def _scores(pick: dict, spec: tuple) -> list[tuple[str, str]]:
     sub_scores = pick.get("sub_scores") or {}
     return [(label, f"{_num(sub_scores.get(key)):.0f} / {top}") for key, label, top in spec
@@ -1279,6 +1302,7 @@ def _pick_common(pick: dict, score_key: str) -> dict:
         "sentiment": _sentiment_badge(pick.get("sentiment")),
         "sector": sector,
         "thesis": _text(pick.get("thesis")) or "",
+        "about": _brief(pick.get("business_summary")),  # Claude-authored (2026-10-24): "About the company"
         "analyst": _analyst_line(pick),
         "links": _quote_links(ticker),
         "chart": None,  # Set by build_view
@@ -1666,6 +1690,12 @@ def _drop_about(view: dict) -> None:
     view["usage"], view["screening"] = [], []
 
 
+def _drop_pick_about(view: dict) -> None:
+    """Claude-authored (2026-10-24): the ideas' "About the company" dropdowns."""
+    for card in view["swing"] + view["long_term"]:
+        card["about"] = ""
+
+
 def _drop_glossary(view: dict) -> None:
     view["glossary"] = []
 
@@ -1715,7 +1745,8 @@ def _no_news(view: dict) -> None:
 # Each holding's signal, figures, and reasoning are never dropped.
 # 2026-10-21: "About this digest" goes first, then the glossary (Andres's order)
 # 2026-10-22: the urgent-sell and risky stocks keep their news longest (Andres's rule, as in _scale_news)
-TRIM_STEPS = (_drop_about, _drop_glossary, _drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news,
+# 2026-10-24: the ideas' company blurbs go right after "About this digest" (Andres's order)
+TRIM_STEPS = (_drop_about, _drop_pick_about, _drop_glossary, _drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news,
               _flagged_top_news_only,
               _no_news)
 
@@ -1801,6 +1832,8 @@ def render_text(view: dict) -> str:
         lines += [f"{card['ticker']} (score {card['score']}) {card['price']}  {plan}" + ("  (you hold this)" if card.get("held") else ""), f"  {card['thesis']}"]
         if card["earnings_warning"]:
             lines.append(f"  {card['earnings_warning']}")
+        if card["about"]:  # Claude-authored (2026-10-24)
+            lines.append(f"  About: {card['about']}")
     lines += ["", "LONG-TERM IDEAS"]
     if not view["long_term"]:
         lines.append(f"  No long-term ideas scored {view['min_long_score']} or more today.")
@@ -1808,6 +1841,8 @@ def render_text(view: dict) -> str:
         lines += [f"{card['ticker']} (score {card['score']}) {card['price']}" + ("  (you hold this)" if card.get("held") else ""), f"  {card['thesis']}"]
         if card["key_risk"]:
             lines.append(f"  Key risk: {card['key_risk']}")
+        if card["about"]:
+            lines.append(f"  About: {card['about']}")
     if view["screening"]:  # Claude-authored (2026-10-17)
         lines += ["", "STOCKS LEFT AFTER EACH SCREENING STAGE"]
         lines += [f"  {label}: {value}" for label, value in view["screening"]]

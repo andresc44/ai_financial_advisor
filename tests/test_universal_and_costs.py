@@ -370,6 +370,7 @@ def _series(field, values):
 # Raw data shaped like what DataFetcher gathers, with every field the default RECOMMENDATION_FIELDS read
 COMPLETE_RAW = {
     "yahoo": {"longName": "Alpha Corp", "sector": "Technology", "industry": "Software", "currentPrice": 200.0,
+              "longBusinessSummary": "Alpha Corp makes accounting software for small businesses.",
               "marketCap": 80_000_000_000, "fiftyTwoWeekLow": 150.0, "fiftyTwoWeekHigh": 230.0, "52WeekChange": 0.12,
               "recommendationKey": "buy", "targetMeanPrice": 240.0, "numberOfAnalystOpinions": 30, "trailingPE": 28.0,
               "forwardPE": 22.0, "pegRatio": 1.4, "revenueGrowth": 0.15, "earningsGrowth": 0.2, "profitMargins": 0.25,

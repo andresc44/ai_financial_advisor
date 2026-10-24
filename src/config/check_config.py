@@ -26,7 +26,7 @@ if str(project_root) not in sys.path:
 from src.config.parameters import params_dict
 from src.personalized.user_profiles import PROFILE_ENV_SUFFIXES, build_profile, env_setting
 from src.llm import llm_models
-from src.personalized.user_settings import get_active_users, get_llm_settings
+from src.personalized.user_settings import MAX_IDEAS_PER_LIST, get_active_users, get_llm_settings
 
 # Shared .env keys: (required, what it's for)
 SHARED_KEYS = {
@@ -93,6 +93,9 @@ USER_KEYS = {
     "receive_holding_news": ("optional", "True or False: Gemini news bullets for each holding (default True)"),
     "holdings_claude_model": ("optional", "Older name for HOLDINGS_LLM_MODEL; ignored since 2026-10-22"),
     "holdings_claude_effort": ("optional", "Older name for HOLDINGS_LLM_EFFORT; ignored since 2026-10-22"),
+    # Claude-authored (2026-10-24)
+    "long_recs": ("optional", f"How many long-term ideas their digest shows (default LONG_TERM_N_AMOUNT, {params_dict['LONG_TERM_N_AMOUNT']})"),
+    "swing_recs": ("optional", f"How many swing ideas their digest shows (default SWING_TERM_N_AMOUNT, {params_dict['SWING_TERM_N_AMOUNT']})"),
 }
 
 
@@ -131,6 +134,8 @@ VALUE_CHECKS: dict[str, tuple[Callable[[str], bool], str]] = {
                             "none, low, medium, high, xhigh, or max (and one the model accepts)"),
     "receive_holding_news": (lambda v: v.lower() in ("true", "false", "1", "0", "yes", "no", "on", "off"), "true or false"),
     "holdings_claude_effort": (lambda v: v.lower() in ("low", "medium", "high", "xhigh", "max"), "low, medium, high, xhigh, or max"),
+    "long_recs": (lambda v: _valid_int(v, 1, MAX_IDEAS_PER_LIST), f"a whole number from 1 to {MAX_IDEAS_PER_LIST}"),
+    "swing_recs": (lambda v: _valid_int(v, 1, MAX_IDEAS_PER_LIST), f"a whole number from 1 to {MAX_IDEAS_PER_LIST}"),
 }
 
 

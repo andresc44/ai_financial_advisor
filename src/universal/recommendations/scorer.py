@@ -262,6 +262,7 @@ def select_top_candidates(
     stats: Optional[Dict[str, int]] = None,
     long_tickers: Optional[List[str]] = None,
     swing_setups: Optional[Dict[str, Dict[str, Any]]] = None,
+    other_counts: Optional[Dict[str, Dict[int, List[Dict[str, Any]]]]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Evaluates candidate tickers and selects:
@@ -287,6 +288,10 @@ def select_top_candidates(
             "swing_qualified" (at or above each minimum score, before the picks are capped), and "swing_early"
             (2026-10-18: swing-qualified and not too_far_along).
         long_tickers / swing_setups: Claude-authored (2026-10-20), as above.
+        other_counts: Claude-authored (2026-10-24), filled in when given: {"top_long_term": {n: []}, "top_swing":
+            {n: []}}, each list replaced by that many picks chosen from the same scores, for users with their own
+            number of ideas (user_settings.get_idea_counts). Each count is chosen on its own, since the sector rules
+            don't keep the first n of a longer list the same as a list of n.
 
     Returns:
         Dict with keys 'top_long_term' and 'top_swing', containing lists of selected ticker objects.
@@ -327,15 +332,19 @@ def select_top_candidates(
         horizon="swing",
     ) if swing_setups and not key_failed else {}
 
-    # Claude-authored (2026-10-22): scores that could go either way are scored twice more, keeping the middle one
+    # Claude-authored (2026-10-22): scores that could go either way are scored twice more, keeping the middle one.
+    # 2026-10-24: against the longest list any user sees
+    other_counts = other_counts if other_counts is not None else {}
+    longest_long = max([long_n, *(other_counts.get("top_long_term") or {})])
+    longest_swing = max([swing_n, *(other_counts.get("top_swing") or {})])
     long_scores = rescore_borderline(
-        long_scores, "longScore", long_n, min_long_score,
+        long_scores, "longScore", longest_long, min_long_score,
         lambda tickers: run_llm_evaluation(
             sanitized_inputs={t: horizon_payload(sanitized_inputs[t], "long_term") for t in tickers},
             config=config, horizon="long_term"),
         "long-term")
     swing_scores = rescore_borderline(
-        swing_scores, "swingScore", swing_n, min_swing_score,
+        swing_scores, "swingScore", longest_swing, min_swing_score,
         lambda tickers: run_llm_evaluation(
             sanitized_inputs={t: horizon_payload(sanitized_inputs[t], "swing", swing_setups[t]) for t in tickers},
             config=config, horizon="swing"),
@@ -379,30 +388,34 @@ def select_top_candidates(
     # stocks may share a sector (only chipmakers reached 85 on 2026-10-22, so "all_different" left one tech pick)
     tech = set(params_dict.get("TECH_SECTORS") or [])
     max_tech = params_dict.get("LONG_TERM_MAX_TECH_PICKS")
-    tech_cap = {} if max_tech is None else {
-        "capped": lambda ticker: sector_of(ticker) in tech, "cap": int(max_tech) if long_n >= 3 else long_n,
-        "cap_name": "LONG_TERM_MAX_TECH_PICKS"}
-    top_long_tuples = pick_with_sector_rule(
-        sorted_by_long, long_n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term", **tech_cap)
     # 2026-10-22: at least one pick outside tech, which may score from LONG_TERM_NON_TECH_MIN_SCORE
     non_tech_floor = params_dict.get("LONG_TERM_NON_TECH_MIN_SCORE", min_long_score)
     non_tech_pool = sorted(((t, s) for t, s in long_scores.items() if s.get("longScore", 0.0) >= min(non_tech_floor, min_long_score)),
                            key=lambda item: item[1].get("longScore", 0.0), reverse=True)
-    top_long_tuples = with_non_tech_picks(top_long_tuples, long_n, non_tech_pool, sector_of)
 
     def other_score(scores_map: Dict[str, Dict[str, Any]], ticker: str, key: str) -> Optional[float]:
         return (scores_map.get(ticker) or {}).get(key)
 
-    top_long_term = [
-        {
-            "ticker": ticker,
-            "longScore": scores.get("longScore", 0.0),
-            "swingScore": other_score(swing_scores, ticker, "swingScore"),  # 2026-10-20: None unless swing-scored
-            "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
-            **long_term_reasoning(scores),  # Claude-authored (2026-10-16)
-        }
-        for ticker, scores in top_long_tuples
-    ]
+    def long_term_picks(n: int) -> List[Dict[str, Any]]:
+        """2026-10-24: the long-term list of n, so each user's own count gets its own (other_counts)."""
+        tech_cap = {} if max_tech is None else {
+            "capped": lambda ticker: sector_of(ticker) in tech, "cap": int(max_tech) if n >= 3 else n,
+            "cap_name": "LONG_TERM_MAX_TECH_PICKS"}
+        top_long_tuples = pick_with_sector_rule(
+            sorted_by_long, n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term", **tech_cap)
+        top_long_tuples = with_non_tech_picks(top_long_tuples, n, non_tech_pool, sector_of)
+        return [
+            {
+                "ticker": ticker,
+                "longScore": scores.get("longScore", 0.0),
+                "swingScore": other_score(swing_scores, ticker, "swingScore"),  # 2026-10-20: None unless swing-scored
+                "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
+                **long_term_reasoning(scores),  # Claude-authored (2026-10-16)
+            }
+            for ticker, scores in top_long_tuples
+        ]
+
+    top_long_term = long_term_picks(long_n)
 
     # 3. Filter the swing candidates meeting the min_swing_score threshold
     eligible_swing = []
@@ -426,18 +439,23 @@ def select_top_candidates(
         reverse=True
     )
 
-    top_swing_tuples = pick_with_sector_rule(sorted_by_swing, swing_n, sector_of, sector_rules.get("SWING", "any"), "swing")
+    def swing_picks(n: int) -> List[Dict[str, Any]]:
+        top_swing_tuples = pick_with_sector_rule(sorted_by_swing, n, sector_of, sector_rules.get("SWING", "any"), "swing")
+        return [
+            {
+                "ticker": ticker,
+                "swingScore": scores.get("swingScore", 0.0),
+                "longScore": other_score(long_scores, ticker, "longScore"),  # 2026-10-20: None unless long-term-scored
+                "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
+                **swing_reasoning(ticker, scores),  # Claude-authored (2026-10-16)
+            }
+            for ticker, scores in top_swing_tuples
+        ]
 
-    top_swing = [
-        {
-            "ticker": ticker,
-            "swingScore": scores.get("swingScore", 0.0),
-            "longScore": other_score(long_scores, ticker, "longScore"),  # 2026-10-20: None unless long-term-scored
-            "model": scores.get("model"),  # Claude-authored (2026-10-16): the LLM that scored it
-            **swing_reasoning(ticker, scores),  # Claude-authored (2026-10-16)
-        }
-        for ticker, scores in top_swing_tuples
-    ]
+    top_swing = swing_picks(swing_n)
+    for list_name, picks_of in (("top_long_term", long_term_picks), ("top_swing", swing_picks)):
+        for n in other_counts.get(list_name) or {}:
+            other_counts[list_name][n] = picks_of(n)
 
     logger.info(
         f"Selected top {len(top_long_term)} Long-Term candidates "

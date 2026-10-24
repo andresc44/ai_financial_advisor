@@ -19,11 +19,11 @@ if str(project_root) not in sys.path:
 
 from src.config.parameters import params_dict
 from src.personalized.user_profiles import USER_PROFILES
-from src.personalized.user_settings import get_active_users
+from src.personalized.user_settings import get_active_users, get_idea_counts
 import os
 from src.digest.create_html import html_main
 from src.digest.send_gmail import send_html_email
-from src.universal.universal_consolidated import get_universal_content
+from src.universal.universal_consolidated import get_universal_content, recommendations_for
 from src.tracking.usage_tracking import shared_usage  # Claude-authored (2026-10-22): the admin's costs
 from src.personalized.personalized_consolidated import get_ideas_only_content, get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
@@ -117,6 +117,10 @@ class DigestPayload:
         # Claude-authored (2026-10-15): `personal` is content already built by personal_content (e.g. in parallel)
         user_payload = copy.deepcopy(self.payload)
         user_payload["user_name"] = user_name
+        # Claude-authored (2026-10-24, Andres): the ideas list of the size this user asked for (<NAME>_LONG_RECS /
+        # _SWING_RECS); the other sizes aren't theirs, so they leave the payload
+        user_payload.update(recommendations_for(user_payload, get_idea_counts(user_name)))
+        user_payload.pop("recommendations_by_count", None)
         user_payload.update(self.personal_content(user_name) if personal is None else personal)
         # Claude-authored (2026-10-22, Andres): the admin's costs (the shared keys: ideas and market news) beside the
         # user's own. Added here, after the shared content is done: the user's content can finish before it

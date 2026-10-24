@@ -205,6 +205,7 @@
 {%- endmacro -%}
 
 {%- macro pick_details(c, title) -%}
+{% if c.about %}{% call fold("About the company", top="t10") %}<div class="sm t2">{{ c.about }}</div>{% endcall %}{% endif %}
 {% if c.chart %}{{ chart(c.chart) }}{% endif %}
 {% if c.details or c.score_rows %}
 {% call fold(title, top="t10") %}

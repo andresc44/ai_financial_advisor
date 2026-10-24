@@ -45,6 +45,10 @@ PROFILE_ENV_SUFFIXES = {
     "holdings_claude_model": "HOLDINGS_CLAUDE_MODEL",          # Older name for HOLDINGS_LLM_MODEL, still read when that's unset
     "holdings_claude_effort": "HOLDINGS_CLAUDE_EFFORT",        # Older name for HOLDINGS_LLM_EFFORT, still read when that's unset
     "receive_holding_news": "RECEIVE_HOLDING_NEWS",            # True | False: Gemini news bullets for each holding (default True)
+    # Claude-authored (2026-10-24, Andres): how many ideas of each kind this user's digest shows, instead of
+    # LONG_TERM_N_AMOUNT / SWING_TERM_N_AMOUNT (set in .env only; the sign-up form doesn't ask)
+    "long_recs": "LONG_RECS",                                  # whole number, 1 to user_settings.MAX_IDEAS_PER_LIST
+    "swing_recs": "SWING_RECS",                                # whole number, 1 to user_settings.MAX_IDEAS_PER_LIST
     # The user's own Anthropic or DeepSeek key (holdings evaluation, whichever their model needs) and Gemini key
     # (digest holding news and portfolio review). None falls back to the shared keys.
     "anthropic_api_key": "ANTHROPIC_API_KEY",

@@ -15,6 +15,7 @@ Claude-authored changes (Claude Opus 5.5 via Claude Code), at Andres's request:
   stage-1 list. Both candidate lists are fetched together (a stock in both is fetched once), each is scored by its
   own LLM call, and the screening counts show both paths.
 """
+import copy
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -40,6 +41,7 @@ from src.universal.macro_indicators import get_market_dashboard
 from src.ops.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert.notices import alert_admins
 from src.tracking.track_record import log_universal
+from src.personalized.user_settings import get_active_users, get_idea_counts
 
 NO_RECOMMENDATIONS = {"top_long_term": [], "top_swing": []}
 
@@ -122,6 +124,50 @@ def screening_counts(fetcher, stats: dict, recommendations: dict, swing_counts: 
     swing = len(recommendations.get("top_swing") or [])
     stages.append({"stage": "picked", "count": long_term + swing, "long_term": long_term, "swing": swing})
     return {"stages": stages, "model": llm_models.job_settings("UNIVERSAL").get("model")}
+
+
+def idea_counts_in_use() -> dict[str, set[int]]:
+    """
+    Claude-authored (2026-10-24, Andres): the list sizes active users asked for other than LONG_TERM_N_AMOUNT /
+    SWING_TERM_N_AMOUNT (<NAME>_LONG_RECS / _SWING_RECS), e.g. {"top_long_term": {5}, "top_swing": set()}.
+    """
+    counts = [get_idea_counts(user) for user in get_active_users()]
+    return {"top_long_term": {long_n for long_n, _ in counts} - {params_dict["LONG_TERM_N_AMOUNT"]},
+            "top_swing": {swing_n for _, swing_n in counts} - {params_dict["SWING_TERM_N_AMOUNT"]}}
+
+
+def _every_pick(recommendations: dict, other_counts: dict) -> dict:
+    """Claude-authored (2026-10-24): each list's picks across every size, each stock once, for the track record."""
+    merged = {}
+    for name in ("top_long_term", "top_swing"):
+        picks = {}
+        for size in [recommendations.get(name) or []] + list((other_counts.get(name) or {}).values()):
+            for pick in size:
+                picks.setdefault(pick.get("ticker"), pick)
+        merged[name] = list(picks.values())
+    return merged
+
+
+def recommendations_for(payload: dict, counts: tuple[int, int]) -> dict:
+    """
+    Claude-authored (2026-10-24, Andres): {"recommendations", "screening"} for a user whose digest shows `counts`
+    (long-term, swing) ideas (user_settings.get_idea_counts): the list of that size from get_universal_content's
+    "recommendations_by_count", or the usual list. Without that size (e.g. the picks failed), the usual list, cut
+    to the size when it's longer. The "picked" screening stage counts what this user sees.
+    """
+    usual = payload.get("recommendations") or {}
+    by_count = payload.get("recommendations_by_count") or {}
+    recommendations = {}
+    for name, n in zip(("top_long_term", "top_swing"), counts):
+        sizes = by_count.get(name) or {}
+        own = sizes.get(n, sizes.get(str(n)))  # str: a payload saved as JSON
+        recommendations[name] = own if own is not None else (usual.get(name) or [])[:n]
+    screening = copy.deepcopy(payload.get("screening") or {})
+    for stage in screening.get("stages") or []:
+        if stage.get("stage") == "picked":
+            stage["long_term"], stage["swing"] = (len(recommendations["top_long_term"]), len(recommendations["top_swing"]))
+            stage["count"] = stage["long_term"] + stage["swing"]
+    return {"recommendations": recommendations, "screening": screening}
 
 
 def get_universal_content():
@@ -228,6 +274,8 @@ def _get_recommendations() -> dict:
     issues += missing_data_issues(llm_packets, params_dict["UNIVERSAL_DATA_QUALITY"]["MAX_MISSING_PCT"])
 
     stats: dict = {}
+    # Claude-authored (2026-10-24): a list of each size a user asked for, from the same scores
+    other_counts = {name: {n: [] for n in sizes} for name, sizes in idea_counts_in_use().items()}
     generated_recommendations = select_top_candidates(
         sanitized_inputs=sanitized_LLM_inputs,
         long_n=params_dict["LONG_TERM_N_AMOUNT"],
@@ -236,13 +284,17 @@ def _get_recommendations() -> dict:
         stats=stats,  # Claude-authored (2026-10-17): how many were scored and cleared each bar
         long_tickers=filtered_tickers,  # Claude-authored (2026-10-20): each list gets its own LLM call
         swing_setups=swing_setups,
+        other_counts=other_counts,
     )
     print(f"Generated_recommendations:\n{generated_recommendations}")
-    log_universal(generated_recommendations, sanitized_LLM_inputs)  # Claude-authored (2026-10-15): track record
+    # Claude-authored (2026-10-15): track record. 2026-10-24: with the picks only a longer list has
+    log_universal(_every_pick(generated_recommendations, other_counts), sanitized_LLM_inputs)
     recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)
+    by_count = {name: {n: enrich_recommendations({name: picks}, sanitized_LLM_inputs)[name] for n, picks in sizes.items()}
+                for name, sizes in other_counts.items()}
 
     _report_issues(issues)
-    return {"recommendations": recs_w_data, "universal_issues": issues,
+    return {"recommendations": recs_w_data, "recommendations_by_count": by_count, "universal_issues": issues,
             "screening": screening_counts(fetcher, stats, generated_recommendations, swing_counts)}
 
 if __name__ == "__main__":

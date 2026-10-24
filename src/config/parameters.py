@@ -541,6 +541,9 @@ params_dict = {
             "name": "profile.name",
             "sector": "profile.sector",
             "industry": "profile.industry",
+            # Claude-authored (2026-10-24, Andres): Yahoo's business summary, shortened on the card's "About the
+            # company" dropdown (create_html._brief)
+            "business_summary": "profile.business_summary",
             "current_price": "price_action.current_price",
             "market_cap": "valuation_and_fundamentals.market_cap",
             "52_week_low": "price_action.52_week_low",
