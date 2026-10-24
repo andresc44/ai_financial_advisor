@@ -9,7 +9,7 @@ params_dict = {
     "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/users/import_signup.py): edit the sheet
         "Andres",
         "Mauricio",
-        "Claudia",
+    "Claudia",  # Added from the sign-up form (2026-10-24)
     ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
