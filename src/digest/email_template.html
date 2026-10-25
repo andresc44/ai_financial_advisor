@@ -88,13 +88,14 @@
     wider than a phone screen. -#}
 {%- macro stats(items) -%}
 {# 2026-10-23: 4 or 6 tiles go 2 a row, which fits a phone (6 long-term tiles since RSI and the 12-month return) #}
+{#- 2026-10-25: each tile's padding and width come from the table's classes (sg, g<per row>), the top line of a later
+    row from its <tr class="sh">, and the figure is a <b> styled as a block: the same look in fewer bytes -#}
 {% set per_row = 2 if items|length in (4, 6) else items|length %}
-<table {{ T }} class="sg">
+<table width="100%" class="sg g{{ per_row }}">
 {% for line in items|batch(per_row) %}
-{% set later_row = not loop.first %}
-<tr>
+<tr{% if not loop.first %} class="sh"{% endif %}>
 {% for s in line %}
-<td class="st w{{ per_row }}{{ '' if loop.first else ' sb' }}{{ ' sh' if later_row else '' }}"><div class="sl">{{ s.label }}</div><div class="sv{% if s.tone != 'ink' %} {{ TC[s.tone] }}{% endif %}">{{ s.value }}</div>{% if s.sub %}<div class="ss{% if s.sub_tone != 'muted' %} {{ TC[s.sub_tone] }}{% endif %}">{{ s.sub }}</div>{% endif %}</td>
+<td{% if not loop.first %} class="sb"{% endif %}><div class="sl">{{ s.label }}</div><b class="sv{% if s.tone != 'ink' %} {{ TC[s.tone] }}{% endif %}">{{ s.value }}</b>{% if s.sub %}<div class="ss{% if s.sub_tone != 'muted' %} {{ TC[s.sub_tone] }}{% endif %}">{{ s.sub }}</div>{% endif %}</td>
 {% endfor %}
 </tr>
 {% endfor %}
@@ -156,9 +157,9 @@
 {#- A stock's row: ticker and badge over its name; value over a detail line on the right. -#}
 {#- 2026-10-21: the name line (.ow) may break inside a long word ("Semiconductor") only when nothing else fits,
     so very large text can't push the row past the screen beside the no-wrap value column -#}
-{%- macro row_header(title, badge_html, subtitle, value, detail) -%}
+{%- macro row_header(title, badge_html, subtitle, value, detail, detail_cls="xs") -%}
 <td valign="top"><span class="tk">{{ title }}</span> {{ badge_html }}<div class="xs mu t2 ow">{{ subtitle }}</div></td>
-<td class="rv"><div class="pv">{{ value }}</div><div class="xs">{{ detail }}</div></td>
+<td class="rv"><div class="pv">{{ value }}</div><div class="{{ detail_cls }}">{{ detail }}</div></td>
 {%- endmacro -%}
 
 {#- Any other row: an optional coloured dot, a title, and an optional line under it. -#}
@@ -199,9 +200,12 @@
 {% endfor %}
 {%- endmacro -%}
 
-{#- Quote pages as pill buttons, big enough to tap. -#}
+{#- Quote pages as pill buttons, big enough to tap (2026-10-25: dropped right after "About this digest" when the
+    email is too big; the chart still links to Finviz). -#}
 {%- macro links(l) -%}
+{% if l %}
 <div class="t14"><a href="{{ l.yahoo }}" class="btn">Yahoo</a> <a href="{{ l.finviz }}" class="btn">Finviz</a> <a href="{{ l.tradingview }}" class="btn">TradingView</a></div>
+{% endif %}
 {%- endmacro -%}
 
 {%- macro pick_details(c, title) -%}
@@ -255,6 +259,7 @@ a{text-decoration:none;}
 .c{font-family:{{ FONT }};font-size:14px;line-height:21px;color:#334155;}
 .cp{padding-left:14px;padding-right:14px;}
 .h1{font-size:17px;line-height:23px;font-weight:800;color:#0F2A44;}
+.hl{color:#0B6BCB;text-decoration:none;}
 .lb{font-size:11px;line-height:15px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#64748B;}
 /* 2026-10-18: the icon tile is a table cell centred with valign, and the emoji's line is only as tall as the emoji,
    so a phone's emoji font (or Gmail's emoji images) can't sit high or low in the tile as with line-height:36px */
@@ -262,11 +267,11 @@ a{text-decoration:none;}
 .ici{width:36px;height:36px;text-align:center;vertical-align:middle;font-size:18px;line-height:1;}
 .ici img{vertical-align:middle{{ IMP }};}
 .sl{font-size:10px;line-height:13px;font-weight:700;letter-spacing:0.4px;text-transform:uppercase;color:#64748B;}
-.st{padding:10px 6px;vertical-align:top;}  /* 2026-10-21: 6px sides (was 8), for the Gmail app's enlarged text */
+.sg td{padding:10px 6px;vertical-align:top;}  /* 2026-10-21: 6px sides (was 8), for the Gmail app's enlarged text */
 .sg{background-color:#F5F7FA;border-radius:12px;}
 .sb{border-left:1px solid #E5EAF0;}
-.sh{border-top:1px solid #E5EAF0;}
-.sv{font-size:15px;line-height:20px;font-weight:700;padding-top:3px;color:#0F2A44;}
+.sh td{border-top:1px solid #E5EAF0;}
+.sv{display:block;font-size:15px;line-height:20px;font-weight:700;padding-top:3px;color:#0F2A44;}
 .ss{font-size:11px;line-height:15px;color:#64748B;}
 .sm{font-size:13px;line-height:19px;}
 .xs{font-size:12px;line-height:18px;}
@@ -328,7 +333,7 @@ a{text-decoration:none;}
 .nw{white-space:nowrap;}
 .ow{overflow-wrap:anywhere;}
 .sep{color:#CBD5E1;}
-.w1{width:100%;}.w2{width:50%;}.w3{width:33%;}.w4{width:25%;}.w5{width:20%;}.w6{width:16%;}
+.g1 td{width:100%;}.g2 td{width:50%;}.g3 td{width:33%;}.g4 td{width:25%;}.g5 td{width:20%;}.g6 td{width:16%;}
 {#- 2026-10-22: one rule per badge colour pair and dot colour this email uses (create_html.style_classes) -#}
 {% for (bg, fg), cls in badge_classes.items() %}.{{ cls }}{background-color:{{ bg }};color:{{ fg }};}{% endfor %}
 {% for color, cls in dot_classes.items() %}.{{ cls }}{background-color:{{ color }};}{% endfor %}
@@ -481,8 +486,9 @@ u + .body .cv{display:none;}
 {#- 2026-10-21: no phrase kept whole here: at enlarged text that added a line -#}
 <div class="xs mu" style="padding-bottom:4px;">{{ holdings_note }}</div>
 {% for h in holdings %}
-{% set detail %}{% if h.day.text %}<div><span class="{{ TC[h.day.tone] }}">{{ h.day.text }}</span> <span class="mu">{{ h.day.label }}</span></div>{% endif %}<div class="mu">{{ h.weight_short }} weight</div>{% endset %}
-{% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail), loop.first, h.anchor) %}
+{#- 2026-10-25: one muted block (the change coloured inside it), lines split by <br>: fewer bytes, the same look -#}
+{% set detail %}{% if h.day.text %}<span class="{{ TC[h.day.tone] }}">{{ h.day.text }}</span> {{ h.day.label }}<br>{% endif %}{{ h.weight_short }} weight{% endset %}
+{% call row(row_header(h.symbol, badge(h.signal), h.name, h.value, detail, "xs mu"), loop.first, h.anchor) %}
 <div class="xs mu ml">{% if h.sentiment %}{{ badge(h.sentiment) }}&nbsp; {% endif %}{{ h.meta|phrases }}</div>
 {#- 2026-10-22: the Finnbot idea it was bought from -#}
 {% if h.idea %}<div class="xs mu t4">{{ h.idea|phrases }}</div>{% endif %}
@@ -495,8 +501,7 @@ u + .body .cv{display:none;}
 {% if h.chart %}{{ chart(h.chart) }}{% endif %}
 {% if h.rationale %}
 {% call fold("Why " ~ h.signal.text|lower, top="t10", anchor=h.anchor ~ "-why", focus_on_open=true) %}
-{{ h.rationale }}
-{% if h.volatility %}<div class="xs mu t6">{{ h.volatility }}</div>{% endif %}
+{{ h.rationale }}{% if h.volatility %} {{ h.volatility }}{% endif %}
 {% endcall %}
 {% endif %}
 {% if h.news %}
@@ -565,6 +570,10 @@ u + .body .cv{display:none;}
 {% endcall %}
 {% endfor %}
 {% endcall %}
+{% elif glossary_url %}
+{#- 2026-10-25: the glossary's web page (DIGEST.GLOSSARY_URL), as a plain card whose title links there -#}
+{% set glossary_title %}<a href="{{ glossary_url }}" class="hl">Glossary&nbsp;↗</a>{% endset %}
+{% call section("glossary", glossary_title, glossary_summary, empty=true) %}{% endcall %}
 {% endif %}
 
 {# ---------- Footer ---------- #}

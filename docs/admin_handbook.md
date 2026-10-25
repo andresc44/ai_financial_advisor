@@ -216,8 +216,8 @@ Details: [watchdog.md](watchdog.md), "Changing settings from the spreadsheet".
 
 ## 8. Users and onboarding
 
-1. **Sign-up:** the person fills in the form. The answers sheet `SIGNUP_FORM_SHEET_ID` must be shared with the service account; with Editor access, it can write the settings status back. They send their keys privately.
-2. **Sync:** the next sync writes their `.env` settings and adds them to `ACTIVE_USERS` once nothing required is missing. Missing keys get `KEY=None` placeholders, and you get a "New Finnbot user added" message.
+1. **Sign-up:** send them [setup_instructions.md](setup_instructions.md) first (two pages: the accounts and keys to get ready, in order; [new_user_guide.txt](new_user_guide.txt) has the details). Then they fill in the form. The answers sheet `SIGNUP_FORM_SHEET_ID` must be shared with the service account (Viewer is enough: the sync only reads it). They send their keys privately.
+2. **Sync:** every cron run, digest (:10) and watchdog (:45), starts by syncing (`src/ops/cron_start.py`). It writes their `.env` settings and adds them to `ACTIVE_USERS` once nothing required is missing. Missing keys get `KEY=None` placeholders, and a user who chose Telegram gets an empty `<NAME>_TELEGRAM_CHAT_ID=` line to fill in. Once you've filled in their keys, the next run (within the hour) activates them: you get a "New Finnbot user added" message, and the Parameters tab's `ACTIVE_USERS` row shows them in that same run.
 3. **Required keys:**
    - Anthropic, with holdings;
    - Gemini, only with holding news on;
@@ -242,6 +242,8 @@ Details: [watchdog.md](watchdog.md), "Changing settings from the spreadsheet".
 - **A user with 10 holdings:** about $0.03 (reviews $0.02, news $0.008, the review $0.0015).
 
 **What users pay:** the table in new_user_guide 3.10, from about $0.07 a month (1 stock, 1 digest, news off) to $2.79 (20 stocks, both digests, news on), plus the watchdog. **Gemini's prices double on 2027-01-01**, which roughly doubles the news cost.
+
+**Prompt caching (since 2026-10-24):** the holdings reviews' shared instructions (~5,000 tokens of the ~16,800 each review sends) are cached, so each review after a run's first pays a tenth for them. That cuts the review cost by about a fifth (`CLAUDE_PROMPT_CACHE`, `src/llm/claude_cache.py`). The first holding is reviewed alone so the rest can read the cache, which adds a few seconds to each run.
 
 **Where costs come from:** `data/usage/api_usage.jsonl` records every call; prices are in `API_PRICES`. A count of the 5,000 free monthly searches isn't possible: Gemini doesn't report searches with a response schema.
 

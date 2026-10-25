@@ -13,6 +13,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
     
+from src.ops.run_logging import debug
 from src.universal.recommendations.constants import (
     INDUSTRIES,
     REGION_COUNTRY_MAP,
@@ -118,14 +119,14 @@ class Tickers:
         ticker_file_path = self.output_dir / ticker_file_name
 
         if ticker_file_path.exists():
-            print(f"Data file for today already exists: {ticker_file_name}")
+            debug(f"Data file for today already exists: {ticker_file_name}")
             return ticker_file_path
 
         if clear_existing_data:
             self._clear_ticker_data_folder(self.output_dir)
 
         try:
-            print("Fetching raw ticker dataset from NASDAQ API...")
+            debug("Fetching raw ticker dataset from NASDAQ API...")
             df_filtered = self._fetch_from_nasdaq()
             listings = len(df_filtered)  # Claude-authored (2026-10-17): before any filter, for the screening counts
 
@@ -185,12 +186,12 @@ class Tickers:
             df_filtered[existing_cols].rename(columns=column_mapping).to_csv(
                 ticker_file_path, index=False
             )
-            print(f"Successfully saved filtered dataset ({len(df_filtered)} rows) to: {ticker_file_name}")
+            debug(f"Successfully saved filtered dataset ({len(df_filtered)} rows) to: {ticker_file_name}")
             self.listings_path(ticker_file_path).write_text(json.dumps({"listings": listings}), encoding="utf-8")
             return ticker_file_path
 
         except Exception as e:
-            print(f"An unexpected error occurred: {e}")
+            print(f"[ERROR] Fetching the NASDAQ ticker list failed: {e}")
             return None
 
     @staticmethod
@@ -274,10 +275,10 @@ class Tickers:
         if not csv_files:
             return
 
-        print(f"Clearing {len(csv_files)} existing file(s) from {folder_path}...")
+        debug(f"Clearing {len(csv_files)} existing file(s) from {folder_path}...")
         for file in csv_files:
             try:
                 file.unlink()
-                print(f"  Deleted: {file.name}")
+                debug(f"  Deleted: {file.name}")
             except Exception as e:
-                print(f"  Failed to delete {file.name}: {e}")
+                print(f"[WARNING] Failed to delete {file.name}: {e}")

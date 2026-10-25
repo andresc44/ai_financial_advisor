@@ -41,6 +41,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.tracking import track_record
 from src.market.market_session import _get_calendar, market_date
 from src.personalized.user_profiles import USER_PROFILES, env_setting
@@ -253,7 +254,7 @@ def attach_idea_origins(user_name: str, holdings: pd.DataFrame, now: datetime, p
                                         index=holdings.index, dtype=object)
     for link in links.values():
         if link["first_seen"] == now.isoformat():
-            print(f"[{user_name}] {link['symbol']} was bought after Finnbot's {_short_date(link['idea_at'])} "
+            debug(f"[{user_name}] {link['symbol']} was bought after Finnbot's {_short_date(link['idea_at'])} "
                   f"{link['list'].replace('_', '-')} idea.")
     if alerts:
         send_hit_alerts(user_name, hits)

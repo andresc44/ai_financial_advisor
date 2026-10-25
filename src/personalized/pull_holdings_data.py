@@ -24,6 +24,7 @@ if str(project_root) not in sys.path:
 
 from src.users.admins import notice_text
 from src.config.parameters import params_dict
+from src.ops.run_logging import debug
 from src.personalized.user_profiles import USER_PROFILES, env_setting
 from src.personalized.add_metrics import add_metrics_to_holdings
 from src.personalized.recommendation import add_recommendations
@@ -68,7 +69,6 @@ class PortfolioFetcher:
     add_recommendations = add_recommendations #method to evaluate hold positions and add recommendations to the holdings dataframe
 
     def __init__(self, user_name: str = "Andres", env_path: str = ".env"):
-        print("Searching for user snaptrade credentials in .env file...")
         load_dotenv(dotenv_path=env_path, override=True)
 
         user_profile = USER_PROFILES.get(user_name)
@@ -93,7 +93,7 @@ class PortfolioFetcher:
                 " in USER_PROFILES."
             )
         self.holdings_source = os.environ.get(holdings_source_value)
-        print(f"Holdings source for user '{user_name}': {self.holdings_source}")
+        debug(f"Holdings source for user '{user_name}': {self.holdings_source}")
         
         if self.holdings_source == "SNAPTRADE":
             snap_client_id_value = user_profile.get("snaptrade_client_id")
@@ -118,7 +118,7 @@ class PortfolioFetcher:
                     " file."
                 )
 
-            print("Attempting to connect to SnapTrade API...")
+            debug("Attempting to connect to SnapTrade API...")
             self.client = SnapTrade(
                 auth=SnapTradeAuth.personal_api_key(
                     client_id=client_id, consumer_key=consumer_key
@@ -134,10 +134,10 @@ class PortfolioFetcher:
                     f"Google Sheets ID for user '{user_name}' is not configured in USER_PROFILES or .env."
                 )
 
-            print("Attempting to fetch holdings from Google Sheets...")
+            debug("Attempting to fetch holdings from Google Sheets...")
             self.full_data = self.pull_sheets_holdings(sheets_id)
         else:
-            print(f"User '{user_name}' has no holdings source configured. Exiting with empty DataFrame.")
+            print(f"[WARNING] User '{user_name}' has no holdings source configured. Exiting with empty DataFrame.")
             self.full_data = pd.DataFrame()  # Empty DataFrame for users with no holdings source
 
     def _to_dict(self, item):
@@ -276,8 +276,6 @@ class PortfolioFetcher:
                 continue
             self._check_holdings_sync(acc_dict, account_label)
 
-            print(f"Processing Account: {account_label}")
-
             positions, freshness = self.fetch_positions_for_account(account_id)
 
             for pos in positions:
@@ -346,7 +344,7 @@ class PortfolioFetcher:
         if not sym_map:
             return closes
 
-        print(f"Batch fetching daily closes for {len(sym_map)} symbols...")
+        debug(f"Batch fetching daily closes for {len(sym_map)} symbols...")
         try:
             data = yf.download(
                 tickers=sorted(set(sym_map.values())),
@@ -393,9 +391,7 @@ class PortfolioFetcher:
             df = self.get_holdings_df()
 
         if df.empty:
-            print(
-                "[INFO] DataFrame is empty. Skipping daily P&L calculation."
-            )
+            debug("DataFrame is empty. Skipping daily P&L calculation.")
             return df
 
         df = df.copy()
@@ -437,20 +433,6 @@ class PortfolioFetcher:
         df["daily_pnl_pct"] = (
             (pnl_price - df["last_close"]) / df["last_close"] * 100
         ).where(df["last_close"] > 0, 0.0)
-
-        total_daily_pnl = df["daily_pnl"].sum()
-        total_prev_market_value = (df["last_close"] * df["shares"]).sum()
-        total_daily_pnl_pct = (
-            ((total_daily_pnl / total_prev_market_value) * 100)
-            if total_prev_market_value > 0
-            else 0.0
-        )
-
-        print("\n================ DAILY P&L SUMMARY ================")
-        print(f"Total Portfolio Daily P&L (listing currencies, before USD conversion): {total_daily_pnl:+,.2f}")
-        print(f"Total Portfolio Daily P&L (%): {total_daily_pnl_pct:+.2f}%")
-        print("====================================================\n")
-
         return df
 
     def convert_to_usd(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -507,10 +489,7 @@ class PortfolioFetcher:
         sym_map = {s: s.replace(":", "-") for s in symbols}
         formatted_symbols = list(sym_map.values())
 
-        print(
-            "Fetching technical indicators (RSI, NATR, Volatility) for"
-            f" {len(formatted_symbols)} symbols..."
-        )
+        debug(f"Fetching technical indicators (RSI, NATR, Volatility) for {len(formatted_symbols)} symbols...")
 
         rsi_dict = {}
         natr_dict = {}
@@ -632,10 +611,7 @@ class PortfolioFetcher:
         if not symbols:
             return metadata
 
-        print(
-            f"Fetching live prices, descriptions, and exchanges from yfinance for"
-            f" {len(symbols)} symbols..."
-        )
+        debug(f"Fetching live prices, descriptions, and exchanges from yfinance for {len(symbols)} symbols...")
 
         for sym in set(symbols):
             if not isinstance(sym, str) or not sym:
@@ -686,12 +662,11 @@ class PortfolioFetcher:
         automatically populates market data from Yahoo Finance, and calculates P&L."""
         url = f"https://docs.google.com/spreadsheets/d/{sheets_id}/export?format=csv&gid={gid}"
         creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-        print("creds_path:", creds_path)
         # Claude-authored (2026-10-13): guard added - os.path.exists(None) raised TypeError when the env var was unset
-        print("os.path.exists(creds_path):", bool(creds_path) and os.path.exists(creds_path))
+        debug(f"Service account file set: {bool(creds_path)}; found: {bool(creds_path) and os.path.exists(creds_path)}")
         try:
             if creds_path and os.path.exists(creds_path):
-                print(f"Authenticating via Google Service Account JSON: {creds_path}")
+                debug("Authenticating with the Google service account...")
                 scopes = [
                     "https://www.googleapis.com/auth/spreadsheets.readonly",
                     "https://www.googleapis.com/auth/drive.readonly",
@@ -706,7 +681,7 @@ class PortfolioFetcher:
                 response.raise_for_status()
                 raw_df = pd.read_csv(io.StringIO(response.text))
             else:
-                print(f"Fetching public Google Sheets CSV URL: {url}")
+                debug("Fetching the Google Sheet through its public CSV link...")
                 raw_df = pd.read_csv(url)
 
         except Exception as e:
@@ -860,7 +835,7 @@ class PortfolioFetcher:
             has_price = df["symbol"].isin(extended.keys())
             df.loc[has_price, "session_price"] = df.loc[has_price, "symbol"].map(lambda s: extended[s][0])
             df.loc[has_price, "session_price_as_of"] = df.loc[has_price, "symbol"].map(lambda s: extended[s][1])
-            print(f"Extended-hours prices found for {int(has_price.sum())}/{len(df)} positions.")
+            debug(f"Extended-hours prices found for {int(has_price.sum())}/{len(df)} positions.")
 
         df["session_price_as_of"] = df["session_price_as_of"].fillna(now_utc)
         df["session_price_age_minutes"] = (

@@ -77,5 +77,5 @@ def send_html_email(
         server.login(sender_email, app_password)
         server.send_message(msg)
 
-    print(f"✅ Email successfully sent to {to_email}")
+    print(f"✅ Email successfully sent to {user_name}.")
     return to_email

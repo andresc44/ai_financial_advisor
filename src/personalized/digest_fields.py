@@ -24,6 +24,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.market.market_session import market_date
 from src.config.parameters import params_dict
 from src.personalized.holdings_state import _clean_float
@@ -193,5 +194,5 @@ def portfolio_beta(holdings_df: pd.DataFrame) -> float:
         return 0.0
 
     total_value = holdings_df["market_value"].clip(lower=0).sum()
-    print(f"Portfolio beta covers {covered_value / total_value:.0%} of market value")
+    debug(f"Portfolio beta covers {covered_value / total_value:.0%} of market value")
     return round(weighted_sum / covered_value, 2)

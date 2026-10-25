@@ -12,6 +12,11 @@ start_run_log(name) sends every printed line, error, and logging record to logs/
   only catches crashes that happen before logging starts. In a terminal, or with FINNBOT_LOG_ECHO=1 (e.g. when
   piping output), lines are shown as well.
 2026-10-16: write_run_status() leaves a one-line result for the healthchecks.io heartbeat (docs/operations.md).
+2026-10-24 (Andres): the log is for tracking down crashes and errors, and it's copied to Google Drive by the backup, so
+it no longer holds what users own. By default it keeps printed lines plus WARNING and up from the logging module
+(third-party request logs, per-stock evaluations); progress lines that only help while debugging go through debug().
+FINNBOT_LOG_VERBOSE=1 brings both back. What a line may hold: errors, warnings, and run results with counts and times;
+never amounts, P&L, account names, or a user's holdings outside an error that's about that stock.
 """
 import io
 import logging
@@ -30,6 +35,22 @@ from src.config.parameters import params_dict
 LOG_DIR = project_root / "logs"
 OPS_PARAMS = params_dict["OPS"]
 RUN_LOGGER_PREFIX = "finnbot.run"
+# Claude-authored (2026-10-24): libraries that set their own level, which logged every HTTP request at INFO
+QUIET_LOGGERS = ("httpx", "httpx2", "httpcore", "google_genai", "anthropic", "openai", "urllib3", "peewee")
+
+
+def verbose() -> bool:
+    """Claude-authored (2026-10-24): FINNBOT_LOG_VERBOSE=1 logs progress lines and INFO records too."""
+    return os.environ.get("FINNBOT_LOG_VERBOSE") == "1"
+
+
+def debug(text: str) -> None:
+    """
+    Claude-authored (2026-10-24): prints a progress line only with FINNBOT_LOG_VERBOSE=1. For steps that help while
+    debugging but not when tracking down a crash (fetching X, N tickers left after Y).
+    """
+    if verbose():
+        print(text)
 
 
 class _RunFormatter(logging.Formatter):
@@ -97,12 +118,26 @@ def start_run_log(name: str) -> Path:
             if isinstance(existing, logging.StreamHandler) and not isinstance(existing, logging.FileHandler):
                 root.removeHandler(existing)
     root.addHandler(handler)
-    if root.level > logging.INFO or root.level == logging.NOTSET:
-        root.setLevel(logging.INFO)
+    # 2026-10-24: WARNING and up from the logging module, unless verbose (module docstring)
+    level = logging.INFO if verbose() else logging.WARNING
+    root.setLevel(level)
+    for library in QUIET_LOGGERS:
+        logging.getLogger(library).setLevel(level)
 
     sys.stdout = _TeeStream(sys.stdout, run_logger, logging.INFO, echo)
     sys.stderr = _TeeStream(sys.stderr, run_logger, logging.WARNING, echo)
     return path
+
+
+def open_files() -> str:
+    """
+    Claude-authored (2026-10-24): ' (N files open)' for a run's last line, so a leak shows long before the open-file
+    limit (every digest hit cron's 1024 on 2026-10-23). Empty where /proc isn't available.
+    """
+    try:
+        return f" ({len(os.listdir('/proc/self/fd'))} files open)"
+    except OSError:
+        return ""
 
 
 def name_thread(user_name: str) -> None:

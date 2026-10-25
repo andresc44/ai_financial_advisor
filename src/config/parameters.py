@@ -541,9 +541,6 @@ params_dict = {
             "name": "profile.name",
             "sector": "profile.sector",
             "industry": "profile.industry",
-            # Claude-authored (2026-10-24, Andres): Yahoo's business summary, shortened on the card's "About the
-            # company" dropdown (create_html._brief)
-            "business_summary": "profile.business_summary",
             "current_price": "price_action.current_price",
             "market_cap": "valuation_and_fundamentals.market_cap",
             "52_week_low": "price_action.52_week_low",
@@ -569,6 +566,9 @@ params_dict = {
         },
         # Where the trade stands technically, to judge the entry, stop, and target Claude gives
         "top_swing": {
+            # Claude-authored (2026-10-24, Andres): Yahoo's business summary, shortened on the swing card's "About the
+            # company" dropdown (create_html._brief). Swing ideas only (2026-10-25, Andres)
+            "business_summary": "profile.business_summary",
             "rsi_14": "technical_indicators.rsi_14_1day.0.rsi",
             "ema_9": "technical_indicators.ema_9_1day.0.ema",
             "ema_21": "technical_indicators.ema_21_1day.0.ema",
@@ -810,6 +810,9 @@ params_dict = {
         # and coloured by the past week's performance (st=w1; st=d1 is one day, w4 a month)
         "HEAT_MAP_URL": "https://finviz.com/map?t=sec&st=w1",
         "HEAT_MAP_LABEL": "S&P 500 heat map · 1 week",
+        # Claude-authored (2026-10-25, Andres): the glossary's web page (src/digest/glossary_page.py). When set, the email
+        # shows a one-line link to it instead of the ~10 KB glossary card; None keeps the card in the email
+        "GLOSSARY_URL": "https://andresc44.github.io/finnbot-glossary/",
         # Claude-authored (2026-10-21): where each market signal's name links (Andres asked for Yahoo or another site
         # than StockCharts). Google Finance opens at its 1-month view (window=1M) for the series it has; its links
         # can't preset a comparison, so each "A vs B" opens A. It has no dollar index (Yahoo, which opens on 1 day),
@@ -837,6 +840,8 @@ params_dict = {
     # Server-side refusal fallback (fallbacks="default") in both Claude evaluators: LLM_recommendation.py
     # (new-stock scoring) and src/personalized/recommendation.py (holdings). Only sent for the models listed below.
     "CLAUDE_REFUSAL_FALLBACK": True,
+    # Claude-authored (2026-10-24): cache the evaluations' shared instructions (src/llm/claude_cache.py)
+    "CLAUDE_PROMPT_CACHE": True,
     "CLAUDE_FALLBACK_DEFAULT_MODELS": ["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"],
     # Claude models that LLM (above) and each user's HOLDINGS_LLM_MODEL may use, with the effort levels each accepts.
     # Both evaluators send a strict tool schema with tool_choice "auto", so every model here must support strict

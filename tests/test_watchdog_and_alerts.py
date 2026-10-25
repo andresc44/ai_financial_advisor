@@ -252,3 +252,35 @@ def test_run_log_writes_timestamped_lines_with_the_user(tmp_path, monkeypatch):
     lines = path.read_text(encoding="utf-8").splitlines()
     assert any("[Steven] checking holdings" in line for line in lines)
     assert any(line.endswith("partial line") for line in lines)  # Partial writes are joined into one line
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_run_log_keeps_errors_and_leaves_progress_to_verbose_runs(tmp_path, monkeypatch, verbose):
+    # Claude-authored (2026-10-24): request logs and progress lines only with FINNBOT_LOG_VERBOSE=1
+    monkeypatch.setattr(run_logging, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(sys, "stdout", sys.stdout)
+    monkeypatch.setattr(sys, "stderr", sys.stderr)
+    monkeypatch.setenv("FINNBOT_LOG_VERBOSE", "1" if verbose else "0")
+    root = logging.getLogger()
+    handlers_before, level_before = list(root.handlers), root.level
+    levels_before = {name: logging.getLogger(name).level for name in run_logging.QUIET_LOGGERS}
+    try:
+        path = run_logging.start_run_log("test_run")
+        print("[ERROR] something failed")
+        run_logging.debug("fetching 12 symbols...")
+        logging.getLogger("httpx").info("HTTP Request: POST https://api.example.com")
+        logging.getLogger("Finnbot.HoldingEvaluator").info("[AAA] Evaluated -> hold")
+        logging.getLogger("Finnbot.HoldingEvaluator").warning("retrying a refused request")
+    finally:
+        for handler in root.handlers[:]:
+            if handler not in handlers_before:
+                root.removeHandler(handler)
+                handler.close()
+        root.handlers[:] = handlers_before
+        root.setLevel(level_before)
+        for name, level in levels_before.items():
+            logging.getLogger(name).setLevel(level)
+    text = path.read_text(encoding="utf-8")
+    assert "[ERROR] something failed" in text and "retrying a refused request" in text
+    for chatter in ("fetching 12 symbols", "HTTP Request", "[AAA] Evaluated"):
+        assert (chatter in text) is verbose, chatter

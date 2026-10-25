@@ -116,7 +116,7 @@ def send_earnings_reminders(now: datetime, users: Optional[list[str]] = None) ->
                 reason = f"{report['symbol']} {report['date'].isoformat()}"  # Once per stock and report
                 if send_notice_now(user_name, SUBJECT, reason, reminder_text(report, now), cooldown_hours=24 * 7):
                     sent += 1
-                    print(f"Sent {user_name} an earnings reminder for {report['symbol']} ({report['date']}).")
+                    print(f"Sent {user_name} an earnings reminder.")
     except Exception as e:  # e.g. an unreadable state file or alert log; the digest run goes on
         print(f"[WARNING] Could not send earnings reminders: {e}")
     return sent

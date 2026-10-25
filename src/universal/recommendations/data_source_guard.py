@@ -33,6 +33,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.config.parameters import params_dict  # noqa: E402
 
 # Seconds between retries of a rate-limited Finnhub call. The last outlasts Finnhub's one-minute window (2026-10-18)
@@ -193,7 +194,7 @@ def twelvedata_request(
         elif code in (401, 403):
             reason = "invalid_key" if code == 401 else "permission"
         else:  # A problem with this request only (e.g. an unknown symbol): skipped, as before
-            print(f"[DEBUG API Error] Twelve Data returned error: {message}")
+            debug(f"[DEBUG API Error] Twelve Data returned error: {message}")
             return None
         if reason in ("quota_exhausted", "invalid_key"):
             state["blocked"] = reason

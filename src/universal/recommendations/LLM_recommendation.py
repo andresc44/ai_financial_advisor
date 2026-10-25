@@ -13,7 +13,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.llm import llm_models
+from src.llm import claude_cache, llm_models
 from src.llm.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
 from src.config.parameters import params_dict
 from src.personalized.api_errors import (
@@ -320,7 +320,8 @@ class ParallelStockEvaluator:
                     "model": self.config["model"],
                     "max_tokens": self.config["max_tokens"],
                     "output_config": {"effort": self.config["effort"]},
-                    "system": self.config["system_prompt"],
+                    # Claude-authored (2026-10-24): cached, so every candidate after the first reads it
+                    "system": claude_cache.cached_system(self.config["system_prompt"]),
                     "tools": [self.tool_spec],
                     "tool_choice": self.tool_choice,
                     "messages": [{"role": "user", "content": user_prompt}],
@@ -391,14 +392,12 @@ class ParallelStockEvaluator:
             f"({self.config['model']}, effort={self.config['effort']})..."
         )
 
-        tasks = [
-            self._evaluate_single_ticker(symbol, sanitized_inputs[symbol])
-            for symbol in symbols
-        ]
-
-        results: List[Optional[Dict[str, Any]]] = await asyncio.gather(
-            *tasks
-        )
+        # Claude-authored (2026-10-24): on Claude, the first candidate alone, so the rest read its cached instructions
+        evaluate = lambda symbol: self._evaluate_single_ticker(symbol, sanitized_inputs[symbol])  # noqa: E731
+        if self.deepseek is None:
+            results: List[Optional[Dict[str, Any]]] = await claude_cache.first_then_rest(symbols, evaluate)
+        else:
+            results = await asyncio.gather(*(evaluate(symbol) for symbol in symbols))
         if self.deepseek is not None:
             await self.deepseek.aclose()
         evaluations: Dict[str, Dict[str, Any]] = {}

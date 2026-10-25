@@ -7,6 +7,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.config.parameters import params_dict
 
 if TYPE_CHECKING:
@@ -40,7 +41,7 @@ def evaluate_filter(
 
     passed = comp_fn(val, threshold)
     if not passed:
-        print(f"Alert: {symbol} has {metric_key} = {val} (Failed condition: '{op_str} {threshold}'). Skipping.")
+        debug(f"Alert: {symbol} has {metric_key} = {val} (Failed condition: '{op_str} {threshold}'). Skipping.")
         return False, val
 
     return True, val
@@ -54,7 +55,7 @@ def filter_twelvedata_tickers(
     """Filters tickers using Twelve Data technical indicators in batch mode."""
     input_tickers = tickers if tickers is not None else fetcher.all_tickers
     if not input_tickers:
-        print("No tickers received for Twelve Data technical filtering. Skipping API calls.")
+        debug("No tickers received for Twelve Data technical filtering. Skipping API calls.")
         return []
 
     filter_rules = rules if rules is not None else params_dict.get("TWELVEDATA_FILTERS", [])
@@ -68,7 +69,7 @@ def filter_twelvedata_tickers(
         needed_indicators.append((indicator, extra_params))
 
     # Batch API Call
-    print(f"\nExecuting batch Twelve Data API request for {len(input_tickers)} tickers...")
+    debug(f"\nExecuting batch Twelve Data API request for {len(input_tickers)} tickers...")
     batch_data = fetcher.fetch_twelvedata_batch_data(
         symbols=input_tickers, 
         indicators=needed_indicators
@@ -78,11 +79,11 @@ def filter_twelvedata_tickers(
         # Claude-authored (2026-10-16): no data (rate limit, used-up credits, outage) now keeps every ticker instead
         # of dropping them all, which left nothing for Claude to score. The cause is already a universal issue
         # (data_source_guard.py), and the completeness check flags the missing indicators.
-        print("Alert: Batch Twelve Data response was invalid or empty. Keeping all tickers unfiltered by technicals.")
-        print(f"[DEBUG] Raw batch_data returned: {batch_data}")
+        print("[WARNING] Batch Twelve Data response was invalid or empty. Keeping all tickers unfiltered by technicals.")
+        debug(f"[DEBUG] Raw batch_data returned: {batch_data}")
         return list(input_tickers)
 
-    print(f"[DEBUG] Top-level symbols returned in batch_data: {list(batch_data.keys())}")
+    debug(f"[DEBUG] Top-level symbols returned in batch_data: {list(batch_data.keys())}")
 
     # Evaluate each ticker against the rule set
     for symbol in input_tickers:
@@ -90,11 +91,11 @@ def filter_twelvedata_tickers(
         symbol_data = batch_data.get(symbol, {})
         
         if not symbol_data:
-            print(f"[DEBUG] No data dict found for symbol '{symbol}'; kept unfiltered by technicals.")
+            debug(f"[DEBUG] No data dict found for symbol '{symbol}'; kept unfiltered by technicals.")
             filtered_twelvedata_tickers.append(symbol)  # Claude-authored (2026-10-16): missing data isn't a failed check
             continue
 
-        print(f"\n[DEBUG] Indicator keys available for '{symbol}': {list(symbol_data.keys())}")
+        debug(f"\n[DEBUG] Indicator keys available for '{symbol}': {list(symbol_data.keys())}")
         
         passed_all = True
         evaluated_values = {}
@@ -116,9 +117,9 @@ def filter_twelvedata_tickers(
             if not values_list:
                 # Claude-authored (2026-10-16): missing data (e.g. an error for this symbol in the batch) skips this
                 # rule instead of dropping the ticker
-                print(f"Alert: Missing {indicator_key} data for {symbol}; rule skipped.")
-                print(f"[DEBUG] Full raw payload received for {symbol} -> {indicator_key}:")
-                print(f"       {indicator_payload}")
+                debug(f"Alert: Missing {indicator_key} data for {symbol}; rule skipped.")
+                debug(f"[DEBUG] Full raw payload received for {symbol} -> {indicator_key}:")
+                debug(f"       {indicator_payload}")
                 continue
 
             latest_val = float(values_list[0].get(indicator, 0))
@@ -140,9 +141,9 @@ def filter_twelvedata_tickers(
 
         if passed_all:
             filtered_twelvedata_tickers.append(symbol)
-            print(f"✓ {symbol} passed Twelve Data technical filters: {evaluated_values}")
+            debug(f"✓ {symbol} passed Twelve Data technical filters: {evaluated_values}")
 
-    print(f"\nFinal pipeline tickers remaining: {filtered_twelvedata_tickers}")
+    debug(f"\nFinal pipeline tickers remaining: {filtered_twelvedata_tickers}")
     return filtered_twelvedata_tickers
 
 def fetch_twelvedata_context_data(
@@ -174,7 +175,7 @@ def fetch_twelvedata_context_data(
 
     # Fetch batch data per interval group
     for interval, indicator_list in grouped_by_interval.items():
-        print(f"Executing batch Twelve Data context fetch for {len(input_tickers)} tickers ({interval})...")
+        debug(f"Executing batch Twelve Data context fetch for {len(input_tickers)} tickers ({interval})...")
         batch_data = fetcher.fetch_twelvedata_batch_data(
             symbols=input_tickers,
             indicators=indicator_list,

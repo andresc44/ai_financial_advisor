@@ -62,7 +62,8 @@ from src.personalized.pull_holdings_data import PortfolioFetcher
 from src.personalized.recommendation import resolve_llm_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
-from src.ops.run_logging import name_thread, start_run_log, write_run_status
+from src.ops.cron_start import sync_at_start
+from src.ops.run_logging import debug, name_thread, open_files, start_run_log, write_run_status
 from src.ops.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert import notices
 from src.telegram_alert.notices import (  # Shared alert log; names kept importable from this module
@@ -240,7 +241,7 @@ def send_new_alerts(
             continue
         key = alert_key(symbol, record["recommendation"])
         if is_alert_suppressed(alert_logs, user_name, key, cooldown_hours=cooldown_hours):
-            print(f"[SUPPRESSED] {record['recommendation']} for {symbol} already sent to {user_name} within {cooldown_hours}h.")
+            debug(f"[SUPPRESSED] An alert already sent to {user_name} within {cooldown_hours}h.")
             continue
         pending.append((symbol, record, key))
 
@@ -312,12 +313,12 @@ def check_user(
 
     # Gate: watchdog switched off for this user
     if settings.interval_hours == 0:
-        print(f"{tag} Watchdog off (interval 0). Skipping.")
+        debug(f"{tag} Watchdog off (interval 0). Skipping.")
         return alert_logs
 
     # Gate: outside the user's market session
     if not is_in_session(now, settings.session):
-        print(f"{tag} Outside the '{settings.session}' session. Skipping.")
+        debug(f"{tag} Outside the '{settings.session}' session. Skipping.")
         return alert_logs
 
     # Gate: not due and no tripwire -> nothing to do this hour
@@ -325,7 +326,7 @@ def check_user(
     block = block_id(now, settings.interval_hours, settings.session)
     user_state = get_user_state(load_state(), user_name)
     is_due = block is not None and block != user_state["last_block"]
-    print(
+    debug(
         f"{tag} session={settings.session} phase={phase} interval={settings.interval_hours}h "
         f"tripwire={settings.tripwire} due={is_due} block={block}"
     )
@@ -357,12 +358,12 @@ def check_user(
 
     today = market_date(now)
     reasons, skipped = apply_daily_claude_limit(reasons, symbol_states, claude_calls_today(user_state, today))
-    for symbol, reason in reasons.items():
-        print(f"{tag}   evaluate {symbol}: {reason}")
+    if reasons:  # 2026-10-24: a count, so the log doesn't list what the user holds
+        print(f"{tag} Evaluating {len(reasons)} holding(s).")
     if skipped:
         print(f"{tag} [WARNING] Daily Claude cap reached; not evaluated this run: {skipped}")
     if not reasons:
-        print(f"{tag} Nothing changed enough to re-evaluate; keeping last recommendations.")
+        debug(f"{tag} Nothing changed enough to re-evaluate; keeping last recommendations.")
 
     if dry_run:
         print(f"{tag} Dry run: no Claude calls, no Telegram, no state written.")
@@ -463,9 +464,10 @@ def process_user_alerts(
 
     # Save cleaned history back to CSV (Claude-authored 2026-10-15: merged with notices the run saved directly)
     merge_and_save_alert_logs(alert_logs)
-    print(f"Alert log updated at: {notices.CSV_PATH}")
+    debug(f"Alert log updated at: {notices.CSV_PATH}")
     elapsed = time.monotonic() - started
-    print(f"Watchdog run finished in {elapsed:.0f}s: checked {len(eligible)} user(s), failed {failed_users or 'none'}.")
+    print(f"Watchdog run finished in {elapsed:.0f}s: checked {len(eligible)} user(s), failed {failed_users or 'none'}."
+          + open_files())
     return not failed_users, f"Checked {len(eligible)} user(s), {len(failed_users)} failed, in {elapsed:.0f}s."
 
 
@@ -489,6 +491,10 @@ if __name__ == "__main__":
 
     # Claude-authored (2026-10-15): everything goes to logs/watchdog.log; an unexpected crash also alerts the admins
     start_run_log("watchdog")
+    # Claude-authored (2026-10-25, Andres): like the digest, the settings sheet and the sign-up answers first, so a
+    # user whose keys were just filled in is checked this run (src/ops/cron_start.py). Not for a dry run
+    if not args.dry_run:
+        sync_at_start()
     try:
         ok, status = process_user_alerts(
             retention_days=RETENTION_DAYS, cooldown_hours=COOLDOWN_HOURS, now=args.now, dry_run=args.dry_run

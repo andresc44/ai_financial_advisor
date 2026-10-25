@@ -23,8 +23,9 @@ Before changing code, templates, `parameters.py`, or `.env` on the VM:
 2. Make the change, and run the tests: `venv/bin/python -m pytest` (about a minute; they write only to temp folders).
 3. `bash scripts/maintenance.sh off`.
 
-Skip the pause only for edits to docs, tests, or other files no job reads. During a digest window (above), keep the pause
-under an hour: a skipped digest is retried at the next hour's run, but not after its window closes.
+Always pause first (Andres, 2026-10-25): any change to files in this folder on the VM, docs and tests included, and any
+git pull, checkout, or merge. During a digest window (above), keep the pause under an hour: a skipped digest is retried
+at the next hour's run, but not after its window closes.
 
 Also on the VM:
 - Don't switch branches, stash, rebase, or reset unless maintenance mode is on. Cron runs whatever is checked out.

@@ -28,6 +28,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.market.market_session import last_refresh_boundary
 from src.config.parameters import params_dict
 from src.ops.shared_locks import MARKET_DATA_LOCK
@@ -131,7 +132,7 @@ def add_metrics_to_holdings(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
     Context is served from the shared daily cache when still valid (see module docstring).
     """
     if holdings_df.empty:
-        print("Holdings DataFrame is empty. No metrics to add.")
+        debug("Holdings DataFrame is empty. No metrics to add.")
         return holdings_df
 
     df = holdings_df.copy()
@@ -171,7 +172,7 @@ def add_metrics_to_holdings(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
             s for s in formatted_symbols
             if bar_days > 0 and s not in needs_full and "daily_bars" not in (cache[s].get("context") or {})
         ]
-        print(
+        debug(
             f"Market context for {len(formatted_symbols)} held symbols: {len(needs_full)} full fetch, "
             f"{len(needs_fresh)} quote/news refresh, "
             f"{len(formatted_symbols) - len(needs_full) - len(needs_fresh)} from cache"
@@ -212,7 +213,7 @@ def add_metrics_to_holdings(self, holdings_df: pd.DataFrame) -> pd.DataFrame:
     sanitized_context: dict[str, dict[str, Any]] = {
         s: cache[s]["context"] for s in formatted_symbols if s in cache
     }
-    print(f"✓ Market context ready for {len(sanitized_context)} held symbols")
+    debug(f"Market context ready for {len(sanitized_context)} held symbols")
 
     df["market_context"] = df["symbol"].map(
         lambda s: sanitized_context.get(sym_map.get(s))

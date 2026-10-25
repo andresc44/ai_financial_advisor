@@ -9,8 +9,8 @@ from src.digest import create_html as ch
 from src.digest.glossary import terms_in_use
 from src.config.parameters import params_dict
 from src.personalized.LLM_hold_instr import current_recommendation  # noqa: F401  (the labels' module)
-from src.personalized.recommendation import HoldingEvaluation, ParallelHoldingEvaluator, majority_review
-from tests.test_create_html import TEMPLATE_DIR, holding, payload
+from src.personalized.recommendation import EVALUATION_TOOL_NAME, HoldingEvaluation, ParallelHoldingEvaluator, majority_review
+from tests.test_create_html import TEMPLATE_DIR, glossary_in_the_email, holding, payload  # noqa: F401  (autouse fixture)
 
 
 @pytest.fixture
@@ -102,13 +102,15 @@ def test_urgent_and_profit_sells_are_reviewed_twice_more(monkeypatch, first, lat
     answers = iter([review(first)] + [review(label) for label in later])
     asked = []
 
-    async def fake_review(symbol, prompt):
-        asked.append(symbol)
+    async def fake_review(symbol, prompt, cache_prompt=False):
+        asked.append((symbol, cache_prompt))
         return next(answers)
 
     monkeypatch.setattr(evaluator, "_review", fake_review)
     result = asyncio.run(evaluator._evaluate_single_holding("SWK", {"symbol": "SWK"}))
     assert result.recommendation == expected and len(asked) == reviews
+    # 2026-10-24: only the re-reviews, which send the same prompt again, cache it
+    assert [cached for _, cached in asked] == [False] + [True] * (reviews - 1)
 
 
 def test_big_portfolios_get_one_story_per_stock_except_flagged_ones():
@@ -153,3 +155,41 @@ def test_badges_and_dots_name_classes_instead_of_inline_colours():
     assert f".{cls}{{background-color:{risky['bg']};color:{risky['fg']};}}" in html
     assert 'class="dot" style=' not in html and 'class="bd" style="background-color' not in html
     assert ch.render_html(view, TEMPLATE_DIR, amp=True).count(f'class="bd {cls}"') >= 1
+
+
+def test_claude_evaluations_share_one_cached_copy_of_their_instructions(monkeypatch):
+    # Claude-authored (2026-10-24): the system prompt (and the tools before it) is cached, and the first holding runs
+    # alone so the others read it instead of all writing it at once
+    from types import SimpleNamespace
+
+    evaluator = ParallelHoldingEvaluator(api_key="sk-ant-test", user_name="Tess", source="digest")
+    events, requests = [], []
+
+    async def fake_create(**request):
+        symbol = request["messages"][0]["content"].split(" in ")[1].split(" ")[0]
+        requests.append(request)
+        events.append(("start", symbol))
+        await asyncio.sleep(0.01)
+        events.append(("end", symbol))
+        tool = SimpleNamespace(type="tool_use", name=EVALUATION_TOOL_NAME,
+                               input={"recommendation": "hold", "sentiment": "Neutral", "rationale": "Fine."})
+        usage = SimpleNamespace(input_tokens=10, output_tokens=5, cache_creation_input_tokens=0,
+                                cache_read_input_tokens=0, iterations=None)
+        return SimpleNamespace(stop_reason="end_turn", content=[tool], usage=usage, model=request["model"],
+                               stop_details=None)
+
+    monkeypatch.setattr(evaluator.client.messages, "create", fake_create)
+    monkeypatch.setattr(evaluator.client.beta.messages, "create", lambda **r: fake_create(**r))
+    payloads = {s: {"symbol": s} for s in ("AAA", "BBB", "CCC")}
+    results = asyncio.run(evaluator.evaluate_holdings(payloads))
+    assert set(results) == {"AAA", "BBB", "CCC"}
+    assert events[:2] == [("start", "AAA"), ("end", "AAA")]  # The first finished before any other started
+    system = requests[0]["system"]
+    assert system[0]["cache_control"] == {"type": "ephemeral"} and system[0]["text"] == evaluator.config["system_prompt"]
+    assert all(r["system"] == system for r in requests)  # Byte-identical, or nothing is read back
+    assert isinstance(requests[0]["messages"][0]["content"], str)  # A stock's own prompt isn't cached
+
+    monkeypatch.setitem(params_dict, "CLAUDE_PROMPT_CACHE", False)  # Switched off: as before
+    requests.clear()
+    asyncio.run(evaluator.evaluate_holdings(payloads))
+    assert all(r["system"] == evaluator.config["system_prompt"] for r in requests)

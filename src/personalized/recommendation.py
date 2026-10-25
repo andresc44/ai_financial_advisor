@@ -41,7 +41,8 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from src.llm import llm_models
+from src.ops.run_logging import debug
+from src.llm import claude_cache, llm_models
 from src.llm.deepseek_client import DeepSeekClient, DeepSeekError, build_request, validated_answer
 from src.tracking.idea_positions import prompt_view
 from src.market.market_session import market_phase
@@ -169,17 +170,22 @@ class ParallelHoldingEvaluator:
         self.semaphore = asyncio.Semaphore(self.config["max_concurrency"])
         self.evaluated_at = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M %Z")
 
-    async def _create_message(self, user_prompt: str) -> Any:
-        """Sends one evaluation request, opting into server-side refusal fallbacks when the model supports them."""
+    async def _create_message(self, user_prompt: str, cache_prompt: bool = False) -> Any:
+        """
+        Sends one evaluation request, opting into server-side refusal fallbacks when the model supports them.
+        Claude-authored (2026-10-24): the system prompt and tool are cached (src/llm/claude_cache.py); with
+        `cache_prompt` (a re-review, sent again as is), the stock's prompt too.
+        """
         request = {
             "model": self.config["model"],
             "max_tokens": self.config["max_tokens"],
             "output_config": {"effort": self.config["effort"]},
-            "system": self.config["system_prompt"],
+            "system": claude_cache.cached_system(self.config["system_prompt"]),
             "tools": [EVALUATION_TOOL_SPEC],
             # tool_choice "auto" + strict schema: forced tool_choice is rejected by newer models
             "tool_choice": {"type": "auto"},
-            "messages": [{"role": "user", "content": user_prompt}],
+            "messages": [{"role": "user",
+                          "content": claude_cache.cached_user(user_prompt) if cache_prompt else user_prompt}],
         }
         if (
             params_dict.get("CLAUDE_REFUSAL_FALLBACK", True)
@@ -231,19 +237,23 @@ class ParallelHoldingEvaluator:
         extra_reviews = recheck.get("EXTRA_REVIEWS", 0)
         if first is None or first.recommendation not in recheck.get("SIGNALS", []) or extra_reviews <= 0:
             return first
-        extra = await asyncio.gather(*(self._review(symbol, user_prompt) for _ in range(extra_reviews)))
+        if self.deepseek is None and claude_cache.enabled():
+            # 2026-10-24: one after the other, with the prompt cached, so each re-review after the first reads it
+            extra = [await self._review(symbol, user_prompt, cache_prompt=True) for _ in range(extra_reviews)]
+        else:
+            extra = await asyncio.gather(*(self._review(symbol, user_prompt) for _ in range(extra_reviews)))
         reviews = [first] + [review for review in extra if review is not None]
         chosen = majority_review(reviews)
         logger.info(f"[{symbol}] First review said {first.recommendation}; reviewed {len(reviews)} times: "
                     f"{[review.recommendation for review in reviews]} -> {chosen.recommendation}")
         return chosen
 
-    async def _review(self, symbol: str, user_prompt: str) -> Optional[HoldingEvaluation]:
+    async def _review(self, symbol: str, user_prompt: str, cache_prompt: bool = False) -> Optional[HoldingEvaluation]:
         """One review of one holding (2026-10-22: its own method, so _confirmed can ask again)."""
         try:
             if self.deepseek is not None:
                 return await self._evaluate_with_deepseek(symbol, user_prompt)
-            response = await self._create_message(user_prompt)
+            response = await self._create_message(user_prompt, cache_prompt=cache_prompt)
             # Claude-authored (2026-10-16): every answered request is billed, refusals and truncations included
             record_anthropic_response(self.user_name, self.source, response)
 
@@ -303,12 +313,12 @@ class ParallelHoldingEvaluator:
             f"({self.config['model']}, effort={self.config['effort']}, session={self.market_session})..."
         )
 
-        tasks = [
-            self._evaluate_single_holding(symbol, holding_payloads[symbol])
-            for symbol in symbols
-        ]
-
-        results: List[Optional[HoldingEvaluation]] = await asyncio.gather(*tasks)
+        # Claude-authored (2026-10-24): on Claude, the first holding alone, so the rest read its cached instructions
+        evaluate = lambda symbol: self._evaluate_single_holding(symbol, holding_payloads[symbol])  # noqa: E731
+        if self.deepseek is None:
+            results: List[Optional[HoldingEvaluation]] = await claude_cache.first_then_rest(symbols, evaluate)
+        else:
+            results = await asyncio.gather(*(evaluate(symbol) for symbol in symbols))
         if self.deepseek is not None:
             await self.deepseek.aclose()
         evaluations: Dict[str, Dict[str, Any]] = {
@@ -408,7 +418,7 @@ def add_recommendations(
     self.llm_key_error = None
     settings = getattr(self, "llm_settings", None) or llm_models.job_settings("HOLDINGS")
     if holdings_df.empty:
-        print("Holdings DataFrame is empty. No recommendations to add.")
+        debug("Holdings DataFrame is empty. No recommendations to add.")
         return holdings_df
 
     df = holdings_df.copy()
@@ -427,7 +437,7 @@ def add_recommendations(
             max_natr_move=params_dict["WATCHDOG"]["REEVAL_NATR_MULTIPLE"],
         )
         if reused:
-            print(f"Reusing {len(reused)} recent evaluation(s) instead of calling the LLM again: {sorted(reused)}")
+            debug(f"Reusing {len(reused)} recent evaluation(s) instead of calling the LLM again.")
     to_evaluate = {symbol: payload for symbol, payload in holding_payloads.items() if symbol not in reused}
 
     evaluations: Dict[str, Dict[str, Any]] = {}

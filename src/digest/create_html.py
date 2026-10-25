@@ -65,9 +65,11 @@ TONE_CLASSES = {"pos": "pos", "neg": "neg", "warn": "wn", "flat": "fl", "ink": "
 SIGNALS = {
     "urgent_sell": ("Urgent sell", "#7F1D1D", "#FECACA", "#DC2626", 0),
     "risky": ("Risky", "#9A3412", "#FFEDD5", "#F97316", 1),
-    "profit_sell": ("Profit sell", "#92400E", "#FEF3C7", "#F59E0B", 2),
-    "buy_more": ("Buy more", "#166534", "#DCFCE7", "#16A34A", 3),
-    "hold": ("Hold", "#075985", "#E0F2FE", "#38BDF8", 4),
+    # 2026-10-24 (Andres): profit sell green (Buy more's old colours), buy more blue.
+    # 2026-10-25 (Andres): Buy more and Hold swapped blues: Buy more light sky blue, Hold the deeper blue
+    "profit_sell": ("Profit sell", "#166534", "#DCFCE7", "#16A34A", 2),
+    "buy_more": ("Buy more", "#075985", "#E0F2FE", "#38BDF8", 3),
+    "hold": ("Hold", "#1E40AF", "#DBEAFE", "#2563EB", 4),
 }
 NOT_EVALUATED = ("Not evaluated", "#475569", "#F1F5F9", "#CBD5E1", 5)
 # How a count of each reads, e.g. "2 urgent sells", "3 risky", "1 buy more"
@@ -648,12 +650,13 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
     else:
         stats.append(_stat("Trend", DASH))
 
+    # 2026-10-25 (Andres): the reasoning's last sentence, worded shorter, e.g. "Volatility 23% a year, daily range 1.9% (ATR)."
     volatility = []
     if _num(first.get("annualized_vol")) is not None:
         volatility.append(f"Volatility {_num(first.get('annualized_vol')):.0f}% a year")
     if _num(first.get("natr")) is not None:
-        volatility.append(f"average daily range {_num(first.get('natr')):.1f}% of price (ATR)")
-    volatility_line = "; ".join(volatility)
+        volatility.append(f"daily range {_num(first.get('natr')):.1f}% (ATR)")
+    volatility_line = ", ".join(volatility)
     volatility_line = volatility_line[:1].upper() + volatility_line[1:] + "." if volatility_line else ""
 
     catalysts = []
@@ -1302,7 +1305,6 @@ def _pick_common(pick: dict, score_key: str) -> dict:
         "sentiment": _sentiment_badge(pick.get("sentiment")),
         "sector": sector,
         "thesis": _text(pick.get("thesis")) or "",
-        "about": _brief(pick.get("business_summary")),  # Claude-authored (2026-10-24): "About the company"
         "analyst": _analyst_line(pick),
         "links": _quote_links(ticker),
         "chart": None,  # Set by build_view
@@ -1311,6 +1313,8 @@ def _pick_common(pick: dict, score_key: str) -> dict:
 
 def _swing_card(pick: dict, today: Optional[date]) -> dict:
     card = _pick_common(pick, "swingScore")
+    # Claude-authored (2026-10-24): "About the company". 2026-10-25 (Andres): swing ideas only
+    card["about"] = _brief(pick.get("business_summary"))
     entry, stop, target = (_num(pick.get(key)) for key in ("entry_price", "stop_loss", "price_target"))
     if entry and stop and target:  # scorer.swing_reasoning keeps levels only when 0 < stop < entry < target
         reward_risk = _num(pick.get("risk_reward"))
@@ -1351,6 +1355,7 @@ def _swing_card(pick: dict, today: Optional[date]) -> dict:
 
 def _long_term_card(pick: dict, today: Optional[date]) -> dict:
     card = _pick_common(pick, "longScore")
+    card["about"] = ""  # 2026-10-25 (Andres): "About the company" is on swing ideas only
     market_cap = _big_money(pick.get("market_cap"))
     card["sector"] = " · ".join(part for part in (card["sector"], market_cap if market_cap != DASH else None) if part)
     card["key_risk"] = _text(pick.get("key_risk")) or ""
@@ -1599,8 +1604,11 @@ def build_view(payload: dict) -> dict:
         "trimmed": False,  # Set by fit_for_gmail when content was left out to fit Gmail's size limit
         # Claude-authored (2026-10-17): the static glossary card at the bottom (src/digest/glossary.py); emptied by
         # fit_for_gmail, before anything else, when the digest would pass Gmail's clipping limit
-        "glossary": _glossary(bool(cards)),
-        "glossary_summary": [_part("Terms, abbreviations, and indicators explained")],
+        # 2026-10-25 (Andres): with DIGEST.GLOSSARY_URL set, a one-line link to the glossary's web page instead
+        "glossary": [] if params_dict["DIGEST"].get("GLOSSARY_URL") else _glossary(bool(cards)),
+        "glossary_url": params_dict["DIGEST"].get("GLOSSARY_URL") or "",
+        "glossary_summary": [_part("Terms, abbreviations, and indicators explained")] if not params_dict["DIGEST"].get(
+            "GLOSSARY_URL") else [_part("Every term explained, and how the ideas are picked")],
         "ideas_currency": IDEAS_CURRENCY,
         "currency_notes": currency_notes,
         # Main sections that start expanded: any of risk, account, markets, holdings, swing, long_term
@@ -1691,9 +1699,18 @@ def _drop_about(view: dict) -> None:
 
 
 def _drop_pick_about(view: dict) -> None:
-    """Claude-authored (2026-10-24): the ideas' "About the company" dropdowns."""
-    for card in view["swing"] + view["long_term"]:
+    """Claude-authored (2026-10-24): the swing ideas' "About the company" dropdowns."""
+    for card in view["swing"]:
         card["about"] = ""
+
+
+def _drop_quote_links(view: dict) -> None:
+    """
+    Claude-authored (2026-10-24): the Yahoo / Finviz / TradingView buttons on every card (~240 bytes each). The chart
+    still links to Finviz. 2026-10-25 (Andres): back on the cards, dropped right after "About this digest".
+    """
+    for card in view["holdings"] + view["swing"] + view["long_term"]:
+        card["links"] = None
 
 
 def _drop_glossary(view: dict) -> None:
@@ -1741,14 +1758,24 @@ def _no_news(view: dict) -> None:
         card["news"] = []
 
 
+def _drop_hold_charts(view: dict) -> None:
+    """Claude-authored (2026-10-24): the charts of the Hold cards (~330 bytes each), the ones least likely to be opened."""
+    for card in view["holdings"]:
+        if card["signal_key"] == "hold":
+            card["chart"] = None
+
+
 # Applied in order until the HTML fits, least useful content first. Holding news arrives highest priority first.
 # Each holding's signal, figures, and reasoning are never dropped.
 # 2026-10-21: "About this digest" goes first, then the glossary (Andres's order)
 # 2026-10-22: the urgent-sell and risky stocks keep their news longest (Andres's rule, as in _scale_news)
-# 2026-10-24: the ideas' company blurbs go right after "About this digest" (Andres's order)
-TRIM_STEPS = (_drop_about, _drop_pick_about, _drop_glossary, _drop_low_news, _drop_pick_details, _drop_hold_news, _top_news_only, _no_hold_news,
-              _flagged_top_news_only,
-              _no_news)
+# 2026-10-24: the swing ideas' company blurbs go early (Andres's order; 2026-10-25: after the glossary), and before
+# Gmail would clip the bottom of a big portfolio's email (the ideas), the Hold cards' charts
+# 2026-10-25 (Andres's order): the Hold cards' lesser news and every Low story first, then the footer, the quote
+# buttons, and the glossary
+TRIM_STEPS = (_drop_hold_news, _drop_low_news, _drop_about, _drop_quote_links, _drop_glossary, _drop_pick_about,
+              _top_news_only,
+              _no_hold_news, _drop_pick_details, _flagged_top_news_only, _no_news, _drop_hold_charts)
 
 
 def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
@@ -1841,11 +1868,11 @@ def render_text(view: dict) -> str:
         lines += [f"{card['ticker']} (score {card['score']}) {card['price']}" + ("  (you hold this)" if card.get("held") else ""), f"  {card['thesis']}"]
         if card["key_risk"]:
             lines.append(f"  Key risk: {card['key_risk']}")
-        if card["about"]:
-            lines.append(f"  About: {card['about']}")
     if view["screening"]:  # Claude-authored (2026-10-17)
         lines += ["", "STOCKS LEFT AFTER EACH SCREENING STAGE"]
         lines += [f"  {label}: {value}" for label, value in view["screening"]]
+    if view.get("glossary_url"):  # Claude-authored (2026-10-25)
+        lines += ["", f"GLOSSARY: {view['glossary_url']}"]
     return "\n".join(line for line in lines if line is not None) + "\n"
 
 

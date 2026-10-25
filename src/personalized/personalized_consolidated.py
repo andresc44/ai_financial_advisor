@@ -13,6 +13,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.market.fx_rates import usd_rates
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.add_metrics import cached_company_names
@@ -75,8 +76,8 @@ def settle_holdings_news(
     Returns (news, the first key error).
     """
     refresh = news_to_refresh(reused, holdings)
-    for symbol, reason in refresh.items():
-        print(f"[news] {symbol}: fetching its news again ({reason}).")
+    if refresh:  # 2026-10-24: counts only, so the log doesn't list what the user holds
+        debug(f"[news] Fetching news again for {len(refresh)} holding(s).")
     if refresh and not (key_error is not None and key_error.blocks_run):
         more, more_error = fetch_holdings_news(user_name, {symbol: companies.get(symbol) for symbol in refresh})
         fresh = {**fresh, **more}
@@ -84,7 +85,7 @@ def settle_holdings_news(
     remember_news(user_name, fresh, holdings)
     kept = {symbol: as_items(entry) for symbol, entry in reused.items() if symbol not in fresh}
     if kept:
-        print(f"[news] Showing news fetched earlier today for {len(kept)} holding(s): {', '.join(kept)}.")
+        debug(f"[news] Showing news fetched earlier today for {len(kept)} holding(s).")
     return {**kept, **fresh}, key_error
 
 def attach_news_bullets(holdings: list[dict], news: dict[str, list[SymbolNewsItem]]) -> list[dict]:
@@ -256,7 +257,7 @@ def get_personal_content(user_name: str = "Andres"):
         # Claude-authored (2026-10-16): <NAME>_RECEIVE_HOLDING_NEWS=False skips the Gemini news (no calls, empty bullets)
         news_on = wants_holding_news(user_name)
         if not news_on:
-            print(f"Holding news is off for {user_name} (RECEIVE_HOLDING_NEWS); no Gemini news requests.")
+            debug(f"Holding news is off for {user_name} (RECEIVE_HOLDING_NEWS); no Gemini news requests.")
         companies = _holding_companies(portfolio.full_data) if news_on else {}
         # Claude-authored (2026-10-23): news fetched earlier today isn't asked for again; it's checked once the
         # holdings are evaluated (settle_holdings_news)

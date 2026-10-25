@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, date
 import json
 import sys
 
+from src.ops.run_logging import debug
 from src.config.parameters import params_dict
 
 
@@ -33,7 +34,7 @@ def process_news(news):
 
         for article in sorted_news:
             if len(news_items) >= max_articles:
-                print(f"Reduced news summaries from {len(sorted_news)} to {max_articles}")
+                debug(f"Reduced news summaries from {len(sorted_news)} to {max_articles}")
                 break
 
             date_str = (

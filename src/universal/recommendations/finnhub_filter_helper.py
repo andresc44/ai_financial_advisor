@@ -8,6 +8,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.config.parameters import params_dict
 
 if TYPE_CHECKING:
@@ -46,7 +47,7 @@ def evaluate_filter(
     # Evaluate comparison condition
     passed = comp_fn(val, threshold)
     if not passed:
-        print(f"Alert: {symbol} has {metric_key} = {val} (Failed condition: '{op_str} {threshold}'). Skipping.")
+        debug(f"Alert: {symbol} has {metric_key} = {val} (Failed condition: '{op_str} {threshold}'). Skipping.")
         return False, val
 
     return True, val
@@ -75,11 +76,11 @@ def filter_finnhub_tickers(
     # each; the survivors' other sections are fetched later, when their full data is gathered
     sections = tuple(sorted({rule[0] for rule in filter_rules})) or None
     for symbol in input_tickers:
-        print(f"Fetching Finnhub data for {symbol}...")
+        debug(f"Fetching Finnhub data for {symbol}...")
         finnhub_data = fetcher.fetch_finnhub_data(symbol, fetch_news=False, sections=sections)
         
         if not isinstance(finnhub_data, dict):
-            print(f"Alert: Finnhub data for '{symbol}' is not a dictionary. Skipping.")
+            debug(f"Alert: Finnhub data for '{symbol}' is not a dictionary. Skipping.")
             continue
 
         passed_all = True
@@ -111,7 +112,7 @@ def filter_finnhub_tickers(
 
         if passed_all:
             filtered_finnhub_tickers.append(symbol)
-            print(f"✓ {symbol} passed Finnhub filters: {evaluated_values}")
+            debug(f"✓ {symbol} passed Finnhub filters: {evaluated_values}")
 
-    print(f"Filtered final tickers: {filtered_finnhub_tickers}")
+    debug(f"Filtered final tickers: {filtered_finnhub_tickers}")
     return filtered_finnhub_tickers

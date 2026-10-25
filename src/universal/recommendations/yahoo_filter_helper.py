@@ -9,6 +9,7 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.config.parameters import params_dict
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ def evaluate_filter(
     # Evaluate comparison condition
     passed = comp_fn(val, threshold)
     if not passed:
-        print(f"Alert: {symbol} has {metric_key} = {val} (Failed: condition '{op_str} {threshold}'). Skipping.")
+        debug(f"Alert: {symbol} has {metric_key} = {val} (Failed: condition '{op_str} {threshold}'). Skipping.")
         return False, val
 
     return True, val
@@ -85,7 +86,7 @@ def filter_yahoo_tickers(
             return {"error": str(e)}
 
     workers = max(1, int(params_dict.get("YAHOO_FETCH_CONCURRENCY", 4)))
-    print(f"Fetching Yahoo data for {len(input_tickers)} tickers, {workers} at a time...")
+    debug(f"Fetching Yahoo data for {len(input_tickers)} tickers, {workers} at a time...")
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="yahoo") as pool:
         fetched = dict(zip(input_tickers, pool.map(_fetch, input_tickers)))
     # The first parallel requests of a run can race for Yahoo's session token and get a 401 "Invalid Crumb" (ALB was
@@ -101,7 +102,7 @@ def filter_yahoo_tickers(
         yahoo_metrics = fetched[symbol]
 
         if not isinstance(yahoo_metrics, dict):
-            print(f"Alert: Yahoo data for '{symbol}' is not a dictionary. Skipping.")
+            debug(f"Alert: Yahoo data for '{symbol}' is not a dictionary. Skipping.")
             continue
 
         passed_all = True
@@ -124,7 +125,7 @@ def filter_yahoo_tickers(
 
         if passed_all:
             filtered_yahoo_tickers.append(symbol)
-            print(f"✓ {symbol} passed Yahoo filters: {evaluated_values}")
+            debug(f"✓ {symbol} passed Yahoo filters: {evaluated_values}")
 
     return one_listing_per_company(filtered_yahoo_tickers, fetched)
 
@@ -145,5 +146,5 @@ def one_listing_per_company(symbols: List[str], metrics: Dict[str, Any]) -> List
     kept = {symbol for symbol, _ in best.values()}
     for symbol in symbols:
         if symbol not in kept:
-            print(f"Alert: {symbol} is another listing of a company already kept. Skipping.")
+            debug(f"Alert: {symbol} is another listing of a company already kept. Skipping.")
     return [symbol for symbol in symbols if symbol in kept]

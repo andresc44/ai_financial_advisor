@@ -256,12 +256,14 @@ NOTES: dict[str, str] = {
     "DIGEST.AMP_EMAIL": "Also send the AMP version, whose dropdowns work in the Gmail app.",
     "DIGEST.HEAT_MAP_URL": "Link of the heat map button under the greeting.",
     "DIGEST.HEAT_MAP_LABEL": "Text of the heat map button.",
+    "DIGEST.GLOSSARY_URL": "Web page of the glossary. When set, the email links to it instead of carrying it (~10 KB).",
     "DIGEST.INDICATOR_LINKS.*": "Where this market signal's name links in the email.",
     "DIGEST.OPEN_SECTIONS": "Email sections that start open (any of risk, markets, holdings, swing, long_term); the rest "
                             "start collapsed.",
 
     # ---------------------------------------------------------------- Models
     "CLAUDE_REFUSAL_FALLBACK": "When Claude declines a request, let the API retry it on a fallback model.",
+    "CLAUDE_PROMPT_CACHE": "Reuse the Claude evaluations' shared instructions from Anthropic's prompt cache (cheaper).",
     "CLAUDE_FALLBACK_DEFAULT_MODELS": "Claude models that use that fallback.",
     "ALLOWED_CLAUDE_MODELS.*": "A Claude model that LLM may use, with the efforts it accepts.",
     "ALLOWED_DEEPSEEK_MODELS.*": "A DeepSeek model that LLM may use, with the efforts it accepts (none = no thinking).",

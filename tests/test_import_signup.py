@@ -121,7 +121,8 @@ def test_a_holdings_user_waits_for_their_keys_then_is_activated(files, capsys):
     # is a Claude model, so no DeepSeek key; the chat ID isn't an API key)
     values = dotenv_values(env)
     assert values["SAM_ANTHROPIC_API_KEY"] == values["SAM_GEMINI_API_KEY"] == "None"
-    assert "SAM_DEEPSEEK_API_KEY" not in values and "SAM_TELEGRAM_CHAT_ID" not in values
+    # 2026-10-24: the chat ID gets an empty line instead, a spot to fill in
+    assert "SAM_DEEPSEEK_API_KEY" not in values and values["SAM_TELEGRAM_CHAT_ID"] == ""
     assert not result.activated and "not activated yet" in result.activation and "Sam" not in active_users(params)
     signup._print_result(result, answer(SAM), dry_run=False)
     printed = capsys.readouterr().out
@@ -129,7 +130,8 @@ def test_a_holdings_user_waits_for_their_keys_then_is_activated(files, capsys):
 
     # Keys arrive: Andres replaces the placeholders, and the next check finds nothing missing
     env.write_bytes(env.read_bytes().replace(b"SAM_ANTHROPIC_API_KEY=None", b"SAM_ANTHROPIC_API_KEY=sk-ant-x")
-                    .replace(b"SAM_GEMINI_API_KEY=None", b"SAM_GEMINI_API_KEY=AIza-x") + b"SAM_TELEGRAM_CHAT_ID=123\r\n")
+                    .replace(b"SAM_GEMINI_API_KEY=None", b"SAM_GEMINI_API_KEY=AIza-x")
+                    .replace(b"SAM_TELEGRAM_CHAT_ID=\r\n", b"SAM_TELEGRAM_CHAT_ID=123\r\n"))
     again = signup.apply_answer(answer(SAM), env, params, write=False)
     assert again.activated and active_users(params) == ["Steven", "Sam"]
 
@@ -276,3 +278,45 @@ def test_a_holdings_user_gets_placeholders_for_the_keys_the_holdings_model_needs
     before = env.read_bytes()
     signup.apply_answer(answer(LEE), env, params)  # Already there: not written again
     assert env.read_bytes() == before
+
+
+def test_a_telegram_user_gets_a_chat_id_line_and_others_dont(files):
+    # Claude-authored (2026-10-24, Andres): an empty spot when .env has none. 2026-10-25: only for a user who chose
+    # Telegram on the form; a set ID stays
+    env, params = files
+    signup.apply_answer(answer(LEE), env, params)  # No Telegram
+    assert "LEE_TELEGRAM_CHAT_ID" not in dotenv_values(env)
+    signup.apply_answer(answer(SAM), env, params)  # Telegram
+    assert dotenv_values(env)["SAM_TELEGRAM_CHAT_ID"] == ""
+    signup.apply_answer(answer(SAM), env, params)  # Applied again: still one line
+    assert env.read_text().count("SAM_TELEGRAM_CHAT_ID=") == 1
+
+    env.write_text(env.read_text().replace("SAM_TELEGRAM_CHAT_ID=", "SAM_TELEGRAM_CHAT_ID=12345"))
+    signup.apply_answer(answer(SAM), env, params)
+    assert dotenv_values(env)["SAM_TELEGRAM_CHAT_ID"] == "12345"
+
+
+def test_cron_runs_sync_settings_then_signups_and_show_a_new_active_user_on_the_sheet(monkeypatch):
+    # Claude-authored (2026-10-25, Andres): both cron jobs start with this; when a user becomes active (their keys were
+    # filled in), the Parameters tab is written again so its ACTIVE_USERS row shows them in the same run
+    import src.ops.cron_start as cron_start
+
+    calls = []
+    monkeypatch.setitem(cron_start.params_dict, "ACTIVE_USERS", ["Andres"])
+    monkeypatch.setattr(cron_start, "sync_settings", lambda: calls.append("settings"))
+
+    def activate():
+        calls.append("signups")
+        cron_start.params_dict["ACTIVE_USERS"].append("Sam")
+
+    monkeypatch.setattr(cron_start, "sync_signups", activate)
+    cron_start.sync_at_start()
+    assert calls == ["settings", "signups", "settings"]
+
+    calls.clear()
+    monkeypatch.setattr(cron_start, "sync_signups", lambda: calls.append("signups"))  # Nobody changes
+    cron_start.sync_at_start()
+    assert calls == ["settings", "signups"]
+    calls.clear()
+    cron_start.sync_at_start(signups=False)  # A manual digest run: the settings only
+    assert calls == ["settings"]

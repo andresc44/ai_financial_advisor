@@ -48,6 +48,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.llm.gemini_settings import gemini_model, generation_config, max_output_tokens, was_cut_off
 from src.config.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error
@@ -230,8 +231,8 @@ def fetch_news_batch(
             news[symbol] = stock.news_items
     items = [item for found in news.values() for item in found]
     _verify_source_urls(items, _grounded_urls(response))
-    print(
-        f"[DIAGNOSTIC] {', '.join(symbol for symbol, _ in stocks)}: news received in {elapsed}s, "
+    debug(
+        f"[DIAGNOSTIC] News for {len(stocks)} stock(s) received in {elapsed}s, "
         f"{sum(1 for item in items if item.source_url)}/{len(items)} source links verified."
     )
     return news
@@ -283,8 +284,8 @@ def fetch_symbol_news(
                        int(batch_size or DIGEST_PARAMS.get("SYMBOL_NEWS_BATCH_SIZE") or 1))
     max_workers = max(1, min(max_workers or DIGEST_PARAMS["SYMBOL_NEWS_CONCURRENCY"], len(batches)))
 
-    print(
-        f"\n[DIAGNOSTIC] Fetching up to {max_items} news items for {len(companies)} held stocks in "
+    debug(
+        f"[DIAGNOSTIC] Fetching up to {max_items} news items for {len(companies)} held stocks in "
         f"{len(batches)} request(s) ({max_workers} at a time)..."
     )
     news: dict[str, list[SymbolNewsItem]] = {}

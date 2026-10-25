@@ -17,6 +17,13 @@ import src.digest.digest_payload as dp
 import src.digest.send_gmail as sg
 
 TEMPLATE_DIR = Path(ch.__file__).resolve().parent
+
+
+@pytest.fixture(autouse=True)
+def glossary_in_the_email(monkeypatch):
+    """Claude-authored (2026-10-25): these tests cover the glossary card in the email; the digest links to its web page
+    instead (DIGEST.GLOSSARY_URL), which test_with_a_glossary_page_the_email_links_to_it_instead covers."""
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "GLOSSARY_URL", None)
 RATIONALE = ("Price is above the 21-day EMA and the SAR, RSI is neutral, and earnings are three weeks away. " * 6).strip()
 NEWS = ("On October 15, 2026, the company launched a new product line. The launch should support the stock over "
         "the next 1-3 weeks if demand holds up as analysts expect, though margins remain the key question.")
@@ -202,7 +209,9 @@ def test_long_term_card_figures():
         long_pick(rsi_14=72.4, **{"52_week_change_percent": 0.4553})], "top_swing": []}))["long_term"][0]["stats"][4:]
     assert [(s["label"], s["value"], s["sub"], s["tone"]) for s in momentum] == [
         ("RSI 14", "72", "Overbought", "ink"), ("12-month", "+46%", "price return", "pos")]
-    assert render(payload())[1].count('class="st w2') >= 6  # Six tiles, two a row
+    html = render(payload())[1]  # Six tiles, two a row (2026-10-25: the width is the table's g2 class)
+    grid = html[html.index('class="sg g2"', html.index(">LTA<")):]
+    assert grid[:grid.index("</table>")].count('<div class="sl">') == 6
     assert card["analyst"] == "Analysts: Buy (25 analysts) · target $130.00 (+30%)"
     assert card["range"]["note"] == "17% below its 52-week high"
     assert ("Debt / equity", "40%") in card["details"]
@@ -263,7 +272,7 @@ def test_a_full_digest_fits_under_gmails_clipping_limit():
 
 
 def test_a_large_portfolio_drops_low_priority_news_to_fit():
-    large = payload(holdings=[holding(f"T{i:02d}", "risky" if i < 4 else "hold", 5.0) for i in range(20)])
+    large = payload(holdings=[holding(f"T{i:02d}", "risky" if i < 4 else "hold", 5.0) for i in range(24)])  # 2026-10-25: 24 (smaller cards)
     view = ch.build_view(large)
     html = ch.fit_for_gmail(view, TEMPLATE_DIR)
     assert len(html.encode("utf-8")) <= ch.GMAIL_CLIP_BYTES
@@ -388,7 +397,7 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     assert flat(view["markets_summary"]) == "S&P 500 +0.3% prev. day · 1 story"
     assert view["markets_summary"][0]["tone"] == "pos"  # Only the change is coloured, not "S&P 500"
     assert flat(view["holdings_summary"]) == "1 urgent sell · 1 risky · 1 profit sell · 1 hold"
-    assert [part["dot"] for part in view["holdings_summary"]] == ["#DC2626", "#F97316", "#F59E0B", "#38BDF8"]
+    assert [part["dot"] for part in view["holdings_summary"]] == ["#DC2626", "#F97316", "#16A34A", "#2563EB"]  # 2026-10-24: profit sell green; 2026-10-25: hold deeper blue
     assert (flat(view["swing_summary"]), flat(view["long_summary"])) == ("SWA 85", "LTA 91")
 
     amp = ch.render_amp(view, TEMPLATE_DIR)
@@ -440,11 +449,12 @@ def test_four_figure_boxes_form_a_2x2_grid():
     # up to three stay in one row
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
     row_start = html.rfind("<details>", 0, html.index(">AAA<"))
-    grid = html[html.index('<table role="presentation" width="100%" class="sg">', row_start):]
+    # 2026-10-25: the tiles' width comes from the table's class (g2 = 50%), a later row's top line from its <tr>
+    grid = html[html.index('<table width="100%" class="sg g2">', row_start):]
     grid = grid[:grid.index("</table>")]
-    assert grid.count("<tr>") == 2 and grid.count('class="st w2') == 4  # 2026-10-22: widths as classes (w2 = 50%)
+    assert grid.count("<tr") == 2 and grid.count("<td") == 4 and grid.count('<tr class="sh">') == 1
     overview = html[html.index("Your portfolio"):html.index(">Portfolio risk<")]
-    assert overview.count('class="st w3') == 3
+    assert 'class="sg g3"' in overview
 
 
 def test_a_stocks_chart_shows_as_soon_as_its_row_opens():
@@ -703,8 +713,11 @@ def test_the_glossary_is_static_and_left_out_first():
     assert html.index(">Glossary<") > html.index(">Long-term ideas ")  # At the very bottom
     assert "<b>RSI 14</b><br>Relative Strength Index" in html and "<b>Beta</b><br>" in html
     # 2026-10-21: "About this digest" goes first, then the glossary
-    # 2026-10-24: the ideas' company blurbs go between them
-    assert [step.__name__ for step in ch.TRIM_STEPS[:3]] == ["_drop_about", "_drop_pick_about", "_drop_glossary"]
+    # 2026-10-25 (Andres's order): the Hold cards' lesser news and Low stories go before them, the blurbs after
+    assert [step.__name__ for step in ch.TRIM_STEPS] == [
+        "_drop_hold_news", "_drop_low_news", "_drop_about", "_drop_quote_links", "_drop_glossary", "_drop_pick_about",
+        "_top_news_only",
+        "_no_hold_news", "_drop_pick_details", "_flagged_top_news_only", "_no_news", "_drop_hold_charts"]
     trimmed = ch.build_view(payload(screening={"stages": [{"stage": "listings", "count": 7012}]}))
     ch._drop_about(trimmed)
     assert trimmed["usage"] == [] and trimmed["screening"] == []
@@ -990,7 +1003,7 @@ def test_each_card_labels_its_own_markets_session(monkeypatch):
         "Prev. day = the Oct 15 session · Today = the Oct 16 session · Live = still trading")
     assert view["preheader"].startswith("Portfolio ") and "% latest sessions)" in view["preheader"]
     html = ch.render_html(view, TEMPLATE_DIR)
-    assert '<span class="mu">live</span>' in html and '<span class="mu">today</span>' in html
+    assert "</span> live<br>" in html and "</span> today<br>" in html  # 2026-10-25: in one muted block
     assert "Latest session per market" in html and "Live = still trading" in ch.render_text(view)
     # One market, one label: as before
     assert ch.build_view(payload())["portfolio"]["session"] == "Prev. day · Thu, Oct 15"
@@ -1045,11 +1058,68 @@ def test_ideas_have_a_short_about_the_company_dropdown():
                                       "top_swing": [swing_pick(business_summary=summary), swing_pick("SWB")]})
     view, html = render(digest)
     assert [card["about"] for card in view["swing"]] == [ch._brief(summary), ""]
-    assert view["long_term"][0]["about"] == ch._brief(summary)
-    assert html.count("About the company") == 2  # Not on the pick without a summary
+    assert view["long_term"][0]["about"] == ""  # 2026-10-25: swing ideas only
+    assert html.count("About the company") == 1  # Not on the pick without a summary, nor on long-term ideas
     assert "Global Forwarding." in html and "Eden Prairie" not in html
     assert "About the company" in ch.render_amp(ch.build_view(digest), TEMPLATE_DIR)
     assert f"  About: {ch._brief(summary)}" in ch.render_text(view)
 
     ch._drop_pick_about(view)
     assert "About the company" not in ch.render_html(view, TEMPLATE_DIR)
+
+
+def test_a_big_portfolio_without_news_drops_hold_charts_before_gmail_clips_it():
+    # Claude-authored (2026-10-24): with no news to trim, the Hold cards' charts go last. 2026-10-25 (Andres): the quote
+    # buttons are gone from every card
+    names = [step.__name__ for step in ch.TRIM_STEPS]
+    assert names[-2:] == ["_no_news", "_drop_hold_charts"]
+    big = payload(holdings=[holding(f"T{i:02d}", "risky" if i < 3 else "hold", 3.0, news_bullets=[]) for i in range(26)],
+                  recommendations={"top_long_term": [long_pick(f"L{i}") for i in range(5)],
+                                   "top_swing": [swing_pick(f"S{i}") for i in range(5)]})
+    view = ch.build_view(big)
+    html = ch.fit_for_gmail(view, TEMPLATE_DIR)
+    assert len(html.encode("utf-8")) <= ch.GMAIL_CLIP_BYTES
+    assert ">TradingView<" not in html and ">Long-term ideas " in html  # The buttons go long before the charts
+    assert all(card["links"] is None for card in view["holdings"] + view["swing"] + view["long_term"])
+    assert all(card["chart"] for card in view["holdings"] if card["signal_key"] == "risky")  # Only Hold charts go
+    assert not any(card["chart"] for card in view["holdings"] if card["signal_key"] == "hold")
+
+
+def test_with_a_glossary_page_the_email_links_to_it_instead(monkeypatch, tmp_path):
+    # Claude-authored (2026-10-25, Andres): DIGEST.GLOSSARY_URL swaps the ~10 KB glossary card for a one-line link
+    import subprocess
+    import src.digest.glossary_page as gp
+
+    url = "https://andresc44.github.io/finnbot-glossary/"
+    full = ch.render_html(ch.build_view(payload()), TEMPLATE_DIR)
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "GLOSSARY_URL", url)
+    view = ch.build_view(payload())
+    html = ch.render_html(view, TEMPLATE_DIR)
+    assert view["glossary"] == [] and f'<a href="{url}" class="hl">Glossary&nbsp;↗</a>' in html
+    assert "<b>RSI 14</b><br>Relative Strength Index" not in html
+    assert len(full.encode()) - len(html.encode()) > 5000
+    assert f"GLOSSARY: {url}" in ch.render_text(view)
+
+    # The page has every term, each with its own link, and nothing about anyone's holdings
+    page = gp.page_html()
+    from src.digest.glossary import GLOSSARY
+    assert all(f'id="{gp.slug(term)}"' in page for _, terms in GLOSSARY for term, _ in terms)
+    assert gp.slug("P/E (trailing, forward)") == "p-e-trailing-forward"
+    # How the ideas are picked: its numbers follow the settings, and the signals wear the email's colours
+    assert 'id="how-ideas-are-picked"' in page and "Needs 85+ out of 100" in page and "Needs 75+ out of 100" in page
+    with monkeypatch.context() as changed:
+        changed.setitem(gp.params_dict, "MIN_LONG_SCORE", 88.0)
+        assert "Needs 88+ out of 100" in gp.page_html()
+    fg, bg = ch.SIGNALS["urgent_sell"][1:3]
+    assert f'<span class="pill" style="color:{fg};background:{bg}">Urgent sell</span>' in page
+
+    # Publishing writes and pushes only when the page changed
+    site = tmp_path / "site"
+    subprocess.run(["git", "init", "-q", str(site)], check=True)
+    pushed = []
+    real_git = gp._git
+    monkeypatch.setattr(gp, "_git", lambda d, *a: pushed.append(a[0]) or subprocess.CompletedProcess(a, 0, "", "")
+                        if a[0] == "push" else real_git(d, "-c", "user.name=t", "-c", "user.email=t@t", *a))
+    assert gp.publish(site) == "Glossary page updated and pushed." and pushed == ["push"]
+    assert (site / "index.html").read_text() == page and (site / ".nojekyll").exists()
+    assert gp.publish(site) == "Glossary page unchanged." and pushed == ["push"]

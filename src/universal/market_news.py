@@ -34,6 +34,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.llm.gemini_settings import gemini_model, generation_config
 from src.config.parameters import params_dict
 from src.personalized.api_errors import GEMINI_RETRY, ApiKeyUnusable, gemini_key_error, shared_api_key, shared_key_issue
@@ -48,7 +49,7 @@ def story_count() -> int:
 # 1. Load variables from .env file into environment
 load_dotenv()
 if not (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")):
-    print("[DIAGNOSTIC] WARNING: No GEMINI_API_KEY or GOOGLE_API_KEY found in .env!")
+    print("[WARNING] No GEMINI_API_KEY or GOOGLE_API_KEY found in .env!")
 
 # 2. Define Pydantic Schema
 class MacroStory(BaseModel):
@@ -84,7 +85,7 @@ Keep all fields extremely succinct and direct:
 # 4. Fetch Function using Chat interface to fix AFC warning
 @retry(**GEMINI_RETRY)  # Claude-authored (2026-10-16): retries only what can recover
 def fetch_live_macro_stories() -> DigestPayload:
-    print("\n[DIAGNOSTIC] Initializing Gemini Client...")
+    debug("\n[DIAGNOSTIC] Initializing Gemini Client...")
     client = genai.Client(api_key=shared_api_key("Gemini"))
     model, count = gemini_model("MACRO_NEWS"), story_count()
 
@@ -94,7 +95,7 @@ def fetch_live_macro_stories() -> DigestPayload:
         f"and high-impact world financial news. Select the top {count} items based on priority."
     )
 
-    print("[DIAGNOSTIC] Creating Chat session with Google Search grounding enabled...")
+    debug("[DIAGNOSTIC] Creating Chat session with Google Search grounding enabled...")
     # Using client.chats.create avoids the Automatic Function Calling warning
     chat = client.chats.create(
         model=model,
@@ -107,13 +108,13 @@ def fetch_live_macro_stories() -> DigestPayload:
     )
 
     start_time = time.time()
-    print("[DIAGNOSTIC] Sending request to Gemini API (Awaiting search grounding)...")
+    debug("[DIAGNOSTIC] Sending request to Gemini API (Awaiting search grounding)...")
 
     response = chat.send_message(prompt_text)
     record_gemini_response(None, "universal", model, response)  # Claude-authored (2026-10-16): shared-key cost
 
     elapsed = round(time.time() - start_time, 2)
-    print(f"[DIAGNOSTIC] Response received successfully in {elapsed}s.")
+    debug(f"[DIAGNOSTIC] Response received successfully in {elapsed}s.")
 
     payload = DigestPayload.model_validate_json(response.text)
     payload.macro_stories = payload.macro_stories[:count]  # Claude-authored (2026-10-20): in case it sends more

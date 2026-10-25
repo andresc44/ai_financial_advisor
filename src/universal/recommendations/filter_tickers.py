@@ -26,6 +26,7 @@ if str(project_root) not in sys.path:
 env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path, override=True)
 
+from src.ops.run_logging import debug
 from src.universal.recommendations.yahoo_filter_helper import filter_yahoo_tickers
 from src.universal.recommendations.finnhub_filter_helper import filter_finnhub_tickers
 from src.universal.recommendations.twelveData_filter_helper import filter_twelvedata_tickers, fetch_twelvedata_context_data
@@ -124,7 +125,7 @@ class DataFetcher:
         """Loads the most recent ticker DataFrame from the ticker directory."""
         latest_file = self.__get_latest_ticker_file()
         self.ticker_file = latest_file  # Claude-authored (2026-10-17): for the screening counts
-        print(f"Loading most recent ticker file: {latest_file.name}")
+        debug(f"Loading most recent ticker file: {latest_file.name}")
         tickers = pd.read_csv(latest_file)
         # Claude-authored (2026-10-17): the screener's BRK/B becomes Yahoo's BRK-B; Finnhub calls convert it again
         tickers["ticker"] = tickers["ticker"].map(yahoo_symbol)
@@ -273,7 +274,7 @@ class DataFetcher:
         interval: str = "1day"
     ) -> Dict[str, Any]:
         if not symbols or not indicators:
-            print("[DEBUG] fetch_twelvedata_batch_data called with empty symbols or indicators.")
+            debug("[DEBUG] fetch_twelvedata_batch_data called with empty symbols or indicators.")
             return {}
 
         symbols_str = ",".join(symbols)
@@ -324,9 +325,9 @@ class DataFetcher:
                         batch_results.setdefault(symbol, {})[indicator_key] = payload
 
             except Exception as e:
-                print(f"[DEBUG Exception] Failed fetching {indicator_key}: {e}")
+                print(f"[WARNING] Twelve Data: failed fetching {indicator_key}: {e}")
 
-        print(f"[DEBUG Batch Results Complete] Formatted keys: {list(batch_results.keys())}")
+        debug(f"[DEBUG Batch Results Complete] Formatted keys: {list(batch_results.keys())}")
         return batch_results
 
     def _daily_bars(self, symbols: List[str]) -> Dict[str, Any]:
@@ -352,7 +353,7 @@ class DataFetcher:
 
     def __get_metric_with_alert(self, data: Dict[str, Any], key: str, symbol: str, default: Any = False) -> Any:
         if key not in data:
-            print(f"Alert: Field '{key}' not found for ticker '{symbol}'.")
+            debug(f"Alert: Field '{key}' not found for ticker '{symbol}'.")
             return default
         return data[key]
     @profile
@@ -376,16 +377,16 @@ class DataFetcher:
         """
         input_tickers = full_tickers if full_tickers is not None else self.all_tickers
         
-        print("Starting to filter data based on Yahoo data")
+        debug("Starting to filter data based on Yahoo data")
         yahoo_tickers = self.yahoo_filter(tickers=input_tickers)
         
-        print("Starting to filter data based on Finnhub data")
+        debug("Starting to filter data based on Finnhub data")
         finnhub_tickers = self.finnhub_filter(tickers=yahoo_tickers)
         
-        print("Starting to filter data based on Twelve Data technical indicators")
+        debug("Starting to filter data based on Twelve Data technical indicators")
         twelvedata_tickers = self.twelvedata_filter(tickers=finnhub_tickers)
         
-        print(f"Output tickers are: {twelvedata_tickers}")
+        debug(f"Output tickers are: {twelvedata_tickers}")
         self.stage_counts = {"screener": len(input_tickers), "yahoo": len(yahoo_tickers),
                              "finnhub": len(finnhub_tickers), "technical": len(twelvedata_tickers)}
         print(f"Tickers kept by each stage: {self.stage_counts}")
@@ -408,9 +409,9 @@ class DataFetcher:
         ]
 
         for symbol in tickers:
-            print(f"Fetching yahoo news for {symbol}...")
+            debug(f"Fetching yahoo news for {symbol}...")
             yahoo_news = self.fetch_yahoo_data(symbol, fetch_news=True)
-            print(f"Fetching finnhub news for {symbol}...")
+            debug(f"Fetching finnhub news for {symbol}...")
             finnhub_news = self.fetch_finnhub_data(symbol, fetch_news=True)
 
             raw_records = []
@@ -456,7 +457,7 @@ class DataFetcher:
                 sorted_indices = np.argsort(news_array["timestamp"])[::-1]
                 sorted_news = news_array[sorted_indices]
                 df = pd.DataFrame(sorted_news)
-                print(f"✓ Successfully fetched and sorted news for {symbol}. Total articles: {len(df)}")
+                debug(f"✓ Successfully fetched and sorted news for {symbol}. Total articles: {len(df)}")
             else:
                 df = pd.DataFrame(columns=["source", "timestamp", "date_str", "summary"])
 
@@ -476,9 +477,9 @@ class DataFetcher:
 
         # 2. Iterate and assemble combined ticker datasets
         for symbol in tickers:
-            print(f"Fetching yahoo data for {symbol}...")
+            debug(f"Fetching yahoo data for {symbol}...")
             yahoo_data = self.fetch_yahoo_data(symbol)
-            print(f"Fetching finnhub data for {symbol}...")
+            debug(f"Fetching finnhub data for {symbol}...")
             finnhub_data = self.fetch_finnhub_data(symbol, fetch_news=False)
 
             market_data[symbol] = {
@@ -515,7 +516,7 @@ class DataFetcher:
                 ticker_data["recommendation_trends"] = (
                     self.finnhub_client.recommendation_trends(symbol=symbol)
                 )
-                print(f"✓ Successfully fetched recommendation trends for {symbol}.")
+                debug(f"✓ Successfully fetched recommendation trends for {symbol}.")
             except Exception as e:
                 ticker_data["recommendation_trends"] = {"error": str(e)}
 
@@ -528,7 +529,7 @@ class DataFetcher:
                 ticker_data["earnings_surprise"] = (
                     self.finnhub_client.company_earnings(symbol=symbol, **kwargs)
                 )
-                print(f"✓ Successfully fetched earnings surprise data for {symbol}.")
+                debug(f"✓ Successfully fetched earnings surprise data for {symbol}.")
             except Exception as e:
                 ticker_data["earnings_surprise"] = {"error": str(e)}
 
@@ -554,7 +555,7 @@ class DataFetcher:
                 
                 ticker_data["insider_sentiment"] = raw_sentiment
                 
-                print(f"✓ Successfully fetched insider sentiment data for {symbol}.")
+                debug(f"✓ Successfully fetched insider sentiment data for {symbol}.")
                 
             except Exception as e:
                 ticker_data["insider_sentiment"] = {"error": str(e)}
@@ -687,18 +688,18 @@ class DataFetcher:
         if tickers is None:
             tickers = self.all_tickers
 
-        print(f"Fetching market and news data for {len(tickers)} tickers...")
+        debug(f"Fetching market and news data for {len(tickers)} tickers...")
         market_data = self.fetch_all(tickers=tickers)
-        print(f"✓ Successfully fetched market data for {len(market_data)} tickers.")
+        debug(f"✓ Successfully fetched market data for {len(market_data)} tickers.")
 
         news_data = self.fetch_all_news(tickers=tickers)
-        print(f"✓ Successfully fetched news data for {len(news_data)} tickers.")
+        debug(f"✓ Successfully fetched news data for {len(news_data)} tickers.")
 
-        print(f"Fetching Finnhub series data for {len(tickers)} tickers...")
+        debug(f"Fetching Finnhub series data for {len(tickers)} tickers...")
         series_data = self.fetch_series_data(
             tickers=tickers
         )
-        print(
+        debug(
             f"✓ Successfully fetched series data for {len(series_data)} tickers."
         )
 
@@ -720,7 +721,7 @@ class DataFetcher:
             finnhub_payload = symbol_market.get("finnhub", {})
             if isinstance(finnhub_payload, dict):
                 finnhub_payload.update(symbol_series)
-                print(f"✓ Merged series data into Finnhub payload for {symbol}.")
+                debug(f"✓ Merged series data into Finnhub payload for {symbol}.")
             else:
                 finnhub_payload = symbol_series
 
@@ -731,7 +732,7 @@ class DataFetcher:
                 "news": news_payload,
                 "daily_bars": daily_bars.get(symbol, []),
             }
-            print(
+            debug(
                 f"✓ Aggregated LLM payload for {symbol}: {len(news_payload)} news articles"
             )
 

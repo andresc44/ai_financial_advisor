@@ -33,6 +33,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.llm import llm_models
 from src.llm.deepseek_client import DeepSeekClient, DeepSeekError, build_request, inline_refs, validated_answer
 from src.market.fx_rates import CURRENCY_SYMBOLS
@@ -246,7 +247,7 @@ def fetch_portfolio_review(
         review = asyncio.run(_ask_deepseek(api_key, settings, prompt_text, user_name))
     else:
         review = _ask_claude(api_key, settings, prompt_text, user_name)
-    print(f"[DIAGNOSTIC] Portfolio review received in {round(time.time() - start_time, 2)}s "
+    debug(f"[DIAGNOSTIC] Portfolio review received in {round(time.time() - start_time, 2)}s "
           f"({settings['model']}, effort {settings['effort']}).")
     return review
 
@@ -270,7 +271,7 @@ def review_portfolio(
     if not summary["holdings"]:
         return [], None
 
-    print(f"\n[DIAGNOSTIC] Reviewing portfolio of {len(summary['holdings'])} stocks (max {max_notes} notes)...")
+    debug(f"[DIAGNOSTIC] Reviewing portfolio of {len(summary['holdings'])} stocks (max {max_notes} notes)...")
     try:
         review = fetch_portfolio_review(api_key, summary, max_notes, user_name)
     except (APIError, DeepSeekError) as e:

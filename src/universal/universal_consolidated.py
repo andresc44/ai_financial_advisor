@@ -26,6 +26,7 @@ project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from src.ops.run_logging import debug
 from src.config.parameters import params_dict
 from src.llm import llm_models
 from src.personalized.api_errors import ApiKeyUnusable, shared_api_key, shared_key_issue, verify_llm_key
@@ -234,18 +235,17 @@ def _get_recommendations() -> dict:
     # Finnhub / Twelve Data use one shared key, so this fetch takes the same lock as the holdings fetch
     # (src/ops/shared_locks.py); Claude scoring below runs outside it.
     with MARKET_DATA_LOCK:
-        print("Initializing DataFetcher instance...")
+        debug("Initializing DataFetcher instance...")
         try:
             fetcher = DataFetcher()
         except ValueError as e:
-            print(f"Initialization Failed: {e}")
-            print("Verify that your .env file exists and contains FINNHUB_API_KEY.")
+            print(f"[ERROR] DataFetcher initialization failed: {e} Verify that .env contains FINNHUB_API_KEY.")
             # Claude-authored (2026-10-16): reported instead of sys.exit(1), which aborted every user's digest
             return _without_recommendations([{"source": "Finnhub", "reason": "missing_key", "message": str(e)}])
 
 
         #Fetching all tickers and testing pipeline
-        print(f"Testing filter_all() for {fetcher.all_tickers} ---")
+        debug(f"Testing filter_all() for {fetcher.all_tickers} ---")
         filtered_tickers = fetcher.filter_all()
         # Claude-authored (2026-10-20): the swing screen, beside the long-term screens on the same stage-1 list. It
         # reuses the Yahoo info the long-term screen just fetched and one batch of daily bars.
@@ -264,7 +264,7 @@ def _get_recommendations() -> dict:
             #     json.dump(sanitized_payload, f, indent=4, default=str)
 
             # print(f"✓ Saved output to {output_filename}")
-        print(f"✓ Sanitized payload for {len(llm_packets)} tickers")
+        debug(f"✓ Sanitized payload for {len(llm_packets)} tickers")
         # Claude-authored (2026-10-22): the swing candidates' facts from their Finnhub data (earnings beats, insiders)
         swing_screen.add_report_facts(swing_setups, sanitized_LLM_inputs)
 
@@ -286,7 +286,9 @@ def _get_recommendations() -> dict:
         swing_setups=swing_setups,
         other_counts=other_counts,
     )
-    print(f"Generated_recommendations:\n{generated_recommendations}")
+    # 2026-10-24: the picks in one line (the whole dict filled ~6 KB of log per run)
+    debug(f"Ideas picked: long-term {[p['ticker'] for p in generated_recommendations['top_long_term']]}, "
+          f"swing {[p['ticker'] for p in generated_recommendations['top_swing']]}.")
     # Claude-authored (2026-10-15): track record. 2026-10-24: with the picks only a longer list has
     log_universal(_every_pick(generated_recommendations, other_counts), sanitized_LLM_inputs)
     recs_w_data = enrich_recommendations(generated_recommendations, sanitized_LLM_inputs)

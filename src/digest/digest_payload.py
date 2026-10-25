@@ -29,13 +29,13 @@ from src.personalized.personalized_consolidated import get_ideas_only_content, g
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
 from src.market.market_session import market_date
-from src.ops.run_logging import name_thread, start_run_log, write_run_status
+from src.ops.run_logging import name_thread, open_files, start_run_log, write_run_status
 from src.telegram_alert.earnings_reminder import send_earnings_reminders
 from src.tracking.idea_positions import send_idea_scorecards
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
-from src.users.import_signup import sync_signups
-from src.config.remote_settings import sync_settings
+from src.ops.cron_start import sync_at_start
+from src.digest.glossary_page import publish_if_changed
 import copy
 
 # Claude-authored (2026-10-16): where --payload-only writes each user's payload (test_output/ is gitignored, since the
@@ -267,7 +267,7 @@ def run_daily_digests(
             universal_ok = universal_future.result()
         except (Exception, SystemExit) as e:  # Unexpected crashes only: missing keys and API failures now come back as
             # universal_issues with empty picks (2026-10-16), and the digest still goes out
-            print(f"[{stamp}] Universal content failed: {e!r}")
+            print(f"[{stamp}] [ERROR] Universal content failed: {e!r}")
             traceback.print_exc()
             alert_admins(f"{period} digest aborted: universal content failed", repr(e))
             universal_ok = False
@@ -275,7 +275,7 @@ def run_daily_digests(
         if not universal_ok:
             for future in personal_futures:
                 future.cancel()  # Users not started yet are skipped; running ones finish but nothing is sent
-            print(f"[{stamp}] Failed to generate universal content. Digest aborted.")
+            print(f"[{stamp}] [ERROR] Failed to generate universal content. Digest aborted.")
         else:
             print(f"[{stamp}] Universal content loaded. {'Saving payloads' if payload_only else 'Sending digests'}...")
             for future in as_completed(personal_futures):
@@ -291,14 +291,15 @@ def run_daily_digests(
                     sent.append(user)
                 except Exception as e:
                     failed.append(user)
-                    print(f"[{stamp}] ERROR sending digest to {user}: {e}")
+                    print(f"[{stamp}] [ERROR] Sending the digest to {user} failed: {e}")
                     traceback.print_exc()
                     alert_admins(f"{period} digest failed for {user}", repr(e))
 
     # Claude-authored (2026-10-15): one summary line per run, easy to grep in logs/digest.log
     elapsed = time.monotonic() - started
     verb = "saved" if payload_only else "sent"
-    print(f"[{stamp}] {period} digest run finished in {elapsed:.0f}s: {verb} {sent or 'none'}, failed {failed or 'none'}.")
+    print(f"[{stamp}] {period} digest run finished in {elapsed:.0f}s: {verb} {sent or 'none'}, failed {failed or 'none'}."
+          + open_files())
     universal_note = "" if universal_ok else f" Universal content failed, so nothing was {verb}."
     status = f"{period} {day}: {verb} {len(sent)}, failed {len(failed)} in {elapsed:.0f}s.{universal_note}{missed_note}"
     return universal_ok and not failed and not missed, status
@@ -365,11 +366,12 @@ if __name__ == "__main__":
     # Claude-authored (2026-10-22): new or edited sign-up form answers go into .env first, and form users with
     # nothing required missing into ACTIVE_USERS, before the users are read (src/users/import_signup.py). Cron runs only.
     # 2026-10-23: before that, the settings changed in the spreadsheet's Parameters tab (src/config/remote_settings.py), on
-    # every run that builds a digest, manual ones included (Andres); not for --check, which builds nothing
+    # every run that builds a digest, manual ones included (Andres); not for --check, which builds nothing.
+    # 2026-10-25: both in src/ops/cron_start.py, which also updates the Parameters tab when ACTIVE_USERS changed
     if not args.check:
-        sync_settings()
-    if reports_status:
-        sync_signups()
+        sync_at_start(signups=reports_status)
+    if reports_status:  # Claude-authored (2026-10-25): the glossary's web page, when it changed (glossary_page.py)
+        publish_if_changed()
     try:
         ok, status = run_daily_digests(
             get_active_users(), now=args.now, check_only=args.check, payload_only=args.payload_only, period=args.period

@@ -52,6 +52,7 @@ if str(project_root) not in sys.path:
 from src.config import settings_overrides as store
 from src.config.parameter_notes import note_for
 from src.config.parameters import params_dict
+from src.ops.run_logging import debug
 
 load_dotenv(project_root / ".env")
 
@@ -567,10 +568,10 @@ def sync_settings(sheet: Any = None, now: Optional[datetime] = None) -> Optional
     except Exception as e:
         from src.telegram_alert.notices import alert_admins
 
-        print(f"[settings] The settings sheet wasn't read or written ({e}); the values accepted last time stay in force.")
+        print(f"[ERROR] [settings] The settings sheet wasn't read or written ({e}); the values accepted last time stay in force.")
         alert_admins("settings sheet", f"The Parameters tab couldn't be read or updated: {str(e)[:300]}")
         return None
-    print(f"[settings] {len(plan.overrides)} setting(s) from the sheet in force"
+    (print if plan.rejected else debug)(f"[settings] {len(plan.overrides)} setting(s) from the sheet in force"
           + (f", {len(plan.rejected)} not applied" if plan.rejected else "") + ".")
     _notify(plan)
     return plan

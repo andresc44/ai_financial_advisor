@@ -61,6 +61,7 @@ from src.llm import llm_models
 from src.users.admins import admins
 from src.config.check_config import USER_KEYS, VALUE_CHECKS, _required, news_on
 from src.config.parameters import params_dict
+from src.ops.run_logging import debug
 from src.personalized.user_profiles import MISSING_VALUE, USER_PROFILES, build_profile, env_prefix
 
 ENV_PATH = project_root / ".env"
@@ -525,6 +526,13 @@ def apply_answer(answer: Answer, env_path: Path = ENV_PATH, params_path: Path = 
         if placeholders:
             result.changes += update_env(env_path, prefix, plan.name, placeholders, dry_run=dry_run)
             after = {**after, **placeholders} if dry_run else dotenv_values(env_path)
+        # Claude-authored (2026-10-24, Andres): an empty <NAME>_TELEGRAM_CHAT_ID= line when .env has none, so there's
+        # a spot for the chat ID once they have one. 2026-10-25 (Andres): only when the form says they'll use Telegram.
+        # A value already there is never touched
+        telegram = profile["telegram_chat_id"]
+        if plan.wants_telegram and telegram not in after:
+            result.changes += update_env(env_path, prefix, plan.name, {telegram: ""}, dry_run=dry_run)
+            after = {**after, telegram: ""} if dry_run else dotenv_values(env_path)
     if keys and not dry_run and enter_keys(env_path, plan.name, result.rows):
         after = dotenv_values(env_path)
         result.rows = missing_report(plan.name, after, plan)
@@ -565,6 +573,7 @@ def _print_result(result: Applied, answer: Answer, dry_run: bool) -> None:
             return "(set)" if change.key in private else value
         before = "new" if change.old is None else f"was {shown(change.old) if change.old else '(empty)'}"
         after = ("(cleared: the default applies)" if change.new is None
+                 else "(empty: a spot to fill in)" if change.new == ""
                  else "None (placeholder: the key is still missing)" if change.new == MISSING_VALUE
                  else shown(change.new))
         print(f"    {change.key} = {after}   [{before}]")
@@ -674,7 +683,9 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
                             f".env settings are kept."))
         for reason, body in notices:
             _notify_admins(reason, body)
-        print(f"[signup] {len(answers)} user(s) in the sheet. ACTIVE_USERS: {', '.join(wanted) or 'none'}"
+        # 2026-10-24: logged when something changed or is waiting; every hour otherwise only while debugging
+        (print if added or removed or waiting else debug)(
+              f"[signup] {len(answers)} user(s) in the sheet. ACTIVE_USERS: {', '.join(wanted) or 'none'}"
               + (f"; added {', '.join(added)}" if added else "") + (f"; removed {', '.join(removed)}" if removed else "")
               + (f"; waiting for settings: {', '.join(waiting)}" if waiting else "") + ".")
         return added
