@@ -37,6 +37,7 @@ from src.universal.recommendations.enriched_rec import enrich_recommendations
 from src.universal.recommendations.filter_tickers import DataFetcher
 from src.universal.recommendations.data_source_guard import missing_data_issues
 from src.universal.recommendations import swing_screen
+from src.universal.recommendations.long_term_screen import best_long_term_candidates
 from src.universal.market_news import get_macro_stories
 from src.universal.macro_indicators import get_market_dashboard
 from src.ops.shared_locks import MARKET_DATA_LOCK
@@ -104,6 +105,9 @@ def screening_counts(fetcher, stats: dict, recommendations: dict, swing_counts: 
     for stage, rules in filters:
         if stage in kept and (rules or stage == "screener"):
             stages.append({"stage": stage, "count": kept[stage], "rules": rules})
+    if stats.get("long_passed_screens", 0) > stats.get("sent", 0) > 0:
+        # 2026-10-25: the best by the rubric's own figures (long_term_screen), of those the screens let through
+        stages.append({"stage": "long_term_ranked", "count": stats["sent"], "of": stats["long_passed_screens"]})
     if "scored" in stats:
         stages.append({"stage": "scored", "count": stats["scored"], "of": stats["sent"]})
         stages.append({"stage": "long_term_score", "count": stats["long_qualified"],
@@ -274,6 +278,9 @@ def _get_recommendations() -> dict:
     issues += missing_data_issues(llm_packets, params_dict["UNIVERSAL_DATA_QUALITY"]["MAX_MISSING_PCT"])
 
     stats: dict = {}
+    # Claude-authored (2026-10-25, Andres): only the best long-term candidates by the rubric's own figures are scored
+    long_candidates = best_long_term_candidates(filtered_tickers, sanitized_LLM_inputs)
+    stats["long_passed_screens"] = len(filtered_tickers)
     # Claude-authored (2026-10-24): a list of each size a user asked for, from the same scores
     other_counts = {name: {n: [] for n in sizes} for name, sizes in idea_counts_in_use().items()}
     generated_recommendations = select_top_candidates(
@@ -282,7 +289,7 @@ def _get_recommendations() -> dict:
         swing_n=params_dict["SWING_TERM_N_AMOUNT"],
         issues=issues,  # Claude-authored (2026-10-16): a shared Anthropic key failure during scoring
         stats=stats,  # Claude-authored (2026-10-17): how many were scored and cleared each bar
-        long_tickers=filtered_tickers,  # Claude-authored (2026-10-20): each list gets its own LLM call
+        long_tickers=long_candidates,  # Claude-authored (2026-10-20): each list gets its own LLM call
         swing_setups=swing_setups,
         other_counts=other_counts,
     )

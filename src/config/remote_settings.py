@@ -82,6 +82,7 @@ CHOICES = {
     ("GEMINI_CONFIG", "effort"): ("minimal", "low", "medium", "high", "default"),
     ("CLAUDE_CONFIG", "effort"): ("low", "medium", "high", "xhigh", "max"),
     ("DEEPSEEK_CONFIG", "effort"): ("none", "low", "high", "max"),
+    ("PICK_GROUP_BY",): ("industry", "sector"),
     ("PICK_SECTOR_RULES", "LONG_TERM"): SECTOR_RULES,
     ("PICK_SECTOR_RULES", "SWING"): SECTOR_RULES,
     ("MARKET_SIGNALS", "RELATIVE_WINDOW"): ("1D", "5D", "1M"),

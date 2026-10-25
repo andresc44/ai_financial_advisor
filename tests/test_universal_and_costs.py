@@ -398,7 +398,7 @@ def test_every_configured_field_comes_through_from_complete_data():
 def test_score_thresholds_and_news_limit():
     # 2026-10-22: long-term 85 (was 80), swing 75 (was 80); 3 long-term picks, at least 1 outside tech
     assert params_dict["MIN_LONG_SCORE"] == 85.0 and params_dict["MIN_SWING_SCORE"] == 75.0
-    assert params_dict["LONG_TERM_N_AMOUNT"] == 3 and params_dict["LONG_TERM_MIN_NON_TECH_PICKS"] == 1
+    assert params_dict["LONG_TERM_N_AMOUNT"] == 3 and params_dict["LONG_TERM_MIN_NON_TECH_SHARE"] == 0.33
     # The ideas model (the tests' conftest swaps params_dict["LLM"], so read the settings file itself)
     from pathlib import Path
     source = (Path(__file__).resolve().parents[1] / "src" / "config" / "parameters.py").read_text(encoding="utf-8")

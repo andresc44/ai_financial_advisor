@@ -41,7 +41,10 @@
 {#- Table attributes: the CSS zeroes cell padding and spacing, so the cellpadding/cellspacing/border attributes
     (which only desktop Outlook needs, and it can't collapse the dropdowns anyway) are left out, saving ~5 KB per
     version. The HTML version keeps role="presentation" for screen readers. -#}
-{%- set T %}{% if amp %}width="100%"{% else %}role="presentation" width="100%"{% endif %}{% endset -%}
+{%- set T %}{% if not amp %}role="presentation" {% endif %}class="tw"{% endset -%}
+{#- 2026-10-25: the same with a top margin, as a class (m12, m6), not an inline style -#}
+{%- set T12 %}{% if not amp %}role="presentation" {% endif %}class="tw m12"{% endset -%}
+{%- set T6 %}{% if not amp %}role="presentation" {% endif %}class="tw m6"{% endset -%}
 
 {#- 2026-10-22: a badge names its colour class (create_html.style_classes) instead of repeating its colours inline;
     a colour pair without a class keeps the inline style -#}
@@ -112,19 +115,19 @@
     turns when it opens; the call block's body is what opens. `pad` and `top` are spacing classes. -#}
 {%- macro fold(title="", cells=none, open=false, pad="p6", top="t6", right=false, anchor="", focus_on_open=false) -%}
 {% if right %}
-{% set head %}<table {{ T }}><tr>{{ cells }}<td width="22" align="right" valign="middle"><b class="cv cvr"><i class="a1">▾</i><i class="a2">▴</i></b></td></tr></table>{% endset %}
+{% set head %}<table {{ T }}><tr>{{ cells }}<td class="cr"><i class="a1">▾</i><i class="a2">▴</i></td></tr></table>{% endset %}
 {% elif cells %}
-{% set head %}<table {{ T }}><tr><td width="15" valign="top"><b class="cv"><i class="a1">▸</i><i class="a2">▾</i></b></td>{{ cells }}</tr></table>{% endset %}
+{% set head %}<table {{ T }}><tr><td class="ak"><i class="a1">▸</i><i class="a2">▾</i></td>{{ cells }}</tr></table>{% endset %}
 {% else %}
-{% set head %}<b class="cv"><i class="a1">▸</i><i class="a2">▾</i></b><span class="ft">{{ title }}</span>{% endset %}
+{% set head %}<i class="a1">▸</i><i class="a2">▾</i><span class="ft">{{ title }}</span>{% endset %}
 {% endif %}
-{% if top %}<div class="{{ top }}">{% endif %}
 {% if amp %}
-<amp-accordion animate{% if anchor %} id="acc-{{ anchor }}"{% endif %}><section{{ " expanded" if open else "" }}{% if focus_on_open %} on="expand:hdr-{{ anchor }}.focus"{% endif %}><header class="fh {{ pad }}"{% if anchor %} id="hdr-{{ anchor }}"{% endif %}>{{ head }}</header><div>{{ caller() }}</div></section></amp-accordion>
+{% if top %}<div class="{{ top }}">{% endif %}
+<amp-accordion animate{% if anchor %} id="acc-{{ anchor }}"{% endif %}><section{{ " expanded" if open else "" }}{% if focus_on_open %} on="expand:hdr-{{ anchor }}.focus"{% endif %}><header class="fh {{ pad }}"{% if anchor %} id="hdr-{{ anchor }}"{% endif %}>{{ head }}</header><div>{{ caller() }}</div></section></amp-accordion>{% if top %}</div>{% endif %}
 {% else %}
-<details{{ " open" if open else "" }}><summary class="{{ pad }}">{{ head }}</summary><div>{{ caller() }}</div></details>
+{#- 2026-10-25: the spacing above a dropdown is a class on the <details> itself, not a wrapper <div> -#}
+<details{% if top %} class="{{ top }}"{% endif %}{{ " open" if open else "" }}><summary class="{{ pad }}">{{ head }}</summary><div>{{ caller() }}</div></details>
 {% endif %}
-{% if top %}</div>{% endif %}
 {%- endmacro -%}
 
 {#- 1. A main section: a card that collapses to its icon, title, count, and summary, so it can be skipped. With
@@ -134,7 +137,7 @@
 {% set icon, tint = icons[key] %}
 {% set cells %}<td width="46" valign="top"><table {% if not amp %}role="presentation" {% endif %}width="36" class="ic" style="background-color:{{ tint }};"><tr><td class="ici" align="center" valign="middle">{{ icon }}</td></tr></table></td><td valign="middle"><div class="h1">{{ title }}{% if count %} <span class="bd cn">{{ count }}</span>{% endif %}</div><div class="sm mu t2">{{ parts(summary) }}</div></td>{% endset %}
 <tr><td class="gutter"{% if not amp %} style="padding:0 10px 10px 10px;"{% endif %}>
-<table {{ T }} class="cd">
+<table {% if not amp %}role="presentation" {% endif %}class="cd">
 <tr><td class="c cp"{% if not amp %} style="padding:0 14px;"{% endif %}>
 {% if empty %}
 <div class="p14"><table {{ T }}><tr>{{ cells }}</tr></table></div>
@@ -159,7 +162,7 @@
     so very large text can't push the row past the screen beside the no-wrap value column -#}
 {%- macro row_header(title, badge_html, subtitle, value, detail, detail_cls="xs") -%}
 <td valign="top"><span class="tk">{{ title }}</span> {{ badge_html }}<div class="xs mu t2 ow">{{ subtitle }}</div></td>
-<td class="rv"><div class="pv">{{ value }}</div><div class="{{ detail_cls }}">{{ detail }}</div></td>
+<td class="rv"><div class="pv">{{ value }}</div>{% if detail %}<div class="{{ detail_cls }}">{{ detail }}</div>{% endif %}</td>
 {%- endmacro -%}
 
 {#- Any other row: an optional coloured dot, a title, and an optional line under it. -#}
@@ -168,7 +171,7 @@
 {%- endmacro -%}
 
 {%- macro chart(ch) -%}
-<a href="{{ ch.link }}" class="chl">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" class="chi" style="width:100%;max-width:{{ ch.width }}px;height:auto;">{% endif %}</a>
+<a href="{{ ch.link }}" class="chl">{% if amp %}<amp-img src="{{ ch.src }}" width="{{ ch.width }}" height="{{ ch.height }}" layout="responsive" alt="{{ ch.alt }}"></amp-img>{% else %}<img src="{{ ch.src }}" width="{{ ch.width }}" alt="{{ ch.alt }}" class="chi">{% endif %}</a>
 {%- endmacro -%}
 
 {%- macro kv(rows) -%}
@@ -189,9 +192,6 @@
 </td></tr>
 {%- endmacro -%}
 
-{%- macro stripe(color) -%}
-<td width="4" style="width:4px;background-color:{{ color }};border-radius:2px;font-size:1px;line-height:1px;">&nbsp;</td>
-{%- endmacro -%}
 
 {#- Portfolio review notes, each a row that opens to its full text. -#}
 {%- macro notes(items, color) -%}
@@ -214,7 +214,7 @@
 {% if c.details or c.score_rows %}
 {% call fold(title, top="t10") %}
 {{ kv(c.details) }}
-{% if c.score_rows %}{{ label("Score breakdown", top="12px") }}{{ kv(c.score_rows) }}{% endif %}
+{% if c.score_rows %}<div class="lb t12">Score breakdown</div><div class="sm t2">{% for n, v in c.score_rows %}{{ n }}&nbsp;<b>{{ v|replace(" / ", "/") }}</b>{% if not loop.last %} &middot; {% endif %}{% endfor %}</div>{% endif %}
 {% endcall %}
 {% endif %}
 {{ links(c.links) }}
@@ -246,7 +246,7 @@ body{margin:0;padding:0;}
 .gutter{padding:0 10px 10px 10px;}
 amp-accordion .fh{margin:0;background-color:transparent;border:0;padding-right:0;}
 section[expanded]>header .a1{display:none;}
-section[expanded]>header .a2{display:inline;}
+section[expanded]>header .a2{display:inline-block;}
 amp-accordion .fh:focus{outline:0;background-color:#EAF2FB;}
 {% else %}
 body{margin:0!important;padding:0!important;width:100%!important;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;}
@@ -279,10 +279,12 @@ a{text-decoration:none;}
 .ink{color:#0F2A44;}
 .lk{color:#0B6BCB;font-weight:700;white-space:nowrap;}
 .ft{color:#0B6BCB;font-size:13px;line-height:18px;font-weight:700;}
-.cv{display:inline-block;width:15px;color:#0B6BCB;font-size:15px;line-height:20px;font-weight:400;}
-.cv i{font-style:normal;}
-.cvr{width:22px;text-align:right;font-size:18px;color:#94A3B8;}
+.a1,.a2{display:inline-block;width:15px;color:#0B6BCB;font-size:15px;line-height:20px;font-weight:400;font-style:normal;}
 .a2{display:none;}
+.ak{width:15px;vertical-align:top;}
+.cr{width:22px;text-align:right;vertical-align:middle;}
+.cr i{width:22px;font-size:18px;color:#94A3B8;}
+.tw{width:100%;}
 .rt{font-size:14px;line-height:20px;font-weight:700;color:#0F2A44;}
 .rs{font-size:14px;line-height:20px;font-weight:600;color:#0F2A44;}
 .p6{padding:6px 0;}
@@ -319,14 +321,26 @@ a{text-decoration:none;}
 .pb{padding-bottom:16px;}
 .ml{line-height:22px;}
 .chl{display:block;padding-top:12px;}
-.chi{display:block;border:0;border-radius:8px;}
+.chi{display:block;border:0;border-radius:8px;width:100%;max-width:466px;height:auto;}
 .kl,.kv{padding:6px 0;border-top:1px solid #EEF2F6;font-size:13px;line-height:18px;}
 .kl{color:#64748B;}
 .kv{padding-left:10px;font-weight:700;color:#0F2A44;text-align:right;}
 .rv{vertical-align:top;text-align:right;padding-left:8px;white-space:nowrap;}
-.cd{background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;}
+.cd{width:100%;background-color:#FFFFFF;border:1px solid #E2E8F0;border-radius:16px;}
 .cn{background-color:#E2E8F0;color:#0F2A44;vertical-align:2px;}
 .rg{height:8px;font-size:1px;line-height:8px;}
+.r1{background-color:#93C5FD;}
+.r2{width:4px;background-color:#0F2A44;}
+.r3{background-color:#E2E8F0;}
+.m12{margin-top:12px;}
+.sn{width:38%;padding:3px 8px 3px 0;font-size:12px;line-height:16px;color:#334155;}
+.sk{padding:3px 0;}
+.sw{background-color:#60A5FA;border-radius:4px;height:10px;font-size:1px;line-height:10px;}
+.sp{width:36px;padding:3px 0 3px 8px;text-align:right;font-size:12px;line-height:16px;font-weight:700;color:#0F2A44;}
+.m6{margin-top:6px;}
+.st{width:4px;background-color:#F59E0B;border-radius:2px;font-size:1px;line-height:1px;}
+.kt{padding:1px 0 1px 10px;}
+.kc{color:#92400E;}
 .ew{color:#92400E;background-color:#FEF3C7;border-radius:10px;padding:8px 10px;margin-top:10px;}
 .ar{text-align:right;}
 .fb{font-weight:700;}
@@ -349,13 +363,13 @@ a{text-decoration:none;}
 summary{list-style:none;cursor:pointer;}
 summary::-webkit-details-marker{display:none;}
 details[open]>summary .a1{display:none;}
-details[open]>summary .a2{display:inline;}
-u + .body .cv{display:none;}
+details[open]>summary .a2{display:inline-block;}
+u + .body .a1,u + .body .a2{display:none!important;}
 </style>
 {% endif %}
 </head>
 <body{% if not amp %} class="body"{% endif %} style="margin:0;padding:0;background-color:#EEF2F6;">
-<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;{{ '' if amp else 'mso-hide:all;' }}">{{ preheader }}{% for _ in range(12) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;{{ '' if amp else 'mso-hide:all;' }}">{{ preheader }}{% for _ in range(6) %}&#847;&zwnj;&nbsp;{% endfor %}</div>
 <table {{ T }} style="background-color:#EEF2F6;">
 <tr><td align="center" style="padding:0;font-family:{{ FONT }};">
 {% if not amp %}<!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->{% endif %}
@@ -432,6 +446,13 @@ u + .body .cv{display:none;}
 </div>
 {% if risk.largest %}<div class="sm t4">Largest position: <b class="ink">{{ risk.largest }}</b></div>{% endif %}
 {% endif %}
+{% if risk.sectors %}
+{#- 2026-10-25 (Andres): one bar per sector, its width the share of the portfolio -#}
+{{ label("Sectors, by share of portfolio value", MUTED, top="16px") }}
+<table {{ T6 }}>
+{% for r in risk.sectors %}<tr><td class="sn">{{ r.name }}</td><td class="sk"><div class="sw" style="width:{{ r.width }}%;">&nbsp;</div></td><td class="sp">{{ r.pct }}</td></tr>
+{% endfor %}</table>
+{% endif %}
 {% if risk.watch %}
 {{ label("What to watch", MUTED, top="16px") }}
 {{ notes(risk.watch, "#F97316") }}
@@ -500,7 +521,7 @@ u + .body .cv{display:none;}
 {% if h.earnings_note %}<div class="xs mu t10">{{ h.earnings_note }}</div>{% endif %}
 {% if h.chart %}{{ chart(h.chart) }}{% endif %}
 {% if h.rationale %}
-{% call fold("Why " ~ h.signal.text|lower, top="t10", anchor=h.anchor ~ "-why", focus_on_open=true) %}
+{% call fold("Why", top="t10", anchor=h.anchor ~ "-why", focus_on_open=true) %}
 {{ h.rationale }}{% if h.volatility %} {{ h.volatility }}{% endif %}
 {% endcall %}
 {% endif %}
@@ -523,7 +544,7 @@ u + .body .cv{display:none;}
 {% call section("swing", "Swing ideas", swing_summary, swing|length, empty=(not swing)) %}
 <div class="xs mu" style="padding-bottom:4px;">{{ ("Short-term setups: days to a few weeks · Prices in " ~ ideas_currency)|phrases }}</div>
 {% for c in swing %}
-{% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
+{% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, ""), loop.first) %}
 <div class="xs mu ml">{% if c.held %}{{ badge({"text": "You hold this", "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {% endif %}{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector|phrases }}</div>
 {% if c.plan %}
 <div class="t8">{{ stats(c.plan) }}</div>
@@ -542,17 +563,17 @@ u + .body .cv{display:none;}
 {% call section("long_term", "Long-term ideas", long_summary, long_term|length, empty=(not long_term)) %}
 <div class="xs mu" style="padding-bottom:4px;">{{ ("Businesses worth owning for years · Prices in " ~ ideas_currency)|phrases }}</div>
 {% for c in long_term %}
-{% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, c.sentiment.text if c.sentiment else ""), loop.first) %}
+{% call row(row_header(c.ticker, badge(c.score_badge), c.name, c.price, ""), loop.first) %}
 <div class="xs mu ml">{% if c.held %}{{ badge({"text": "You hold this", "fg": "#075985", "bg": "#E0F2FE"}) }}&nbsp; {% endif %}{% if c.sentiment %}{{ badge(c.sentiment) }}&nbsp; {% endif %}{{ c.sector|phrases }}</div>
 {% if c.thesis %}<div class="t8">{{ c.thesis }}</div>{% endif %}
 {% if c.key_risk %}
-<table {{ T }} style="margin-top:12px;"><tr>{{ stripe("#F59E0B") }}<td style="padding:1px 0 1px 10px;">{{ label("Key risk", "#92400E") }}<div class="sm t2">{{ c.key_risk }}</div></td></tr></table>
+<table {{ T12 }}><tr><td class="st">&nbsp;</td><td class="kt"><div class="lb kc">Key risk</div><div class="sm t2">{{ c.key_risk }}</div></td></tr></table>
 {% endif %}
 <div class="t12">{{ stats(c.stats) }}</div>
 {% if c.analyst %}<div class="sm mu t10">{{ c.analyst|phrases }}</div>{% endif %}
 {% if c.range %}
 {{ label("52-week range", MUTED, top="12px") }}
-<table {{ T }} style="margin-top:6px;"><tr><td width="{{ c.range.left }}%" class="rg" style="background-color:#93C5FD;">&nbsp;</td><td width="4" class="rg" style="width:4px;background-color:#0F2A44;">&nbsp;</td><td width="{{ c.range.right }}%" class="rg" style="background-color:#E2E8F0;">&nbsp;</td></tr></table>
+<table {{ T6 }}><tr><td width="{{ c.range.left }}%" class="rg r1">&nbsp;</td><td class="rg r2">&nbsp;</td><td width="{{ c.range.right }}%" class="rg r3">&nbsp;</td></tr></table>
 <table {{ T }}><tr><td class="xs mu t4">{{ c.range.low }}</td><td align="center" class="xs t4">{{ c.range.note }}</td><td class="xs mu t4 ar">{{ c.range.high }}</td></tr></table>
 {% endif %}
 {{ pick_details(c, "More fundamentals & score breakdown") }}

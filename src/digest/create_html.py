@@ -323,7 +323,7 @@ def _chart(symbol: str, version: str) -> dict:
     return {
         "src": f"https://finviz.com/chart.ashx?t={finviz_symbol}&ty=c&ta=1&p=d&s=l&v={version}",
         "link": f"https://finviz.com/quote.ashx?t={finviz_symbol}",
-        "alt": f"{symbol} daily candlestick chart",
+        "alt": f"{symbol} chart",
         "width": CHART_WIDTH,
         "height": CHART_HEIGHT,
     }
@@ -689,6 +689,7 @@ def _holding_card(symbol: str, lots: list[dict], day: str) -> dict:
         "day": {"text": _signed_pct(daily_pct, 2) if daily_pct is not None else "", "tone": _tone(daily_pct),
                 "label": day, "session": _text(first.get("daily_pnl_session"))},
         "weight_pct": weight or 0.0,
+        "sector": _text(first.get("sector")),  # 2026-10-25: for the risk section's sector chart
         "meta": " · ".join([f"{_shares(shares)} share{'' if shares == 1 else 's'}"]
                            + ([f"avg cost {avg_cost}"] if avg_cost else []) + accounts),
         "signal": _badge(label, fg, bg),
@@ -916,6 +917,30 @@ def _note_title(text: str, limit: int = 64) -> str:
     return first
 
 
+SECTOR_CHART_ROWS = 6  # Sectors shown by name; the rest are grouped as "Other"
+
+
+def _sectors(cards: list[dict]) -> list[dict]:
+    """
+    Claude-authored (2026-10-25, Andres): the portfolio's share in each sector, largest first, for the risk section's
+    bar chart: [{"name", "pct" ("62%" of the portfolio), "width" (bar width, % of the row, 100 for the largest)}]. A holding with no sector (a fund, say)
+    counts as "Other" with the small sectors past SECTOR_CHART_ROWS. Empty when no holding has a weight.
+    """
+    shares: dict[str, float] = {}
+    for card in cards:
+        name = card.get("sector") or "Other"
+        shares[name] = shares.get(name, 0.0) + card["weight_pct"]
+    total = sum(shares.values())
+    if total <= 0:
+        return []
+    named = sorted(((n, v) for n, v in shares.items() if n != "Other"), key=lambda item: (-item[1], item[0]))
+    other = shares.get("Other", 0.0) + sum(v for _, v in named[SECTOR_CHART_ROWS:])
+    rows = named[:SECTOR_CHART_ROWS] + ([("Other", other)] if other / total >= 0.005 else [])
+    biggest = max(value for _, value in rows)  # The largest sector's bar fills the row, the others scale to it
+    return [{"name": name, "pct": f"{value / total * 100:.0f}%", "width": max(1, round(value / biggest * 100))}
+            for name, value in rows]
+
+
 def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
     if not cards and not review:
         return None
@@ -948,6 +973,7 @@ def _risk(cards: list[dict], beta: Any, review: list[dict]) -> Optional[dict]:
     return {
         "beta": beta_view,
         "mix": mix,
+        "sectors": _sectors(cards),
         "largest": f"{largest['symbol']}, {largest['weight_pct']:.1f}% of the portfolio" if largest else "",
         "watch": watch,
         "notes": [note for note in notes if note["category"] != "WATCH"],
@@ -1335,8 +1361,6 @@ def _swing_card(pick: dict, today: Optional[date]) -> dict:
     rows = [
         # Claude-authored (2026-10-20): the swing screen's setup, and what the plan's stop and target sit at
         ("Setup", SWING_SETUPS.get(_text(pick.get("setup")) or "", DASH)),
-        ("Stop at", _text(pick.get("stop_basis")) or DASH),
-        ("Target at", _text(pick.get("target_basis")) or DASH),
         ("RSI 14", _fixed(pick.get("rsi_14"), 0)),
         ("EMA 9 / 21", f"{_fixed(pick.get('ema_9'))} / {_fixed(pick.get('ema_21'))}"),
         ("Bollinger bands (20)", f"{_fixed(pick.get('bollinger_lower'))} – {_fixed(pick.get('bollinger_upper'))}"),
@@ -1440,6 +1464,7 @@ SCREENING_LABELS = {
     "yahoo": "Long-term: analysts & fundamentals",
     "finnhub": "Long-term: growth & debt",
     "technical": "Long-term: technical screen",
+    "long_term_ranked": "Long-term: best by the rubric's figures",
     "scored": "Long-term: scored by AI",
     "long_term_score": "Long-term score {min_score}+",
     "swing_fundamentals": "Swing: fundamentals",
@@ -1467,7 +1492,7 @@ def _screening(screening: Any) -> list[tuple[str, str]]:
         label = SCREENING_LABELS[stage["stage"]].format(min_score=f"{min_score:g}" if min_score is not None else "")
         value = f"{count:,.0f}"
         sent = _num(stage.get("of"))
-        if stage["stage"] in ("scored", "swing_scored") and sent is not None and sent > count:
+        if stage["stage"] in ("long_term_ranked", "scored", "swing_scored") and sent is not None and sent > count:
             value += f" of {sent:,.0f}"
         elif stage["stage"] == "picked":
             value = f"{_num(stage.get('long_term')) or 0:.0f} long-term · {_num(stage.get('swing')) or 0:.0f} swing"
@@ -1698,6 +1723,12 @@ def _drop_about(view: dict) -> None:
     view["usage"], view["screening"] = [], []
 
 
+def _drop_sector_chart(view: dict) -> None:
+    """Claude-authored (2026-10-25, Andres): the risk section's sector bar chart (~0.7 KB), just before the swing blurbs."""
+    if view["risk"]:
+        view["risk"]["sectors"] = []
+
+
 def _drop_pick_about(view: dict) -> None:
     """Claude-authored (2026-10-24): the swing ideas' "About the company" dropdowns."""
     for card in view["swing"]:
@@ -1707,7 +1738,7 @@ def _drop_pick_about(view: dict) -> None:
 def _drop_quote_links(view: dict) -> None:
     """
     Claude-authored (2026-10-24): the Yahoo / Finviz / TradingView buttons on every card (~240 bytes each). The chart
-    still links to Finviz. 2026-10-25 (Andres): back on the cards, dropped right after "About this digest".
+    still links to Finviz. 2026-10-25 (Andres): back on the cards, dropped right before "About this digest".
     """
     for card in view["holdings"] + view["swing"] + view["long_term"]:
         card["links"] = None
@@ -1771,9 +1802,10 @@ def _drop_hold_charts(view: dict) -> None:
 # 2026-10-22: the urgent-sell and risky stocks keep their news longest (Andres's rule, as in _scale_news)
 # 2026-10-24: the swing ideas' company blurbs go early (Andres's order; 2026-10-25: after the glossary), and before
 # Gmail would clip the bottom of a big portfolio's email (the ideas), the Hold cards' charts
-# 2026-10-25 (Andres's order): the Hold cards' lesser news and every Low story first, then the footer, the quote
-# buttons, and the glossary
-TRIM_STEPS = (_drop_hold_news, _drop_low_news, _drop_about, _drop_quote_links, _drop_glossary, _drop_pick_about,
+# 2026-10-25 (Andres's order): the Hold cards' lesser news and every Low story first, then the quote buttons, the
+# footer, and the glossary
+TRIM_STEPS = (_drop_hold_news, _drop_low_news, _drop_quote_links, _drop_about, _drop_glossary, _drop_sector_chart,
+              _drop_pick_about,
               _top_news_only,
               _no_hold_news, _drop_pick_details, _flagged_top_news_only, _no_news, _drop_hold_charts)
 
@@ -1818,6 +1850,8 @@ def render_text(view: dict) -> str:
         lines += ["", "PORTFOLIO RISK"]
         if risk["beta"]:
             lines.append(f"  Beta {risk['beta']['value']} ({risk['beta']['label']}). {risk['beta']['text']}")
+        if risk["sectors"]:
+            lines.append("  Sectors: " + ", ".join(f"{r['name']} {r['pct']}" for r in risk["sectors"]))
         if risk["mix"]:
             lines.append("  Signals: " + ", ".join(f"{m['label']} {m['count']} ({m['pct']})" for m in risk["mix"]))
         lines += [f"  - {note['category']}: {note['title']}. {note['text']}" for note in risk["watch"] + risk["notes"]]

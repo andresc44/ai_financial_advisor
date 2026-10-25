@@ -20,6 +20,8 @@ Authorship: Written by Claude (Claude Opus 5.5 via Claude Code), at Andres's req
 - 2026-10-19: the rationale is at most 2 plain sentences on what the trend is doing and what it suggests (plus
   any important news), with indicator names used sparingly, at Andres's request. Why: rationales had grown to ~900 characters of indicator names and
   values, hard to read on a phone and a tenth of the email's size.
+- 2026-10-25 (Andres): hold and buy_more rationales are about 200 characters (one sentence usually), the other signals keep up to
+  2 sentences (~320). Why: ~320 characters on every card was a fifth of Mauricio's email when it neared Gmail's 102 KB clip.
 - 2026-10-22: the rubric works from facts code works out for each holding (`checks`, src/personalized/holding_checks.py),
   and the labels are checked in a fixed order with stated thresholds, at Andres's request. Why: in that day's model
   comparison every model but Opus gave Opus's label for only ~7 holdings in 10, mostly with extra 'risky' labels that
@@ -72,7 +74,8 @@ SENTIMENT_DESCRIPTION = (
 
 RATIONALE_DESCRIPTION = (
     "At most 2 short sentences in plain language (see RATIONALE in the instructions): what the price trend is "
-    "doing and what it suggests for the position, plus the effect of any important news."
+    "doing and what it suggests for the position, plus the effect of any important news. About 200 characters "
+    "for hold and buy_more (one sentence is usually enough); up to about 320 for the others."
 )
 
 # Tool specification configuration
@@ -149,7 +152,9 @@ Separately from the recommendation, rate your overall outlook on the stock itsel
 - Most large companies carry a buy consensus, so analyst ratings alone are not enough for 'Bullish'. Use 'Neutral' when the evidence is mixed or thin.
 
 ### RATIONALE
-The rationale is read on a phone by an investor, not an analyst. Write at most 2 short sentences:
+The rationale is read on a phone by an investor, not an analyst. Write at most 2 short sentences. Length depends on the recommendation:
+- 'hold' and 'buy_more': about 200 characters (roughly 30 words); one sentence is usually enough, and a second only for news or an upcoming event that changes the picture.
+- 'urgent_sell', 'risky' and 'profit_sell': up to two short sentences (about 320 characters), enough to name the event or the reason without squeezing it.
 - Say what the price trend is doing and what that suggests, in plain words: e.g. "falling steadily for two weeks with no sign of a floor yet", "bouncing off its recent low as selling fades", "stretched after a fast run and starting to stall".
 - Add the effect of important news or an upcoming event when it matters to the decision (an earnings date, a deal, a downgrade).
 - Use indicator names sparingly: one is fine when it's the clearest way to make the point (e.g. "RSI near 30, so it's oversold"), but don't string several together with their values (not "below EMA 9 (290.0) and EMA 21 (289.5) with the PSAR at 301.64"). Use numbers sparingly too, such as a big move ("down 15% since Oct 6") or a date.

@@ -129,15 +129,25 @@ def start_run_log(name: str) -> Path:
     return path
 
 
-def open_files() -> str:
+def run_usage() -> str:
     """
-    Claude-authored (2026-10-24): ' (N files open)' for a run's last line, so a leak shows long before the open-file
-    limit (every digest hit cron's 1024 on 2026-10-23). Empty where /proc isn't available.
+    Claude-authored (2026-10-24, memory added 2026-10-25): ' (N files open, peak memory M MB)' for a run's last line,
+    so a leak shows long before a limit: the open-file count before cron's 1024 (every digest hit it on 2026-10-23),
+    and the run's peak memory (the most it ever held) before the VM runs short. Each part is left out where it isn't
+    available (/proc, the resource module).
     """
+    parts = []
     try:
-        return f" ({len(os.listdir('/proc/self/fd'))} files open)"
+        parts.append(f"{len(os.listdir('/proc/self/fd'))} files open")
     except OSError:
-        return ""
+        pass
+    try:
+        import resource
+        # Linux reports kilobytes (macOS bytes, but the VM is Linux)
+        parts.append(f"peak memory {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.0f} MB")
+    except (ImportError, OSError, ValueError):
+        pass
+    return f" ({', '.join(parts)})" if parts else ""
 
 
 def name_thread(user_name: str) -> None:

@@ -97,12 +97,15 @@ Starts from the NASDAQ screener's US list: market cap from `MKTCAP_MIN` (9,000 $
 
 **Long-term** (`YAHOO_FILTERS`, `FINNHUB_FILTERS`, `TWELVEDATA_FILTERS`):
 - Yahoo quality screen, then a Finnhub 12-month confirmation, then ADX ≤ 45. About 90 stocks remain.
-- DeepSeek V4.1 Flash (high effort) scores each out of 100: valuation, financial health, growth momentum, competitive moat.
+- The best `LONG_TERM_SCREEN.MAX_CANDIDATES` 35 of those go on (since 2026-10-25; 0 = all), ranked in code on the rubric's own figures (PEG and forward P/E; debt, current ratio and free cash flow; revenue and earnings growth and operating margin; gross margin and return on equity as a stand-in for a moat). A missing figure counts as the middle. See `long_term_screen.py`.
+- DeepSeek V4.1 Flash (high effort) scores each of them out of 100: valuation, financial health, growth momentum, competitive moat.
 - **Close calls** (within `IDEA_RESCORE` 5 points of the bar) are scored twice more, and the middle score is kept.
 - **Picks:** up to `LONG_TERM_N_AMOUNT` 3 at `MIN_LONG_SCORE` 85+, under these rules:
-  - every pick from a different sector (`PICK_SECTOR_RULES.LONG_TERM` `all_different`);
-  - at most `LONG_TERM_MAX_TECH_PICKS` 2 tech (`TECH_SECTORS`: Technology and Communication Services), which may share a sector;
-  - at least `LONG_TERM_MIN_NON_TECH_PICKS` 1 non-tech, which may score from `LONG_TERM_NON_TECH_MIN_SCORE` 80.
+  - every pick from a different **industry** (`PICK_GROUP_BY` `industry`, since 2026-10-25; `sector` is the old way; `PICK_SECTOR_RULES.LONG_TERM` `all_different`), tech picks included, so two semiconductor stocks can't both be picked;
+  - a third of the list, rounded up, outside tech (`LONG_TERM_MIN_NON_TECH_SHARE` 0.33: 1 of 2-3, 2 of 4-6, 3 of 7-9, 4 of 10; none for a list of 1), and the rest may be tech (`TECH_SECTORS`: Technology and Communication Services);
+  - the non-tech picks may score from `LONG_TERM_NON_TECH_MIN_SCORE` 80.
+  - these mix rules only choose between candidates (since 2026-10-25): when nothing else can take a stock's place (no non-tech stock at 80+, or one industry above the bar), the list is topped up with the best left-out stocks, so it is still full. Swing lists work the same way.
+- **Swing non-tech minimum** (`SWING_MIN_NON_TECH` `[[4, 1], [8, 2]]`, since 2026-10-25): lists of 4 to 7 ideas hold at least 1 non-tech pick, 8 or more at least 2, if a non-tech stock cleared `MIN_SWING_SCORE` (it replaces the lowest-scoring tech pick when the list is full). Below 4 ideas there is no tech rule.
 - **Cards:** forward P/E, PEG, revenue growth, margin, RSI 14, 12-month return, the 52-week range, and the score breakdown.
 
 **Swing** (`SWING_SCREEN`):

@@ -169,7 +169,7 @@ def test_llm_text_is_escaped():
 
 def test_long_text_sits_in_dropdowns():
     _, html = render(payload())
-    folded = "".join(re.findall(r"<details>(.*?)</details>", html, re.S))
+    folded = "".join(re.findall(r"<details[^>]*>(.*?)</details>", html, re.S))
     for text in (RATIONALE, NEWS, "Yields stay high.", "Trailing P/E", "Bollinger bands (20)"):
         assert html.count(text) == folded.count(text) > 0, text
 
@@ -192,8 +192,8 @@ def test_swing_card_names_its_setup_and_what_the_plan_rests_on():
     pick = swing_pick(setup="pullback", stop_basis="0.5 ATR below the EMA 21",
                       target_basis="highest close of the last 20 days")
     card = ch.build_view(payload(recommendations={"top_long_term": [], "top_swing": [pick]}))["swing"][0]
-    assert card["details"][:3] == [("Setup", "Dip in an uptrend"), ("Stop at", "0.5 ATR below the EMA 21"),
-                                   ("Target at", "highest close of the last 20 days")]
+    # 2026-10-25 (Andres): the stop and target rows are gone (the prices are in the figure boxes)
+    assert card["details"][0] == ("Setup", "Dip in an uptrend")
     assert not {"Setup", "Stop at", "Target at"} & {label for label, _ in ch.build_view(payload())["swing"][0]["details"]}
     # A pick scored on one horizon only has no row for the other score
     lone = swing_pick(longScore=None)
@@ -227,7 +227,7 @@ def test_digest_without_personal_or_macro_content():
     assert "Hello, Test" in html
     assert "No setups scored 75+ today" in html and "No ideas scored 85+ today" in html  # Minimums: 75 swing, 85 long-term
     # Empty sections are plain cards, with nothing to open; the only dropdowns left are the glossary's
-    assert html.count("<details>") == 1 + len(view["glossary"])
+    assert html.count("<details") == 1 + len(view["glossary"])
 
 
 def test_issues_are_shown_first(monkeypatch):
@@ -403,11 +403,11 @@ def test_main_sections_collapse_to_a_summary(monkeypatch):
     amp = ch.render_amp(view, TEMPLATE_DIR)
     html = ch.render_html(view, TEMPLATE_DIR)
     # Six main sections, a row per holding and idea, and the dropdowns inside them, all collapsed
-    assert "<section expanded>" not in amp and "<details open>" not in html
-    assert amp.count("<amp-accordion") == html.count("<details>")
-    swing_section_start = html.rfind("<details>", 0, html.index(">Swing ideas "))
+    assert "<section expanded>" not in amp and not re.search(r"<details[^>]* open>", html)
+    assert amp.count("<amp-accordion") == html.count("<details")
+    swing_section_start = html.rfind("<details", 0, html.index(">Swing ideas "))
     holdings_section = html[html.index(">Your holdings "):swing_section_start]
-    assert holdings_section.count("<details>") == 4 * 3  # Each holding's row, reasoning, and news (the chart is in the row)
+    assert holdings_section.count("<details") == 4 * 3  # Each holding's row, reasoning, and news (the chart is in the row)
 
     monkeypatch.setitem(ch.params_dict["DIGEST"], "OPEN_SECTIONS", ["holdings", "long_term"])
     view = ch.build_view(payload())
@@ -448,7 +448,7 @@ def test_four_figure_boxes_form_a_2x2_grid():
     # Four boxes side by side ran past a phone's right edge in the Gmail app (2026-10-17), so they wrap 2x2;
     # up to three stay in one row
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
-    row_start = html.rfind("<details>", 0, html.index(">AAA<"))
+    row_start = html.rfind("<details", 0, html.index(">AAA<"))
     # 2026-10-25: the tiles' width comes from the table's class (g2 = 50%), a later row's top line from its <tr>
     grid = html[html.index('<table width="100%" class="sg g2">', row_start):]
     grid = grid[:grid.index("</table>")]
@@ -460,8 +460,8 @@ def test_four_figure_boxes_form_a_2x2_grid():
 def test_a_stocks_chart_shows_as_soon_as_its_row_opens():
     html = ch.render_html(ch.build_view(payload(holdings=[holding("AAA")])), TEMPLATE_DIR)
     assert ">Chart<" not in html  # No dropdown of its own
-    row_start = html.rfind("<details>", 0, html.index(">AAA<"))
-    reasoning = html.index(">Why hold<", row_start)
+    row_start = html.rfind("<details", 0, html.index(">AAA<"))
+    reasoning = html.index(">Why<", row_start)
     assert row_start < html.index('<img src="https://finviz.com/chart.ashx?t=AAA', row_start) < reasoning
 
 
@@ -715,7 +715,7 @@ def test_the_glossary_is_static_and_left_out_first():
     # 2026-10-21: "About this digest" goes first, then the glossary
     # 2026-10-25 (Andres's order): the Hold cards' lesser news and Low stories go before them, the blurbs after
     assert [step.__name__ for step in ch.TRIM_STEPS] == [
-        "_drop_hold_news", "_drop_low_news", "_drop_about", "_drop_quote_links", "_drop_glossary", "_drop_pick_about",
+        "_drop_hold_news", "_drop_low_news", "_drop_quote_links", "_drop_about", "_drop_glossary", "_drop_sector_chart", "_drop_pick_about",
         "_top_news_only",
         "_no_hold_news", "_drop_pick_details", "_flagged_top_news_only", "_no_news", "_drop_hold_charts"]
     trimmed = ch.build_view(payload(screening={"stages": [{"stage": "listings", "count": 7012}]}))
@@ -1073,7 +1073,7 @@ def test_a_big_portfolio_without_news_drops_hold_charts_before_gmail_clips_it():
     # buttons are gone from every card
     names = [step.__name__ for step in ch.TRIM_STEPS]
     assert names[-2:] == ["_no_news", "_drop_hold_charts"]
-    big = payload(holdings=[holding(f"T{i:02d}", "risky" if i < 3 else "hold", 3.0, news_bullets=[]) for i in range(26)],
+    big = payload(holdings=[holding(f"T{i:02d}", "risky" if i < 3 else "hold", 3.0, news_bullets=[]) for i in range(28)],
                   recommendations={"top_long_term": [long_pick(f"L{i}") for i in range(5)],
                                    "top_swing": [swing_pick(f"S{i}") for i in range(5)]})
     view = ch.build_view(big)
@@ -1123,3 +1123,21 @@ def test_with_a_glossary_page_the_email_links_to_it_instead(monkeypatch, tmp_pat
     assert gp.publish(site) == "Glossary page updated and pushed." and pushed == ["push"]
     assert (site / "index.html").read_text() == page and (site / ".nojekyll").exists()
     assert gp.publish(site) == "Glossary page unchanged." and pushed == ["push"]
+
+
+def test_risk_section_charts_the_sectors_and_the_chart_goes_before_the_swing_blurbs():
+    # Claude-authored (2026-10-25, Andres): a bar per sector, largest first; no sector (a fund) counts as Other
+    names = [step.__name__ for step in ch.TRIM_STEPS]
+    assert names.index("_drop_glossary") < names.index("_drop_sector_chart") == names.index("_drop_pick_about") - 1
+    held = [holding("AAA", "hold", 40.0), holding("BBB", "hold", 30.0), holding("CCC", "hold", 20.0), holding("DDD", "hold", 10.0)]
+    for h, sector in zip(held, ("Technology", "Technology", "Healthcare", None)):
+        h["sector"] = sector
+    view = ch.build_view(payload(holdings=held))
+    assert view["risk"]["sectors"] == [{"name": "Technology", "pct": "70%", "width": 100},
+                                       {"name": "Healthcare", "pct": "20%", "width": 29},
+                                       {"name": "Other", "pct": "10%", "width": 14}]
+    html = ch.render_html(view, TEMPLATE_DIR)
+    assert "Sectors, by share of portfolio value" in html and 'style="width:100%;"' in html
+    assert "Sectors: Technology 70%, Healthcare 20%, Other 10%" in ch.render_text(view)
+    ch._drop_sector_chart(view)
+    assert "Sectors, by share of portfolio value" not in ch.render_html(view, TEMPLATE_DIR)

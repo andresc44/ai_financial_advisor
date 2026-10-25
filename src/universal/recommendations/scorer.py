@@ -1,4 +1,5 @@
 import logging
+import math
 import sys
 from collections import Counter
 from pathlib import Path
@@ -33,6 +34,21 @@ def candidate_sector(ticker: str, sanitized_inputs: Dict[str, Dict[str, Any]]) -
     """Yahoo's sector for a candidate. A stock without one counts as its own sector, so missing data never blocks it."""
     sector = ((sanitized_inputs.get(ticker) or {}).get("profile") or {}).get("sector")
     return sector.strip() if isinstance(sector, str) and sector.strip() else f"(no sector: {ticker})"
+
+
+def candidate_group(ticker: str, sanitized_inputs: Dict[str, Dict[str, Any]]) -> str:
+    """
+    Claude-authored (2026-10-25, Andres): what the sector rules (PICK_SECTOR_RULES) compare picks by: Yahoo's industry
+    (PICK_GROUP_BY "industry", the default; "Semiconductors" and "Software - Application" are both Technology), or its
+    sector ("sector"). A stock without an industry falls back to its sector, and one with neither counts as its own
+    group, so missing data never blocks it.
+    """
+    profile = (sanitized_inputs.get(ticker) or {}).get("profile") or {}
+    if params_dict.get("PICK_GROUP_BY", "industry") == "industry":
+        industry = profile.get("industry")
+        if isinstance(industry, str) and industry.strip():
+            return industry.strip()
+    return candidate_sector(ticker, sanitized_inputs)
 
 
 def _first(series: Any, field: str) -> Optional[float]:
@@ -85,8 +101,9 @@ def pick_with_sector_rule(
     (SECTOR_RULES). Highest scores win wherever the rule allows: a stock from a sector already in the list waits,
     and joins as soon as enough other sectors have joined to allow it ("majority_different"). Returns the picks
     best first; stocks left out are logged.
-    2026-10-23 (Andres): stocks `capped` says are in a group (tech, for the long-term list) skip the sector rule, so
-    they may share a sector, but at most `cap` of them are picked (`cap_name` names the setting in the log).
+    2026-10-23 (Andres): at most `cap` of the stocks `capped` says are in a group (tech, for the long-term list) are
+    picked (`cap_name` names the setting in the log). Until 2026-10-25 they also skipped the sector rule; they follow
+    it now, as `sector_of` is the industry (candidate_group), which tech has many of.
     """
     if rule not in SECTOR_RULES:
         logger.warning(f"Unknown PICK_SECTOR_RULES value {rule!r} for {label} picks; using 'any'.")
@@ -96,26 +113,28 @@ def pick_with_sector_rule(
     picked: List[Tuple[str, Dict[str, Any]]] = []
     waiting: List[Tuple[str, Dict[str, Any]]] = []
     over_cap: List[str] = []
-    sectors: Counter = Counter()  # Sectors of the picks outside the group
+    sectors: Counter = Counter()  # Sectors (industries) of the picks
 
     def room_for_repeat() -> bool:
-        ruled = sum(1 for ticker, _ in picked if not in_group(ticker))
-        return len(picked) < n and allow_repeat(len(sectors), ruled - len(sectors))
+        return len(picked) < n and allow_repeat(len(sectors), len(picked) - len(sectors))
+
+    def at_cap(ticker: str) -> bool:
+        return bool(capped) and in_group(ticker) and sum(1 for t, _ in picked if in_group(t)) >= cap
 
     for item in ranked:
         if len(picked) >= n:
             break
         sector = sector_of(item[0])
-        if in_group(item[0]):
-            if sum(1 for ticker, _ in picked if in_group(ticker)) < cap:
-                picked.append(item)
-            else:
-                over_cap.append(item[0])
+        if at_cap(item[0]):
+            over_cap.append(item[0])
         elif sectors[sector] == 0:
             picked.append(item)
             sectors[sector] += 1
             while waiting and room_for_repeat():  # A new sector can make room for better stocks that waited
                 earlier = waiting.pop(0)
+                if at_cap(earlier[0]):
+                    over_cap.append(earlier[0])
+                    continue
                 picked.append(earlier)
                 sectors[sector_of(earlier[0])] += 1
         elif room_for_repeat():
@@ -127,45 +146,93 @@ def pick_with_sector_rule(
         logger.info(f"[{ticker}] Left out of the {label} picks: another pick is already from {sector_of(ticker)} "
                     f"(PICK_SECTOR_RULES {rule!r}).")
     for ticker in over_cap:
-        logger.info(f"[{ticker}] Left out of the {label} picks: {cap} pick(s) are already from {sector_of(ticker)} or "
-                    f"its group ({cap_name} {cap}).")
+        logger.info(f"[{ticker}] Left out of the {label} picks: the list already holds the most it may from its group "
+                    f"(tech): {cap} ({cap_name}).")
     rank = {ticker: position for position, (ticker, _) in enumerate(ranked)}
     return sorted(picked, key=lambda item: rank[item[0]])
 
 
-def with_non_tech_picks(
-    picked: List[Tuple[str, Dict[str, Any]]], n: int, candidates: List[Tuple[str, Dict[str, Any]]],
-    sector_of: Callable[[str], str],
+def fill_relaxed(
+    picked: List[Tuple[str, Dict[str, Any]]], ranked: List[Tuple[str, Dict[str, Any]]], n: int, label: str,
 ) -> List[Tuple[str, Dict[str, Any]]]:
     """
-    Claude-authored (2026-10-22, Andres's rule): long-term picks with at least params_dict["LONG_TERM_MIN_NON_TECH_PICKS"]
-    stocks outside TECH_SECTORS. While there are fewer, the best non-tech candidate from a sector not already picked (so
-    the sector rule still holds) joins the picks: added when there are fewer than `n`, otherwise in place of the
+    Claude-authored (2026-10-25, Andres): the mix rules (the sector/industry rule and the tech limit) only decide
+    between candidates when there is another one to take the place. A list still short of `n` after them is topped up
+    with the best of the stocks they left out (`ranked`, best first, all already over the minimum score), so a day
+    with few different industries, or only tech above the bar, still gives a full list.
+    """
+    result = list(picked)
+    have = {ticker for ticker, _ in result}
+    for item in ranked:
+        if len(result) >= n:
+            break
+        if item[0] not in have:
+            logger.info(f"[{item[0]}] Added to the {label} picks to fill the list: no other stock met the mix rules.")
+            result.append(item)
+            have.add(item[0])
+    rank = {ticker: position for position, (ticker, _) in enumerate(ranked)}
+    return sorted(result, key=lambda item: rank.get(item[0], len(rank)))
+
+
+def min_non_tech(n: int) -> int:
+    """
+    Claude-authored (2026-10-25, Andres): how many of a list of n long-term picks must be outside tech: a third
+    (LONG_TERM_MIN_NON_TECH_SHARE) rounded up, so 1 of 3, 2 of 4-6, 3 of 7-9, 4 of 10; none for a list of 1, where
+    the rule would only swap the best idea for a lower one. At most n - this many are tech.
+    """
+    share = float(params_dict.get("LONG_TERM_MIN_NON_TECH_SHARE", 0) or 0)
+    return 0 if n < 2 else math.ceil(n * share - 1e-9)
+
+
+def min_swing_non_tech(n: int) -> int:
+    """
+    Claude-authored (2026-10-25, Andres): how many of n swing picks must be outside tech, from params_dict
+    ["SWING_MIN_NON_TECH"] ([[ideas, non-tech picks], ...]): the entry with the most ideas that n reaches, so 1 for 4-7
+    ideas and 2 for 8 or more by default. Like the long-term rule, it only applies if a non-tech stock cleared the bar.
+    """
+    return max([int(count) for size, count in params_dict.get("SWING_MIN_NON_TECH") or [] if n >= size], default=0)
+
+
+def with_non_tech_picks(
+    picked: List[Tuple[str, Dict[str, Any]]], n: int, candidates: List[Tuple[str, Dict[str, Any]]],
+    sector_of: Callable[[str], str], group_of: Optional[Callable[[str], str]] = None,
+    minimum: Optional[int] = None, label: str = "long-term", setting: str = "LONG_TERM_MIN_NON_TECH_SHARE",
+    distinct: bool = True,
+) -> List[Tuple[str, Dict[str, Any]]]:
+    """
+    2026-10-25 (Andres): also used for swing picks (`label`, `setting`, and a `minimum` from min_swing_non_tech); with
+    `distinct` False the joining stock may share an industry with a pick, as the swing rule allows repeats.
+
+    Claude-authored (2026-10-22, Andres's rule): long-term picks with at least min_non_tech(n) stocks outside
+    TECH_SECTORS (a third of the list, rounded up; 2026-10-25, was a flat 1). While there are fewer, the best non-tech
+    candidate from an industry (`group_of`, default the sector) not already picked (so the sector rule still holds)
+    joins the picks: added when there are fewer than `n`, otherwise in place of the
     lowest-scoring tech pick. `candidates` are best first and may score below the usual minimum (from
     LONG_TERM_NON_TECH_MIN_SCORE). Only applies when something was picked; with no such candidate the picks stay as they
     are, and the log says so.
     """
-    minimum = int(params_dict.get("LONG_TERM_MIN_NON_TECH_PICKS", 0) or 0)
+    minimum = min_non_tech(n) if minimum is None else minimum
+    group_of = group_of or sector_of
     tech = set(params_dict.get("TECH_SECTORS") or [])
     is_tech = lambda ticker: sector_of(ticker) in tech  # noqa: E731
     result = list(picked)
     while result and sum(not is_tech(t) for t, _ in result) < minimum:
-        taken = {sector_of(t) for t, _ in result}
+        taken = {group_of(t) for t, _ in result} if distinct else set()
         joining = next((item for item in candidates if item[0] not in {t for t, _ in result} and not is_tech(item[0])
-                        and sector_of(item[0]) not in taken), None)
+                        and group_of(item[0]) not in taken), None)
         tech_picks = [item for item in result if is_tech(item[0])]
         if joining is None or (len(result) >= n and not tech_picks):
-            logger.info(f"Long-term picks {[t for t, _ in result]}: no non-tech candidate scored high enough, so they stay "
-                        f"as they are (LONG_TERM_MIN_NON_TECH_PICKS {minimum}).")
+            logger.info(f"{label.capitalize()} picks {[t for t, _ in result]}: no non-tech candidate scored high enough, so they "
+                        f"stay as they are ({setting}: {minimum} of {n}).")
             break
         if len(result) < n:
-            logger.info(f"[{joining[0]}] Added to the long-term picks ({sector_of(joining[0])}): at least {minimum} "
-                        f"pick(s) must be outside {sorted(tech)} (LONG_TERM_MIN_NON_TECH_PICKS).")
+            logger.info(f"[{joining[0]}] Added to the {label} picks ({group_of(joining[0])}): at least {minimum} "
+                        f"pick(s) must be outside {sorted(tech)} ({setting}).")
             result.append(joining)
         else:
             leaving = tech_picks[-1]  # The lowest-scoring tech pick (picks are best first)
-            logger.info(f"[{leaving[0]}] Left out of the long-term picks for {joining[0]} ({sector_of(joining[0])}): at "
-                        f"least {minimum} pick(s) must be outside {sorted(tech)} (LONG_TERM_MIN_NON_TECH_PICKS).")
+            logger.info(f"[{leaving[0]}] Left out of the {label} picks for {joining[0]} ({group_of(joining[0])}): at "
+                        f"least {minimum} pick(s) must be outside {sorted(tech)} ({setting}).")
             result[result.index(leaving)] = joining
     rank = {ticker: position for position, (ticker, _) in enumerate(candidates)}
     return sorted(result, key=lambda item: rank.get(item[0], len(rank)))
@@ -384,10 +451,10 @@ def select_top_candidates(
     # Claude-authored (2026-10-17): the sector rule decides among the stocks that cleared the bar
     sector_rules = params_dict.get("PICK_SECTOR_RULES") or {}
     sector_of = lambda ticker: candidate_sector(ticker, sanitized_inputs)  # noqa: E731
-    # 2026-10-23, Andres's rule: with 3 or more long-term picks, at most LONG_TERM_MAX_TECH_PICKS (2) are tech, and tech
-    # stocks may share a sector (only chipmakers reached 85 on 2026-10-22, so "all_different" left one tech pick)
+    group_of = lambda ticker: candidate_group(ticker, sanitized_inputs)  # noqa: E731 (2026-10-25: industry)
+    # 2026-10-25, Andres: the rules compare industries (group_of), and the list size sets the tech limit: at most
+    # n - min_non_tech(n) of the n picks are tech (a third or more are not)
     tech = set(params_dict.get("TECH_SECTORS") or [])
-    max_tech = params_dict.get("LONG_TERM_MAX_TECH_PICKS")
     # 2026-10-22: at least one pick outside tech, which may score from LONG_TERM_NON_TECH_MIN_SCORE
     non_tech_floor = params_dict.get("LONG_TERM_NON_TECH_MIN_SCORE", min_long_score)
     non_tech_pool = sorted(((t, s) for t, s in long_scores.items() if s.get("longScore", 0.0) >= min(non_tech_floor, min_long_score)),
@@ -398,12 +465,12 @@ def select_top_candidates(
 
     def long_term_picks(n: int) -> List[Dict[str, Any]]:
         """2026-10-24: the long-term list of n, so each user's own count gets its own (other_counts)."""
-        tech_cap = {} if max_tech is None else {
-            "capped": lambda ticker: sector_of(ticker) in tech, "cap": int(max_tech) if n >= 3 else n,
-            "cap_name": "LONG_TERM_MAX_TECH_PICKS"}
+        tech_cap = {"capped": lambda ticker: sector_of(ticker) in tech, "cap": n - min_non_tech(n),
+                    "cap_name": "LONG_TERM_MIN_NON_TECH_SHARE"}
         top_long_tuples = pick_with_sector_rule(
-            sorted_by_long, n, sector_of, sector_rules.get("LONG_TERM", "any"), "long-term", **tech_cap)
-        top_long_tuples = with_non_tech_picks(top_long_tuples, n, non_tech_pool, sector_of)
+            sorted_by_long, n, group_of, sector_rules.get("LONG_TERM", "any"), "long-term", **tech_cap)
+        top_long_tuples = with_non_tech_picks(top_long_tuples, n, non_tech_pool, sector_of, group_of)
+        top_long_tuples = fill_relaxed(top_long_tuples, sorted_by_long, n, "long-term")
         return [
             {
                 "ticker": ticker,
@@ -440,7 +507,11 @@ def select_top_candidates(
     )
 
     def swing_picks(n: int) -> List[Dict[str, Any]]:
-        top_swing_tuples = pick_with_sector_rule(sorted_by_swing, n, sector_of, sector_rules.get("SWING", "any"), "swing")
+        top_swing_tuples = pick_with_sector_rule(sorted_by_swing, n, group_of, sector_rules.get("SWING", "any"), "swing")
+        top_swing_tuples = with_non_tech_picks(
+            top_swing_tuples, n, sorted_by_swing, sector_of, group_of, minimum=min_swing_non_tech(n), label="swing",
+            setting="SWING_MIN_NON_TECH", distinct=sector_rules.get("SWING", "any") == "all_different")
+        top_swing_tuples = fill_relaxed(top_swing_tuples, sorted_by_swing, n, "swing")
         return [
             {
                 "ticker": ticker,

@@ -29,7 +29,7 @@ from src.personalized.personalized_consolidated import get_ideas_only_content, g
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
 from src.market.market_session import market_date
-from src.ops.run_logging import name_thread, open_files, start_run_log, write_run_status
+from src.ops.run_logging import name_thread, run_usage, start_run_log, write_run_status
 from src.telegram_alert.earnings_reminder import send_earnings_reminders
 from src.tracking.idea_positions import send_idea_scorecards
 from src.telegram_alert.holiday_notice import send_holiday_notice
@@ -299,7 +299,7 @@ def run_daily_digests(
     elapsed = time.monotonic() - started
     verb = "saved" if payload_only else "sent"
     print(f"[{stamp}] {period} digest run finished in {elapsed:.0f}s: {verb} {sent or 'none'}, failed {failed or 'none'}."
-          + open_files())
+          + run_usage())
     universal_note = "" if universal_ok else f" Universal content failed, so nothing was {verb}."
     status = f"{period} {day}: {verb} {len(sent)}, failed {len(failed)} in {elapsed:.0f}s.{universal_note}{missed_note}"
     return universal_ok and not failed and not missed, status

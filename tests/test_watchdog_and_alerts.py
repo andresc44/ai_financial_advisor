@@ -284,3 +284,10 @@ def test_run_log_keeps_errors_and_leaves_progress_to_verbose_runs(tmp_path, monk
     assert "[ERROR] something failed" in text and "retrying a refused request" in text
     for chatter in ("fetching 12 symbols", "HTTP Request", "[AAA] Evaluated"):
         assert (chatter in text) is verbose, chatter
+
+
+def test_run_usage_reports_open_files_and_peak_memory():
+    # Claude-authored (2026-10-25, Andres): the last log line of a run shows both, so a leak shows early
+    from src.ops.run_logging import run_usage
+    import re
+    assert re.fullmatch(r" \(\d+ files open, peak memory \d+ MB\)", run_usage())

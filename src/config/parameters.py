@@ -384,22 +384,26 @@ params_dict = {
     # A stock the rule leaves out makes room for the next best that fits, if it clears the minimum score, so a
     # list can come up short; the log says which stocks were left out.
     "PICK_SECTOR_RULES": {"LONG_TERM": "all_different", "SWING": "majority_different"},
-    # Claude-authored (2026-10-22, Andres's rule): at least this many long-term picks are not tech stocks
-    # (scorer.with_non_tech_picks). When the picks have fewer, the best non-tech candidate scoring at least
+    # 2026-10-25, Andres: the rules above compare picks by Yahoo's "industry" (Semiconductors, Software - Application,
+    # Banks - Regional, ... about 140 of them), not its 11 sectors, so a list can hold two Technology stocks that do
+    # different things. "sector" is the old behaviour. A stock with no industry falls back to its sector.
+    "PICK_GROUP_BY": "industry",
+    # 2026-10-25, Andres: swing lists of 4 or more ideas hold at least 1 non-tech pick (TECH_SECTORS), 8 or more at least 2,
+    # as [[ideas, non-tech picks], ...]: the last row n reaches applies. Like the long-term rule, only if a non-tech
+    # swing candidate cleared MIN_SWING_SCORE (it replaces the lowest-scoring tech pick when the list is full).
+    "SWING_MIN_NON_TECH": [[4, 1], [8, 2]],
+    # Claude-authored (2026-10-22, Andres's rule; a flat 1 until 2026-10-25): at least this share of the long-term
+    # picks, rounded up, are not tech stocks, and the rest may be tech: 1 of 3, 2 of 4-6, 3 of 7-9, 4 of 10 (none for a
+    # list of 1, where the rule would only swap the best idea for a lower one; scorer.min_non_tech). The picks
+    # (scorer.with_non_tech_picks): when they have fewer, the best non-tech candidate scoring at least
     # LONG_TERM_NON_TECH_MIN_SCORE joins them (in place of the lowest-scoring tech pick when the list is full); with none,
     # the picks stay as they are (logged). It only applies when something cleared MIN_LONG_SCORE. Tech means Yahoo's sectors
     # in TECH_SECTORS. Communication Services is included: it holds the internet and ad-tech names (GOOGL, META, RDDT,
-    # APP, SPOT), and with LONG_TERM "all_different" only one "Technology" stock can be picked anyway, so with Technology
-    # alone the rule would never change a pick.
-    "LONG_TERM_MIN_NON_TECH_PICKS": 1,
-    # 2026-10-22, Andres: the non-tech pick may score from 80, under MIN_LONG_SCORE (85). On that day only chipmakers
+    # APP, SPOT).
+    "LONG_TERM_MIN_NON_TECH_SHARE": 0.33,
+    # 2026-10-22, Andres: the non-tech picks may score from 80, under MIN_LONG_SCORE (85). On that day only chipmakers
     # reached 85, and the best non-tech candidates scored 82-84
     "LONG_TERM_NON_TECH_MIN_SCORE": 80.0,
-    # Claude-authored (2026-10-23, Andres's rule): with 3 or more long-term picks, at most this many are tech stocks
-    # (TECH_SECTORS), and tech stocks may share a sector with each other; PICK_SECTOR_RULES still applies to the rest.
-    # On 2026-10-22 all 9 candidates at 85+ were Technology, and "all_different" let only one in, so the list had 2
-    # picks (TSM, and BAM from the non-tech rule) instead of 3. None = tech follows PICK_SECTOR_RULES like the rest
-    "LONG_TERM_MAX_TECH_PICKS": 2,
     "TECH_SECTORS": ["Technology", "Communication Services"],
     # Claude-authored (2026-10-18): a swing pick must still be early in its move. A stock past any of these is left
     # out however it scores (scorer.too_far_along): more than MAX_RUN_ATR normal days' ranges (14-day ATR) above
@@ -421,6 +425,11 @@ params_dict = {
     # 476 fundamentals -> 50 in a setup (145 before) -> 30 plans (78) -> 30 to the LLM (40). About 10 of either list
     # could reach 80 (MIN_SWING_SCORE then) even at the top of every band; the ones no longer sent couldn't, apart from NSC
     # (reporting that day), TGT (a 1.4-ATR pullback), and ALAB (still falling: it would need full marks everywhere).
+    # Claude-authored (2026-10-25, Andres): the most long-term candidates sent to the LLM. The screens above let ~100
+    # through (99 on 2026-10-25, 7 of which scored MIN_LONG_SCORE); the best by the rubric's own figures go on
+    # (long_term_screen.screen_points). 0 = send every one. ~$0.0018 a candidate on deepseek-flash.
+    "LONG_TERM_SCREEN": {"MAX_CANDIDATES": 35},
+
     "SWING_SCREEN": {
         "ENABLED": True,
         # 1. Fundamentals (Yahoo, already fetched for the long-term screen): a decent business, looser than

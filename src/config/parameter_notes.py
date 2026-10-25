@@ -96,17 +96,23 @@ NOTES: dict[str, str] = {
     "PICK_SECTOR_RULES.LONG_TERM": "Sector mix of the long-term picks: all_different (no two share a sector), "
                                    "majority_different (more than half from different sectors), or any.",
     "PICK_SECTOR_RULES.SWING": "Sector mix of the swing picks: all_different, majority_different, or any.",
-    "LONG_TERM_MIN_NON_TECH_PICKS": "At least this many long-term picks are not tech stocks (see TECH_SECTORS), if one "
-                                    "scores at least LONG_TERM_NON_TECH_MIN_SCORE.",
+    "PICK_GROUP_BY": "What the sector mix rules compare picks by: industry (finer, about 140) or sector (11).",
+    "SWING_MIN_NON_TECH": "Non-tech swing picks (see TECH_SECTORS) a list needs, as [[ideas, non-tech picks], ...]: "
+                          "[[4, 1], [8, 2]] means 1 for 4-7 ideas and 2 for 8 or more, if one cleared MIN_SWING_SCORE.",
+    "LONG_TERM_MIN_NON_TECH_SHARE": "At least this share of the long-term picks, rounded up, are not tech stocks (see "
+                                    "TECH_SECTORS): 0.33 means 1 of 3, 2 of 4-6, 3 of 7-9. None for a list of 1. The "
+                                    "rest may be tech.",
     "LONG_TERM_NON_TECH_MIN_SCORE": "Lowest score a non-tech stock needs to be picked under that rule.",
-    "LONG_TERM_MAX_TECH_PICKS": "With 3 or more long-term picks, at most this many are tech stocks (they may share a "
-                                "sector).",
-    "TECH_SECTORS": "Yahoo sectors that count as tech for the non-tech rule and the tech limit.",
+    "TECH_SECTORS": "Yahoo sectors that count as tech for the non-tech rule.",
     "SWING_EARLY_ENTRY.LOOKBACK_DAYS": "Swing picks must be early in their move: their low over this many days is the "
                                        "starting point.",
     "SWING_EARLY_ENTRY.MAX_RUN_ATR": "A swing idea more than this many normal days' ranges (ATR) above that low is "
                                      "left out as too far along.",
     "SWING_EARLY_ENTRY.MAX_RSI": "A swing idea with an RSI above this is left out as stretched.",
+
+    "LONG_TERM_SCREEN.MAX_CANDIDATES": "Most long-term candidates sent to the LLM: the best by the rubric's own figures "
+                                       "(valuation, financial health, growth, margins). 0 = send every one the screens "
+                                       "let through.",
 
     # ---------------------------------------------------------------- Swing screen
     "SWING_SCREEN.ENABLED": "Run the swing screen at all (False = no swing ideas).",

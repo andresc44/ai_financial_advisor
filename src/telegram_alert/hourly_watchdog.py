@@ -63,7 +63,7 @@ from src.personalized.recommendation import resolve_llm_key
 from src.personalized.user_profiles import USER_PROFILES
 from src.personalized.user_settings import get_active_users, get_watchdog_settings
 from src.ops.cron_start import sync_at_start
-from src.ops.run_logging import debug, name_thread, open_files, start_run_log, write_run_status
+from src.ops.run_logging import debug, name_thread, run_usage, start_run_log, write_run_status
 from src.ops.shared_locks import MARKET_DATA_LOCK
 from src.telegram_alert import notices
 from src.telegram_alert.notices import (  # Shared alert log; names kept importable from this module
@@ -467,7 +467,7 @@ def process_user_alerts(
     debug(f"Alert log updated at: {notices.CSV_PATH}")
     elapsed = time.monotonic() - started
     print(f"Watchdog run finished in {elapsed:.0f}s: checked {len(eligible)} user(s), failed {failed_users or 'none'}."
-          + open_files())
+          + run_usage())
     return not failed_users, f"Checked {len(eligible)} user(s), {len(failed_users)} failed, in {elapsed:.0f}s."
 
 

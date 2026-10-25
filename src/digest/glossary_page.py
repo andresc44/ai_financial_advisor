@@ -282,6 +282,7 @@ def _method_html() -> str:
     model = llm_models.job_settings("UNIVERSAL").get("model")
     model_name = MODEL_NAMES.get(model, model or "an AI model")
     tech = " or ".join(p.get("TECH_SECTORS") or ["Technology"])
+    group = p.get("PICK_GROUP_BY", "industry")  # What the sector mix rules compare by
 
     universe = []
     if p.get("MKTCAP_MIN"):
@@ -295,12 +296,11 @@ def _method_html() -> str:
 
     long_pick = [f"Up to {p['LONG_TERM_N_AMOUNT']} ideas (your digest may be set to more or fewer) scoring "
                  f"{_num(p['MIN_LONG_SCORE'])} or more, highest first.",
-                 "Each from a different sector, so the list isn't one bet."]
-    if p.get("LONG_TERM_MAX_TECH_PICKS") is not None:
-        long_pick.append(f"At most {p['LONG_TERM_MAX_TECH_PICKS']} tech stocks ({tech}), which may share a sector.")
-    if p.get("LONG_TERM_MIN_NON_TECH_PICKS"):
-        long_pick.append(f"At least {p['LONG_TERM_MIN_NON_TECH_PICKS']} outside tech, which may score from "
-                         f"{_num(p.get('LONG_TERM_NON_TECH_MIN_SCORE', p['MIN_LONG_SCORE']))}.")
+                 f"Each from a different {group} where possible, so the list isn't one bet. If too few stocks qualify that way, the "
+                 f"best of the rest fill the list."]
+    if p.get("LONG_TERM_MIN_NON_TECH_SHARE"):
+        long_pick.append(f"At least a third of the list (rounded up, when it has two or more) outside tech ({tech}); "
+                         f"those may score from {_num(p.get('LONG_TERM_NON_TECH_MIN_SCORE', p['MIN_LONG_SCORE']))}.")
     long_steps = [
         ("Quality screen", _rule_phrases(p.get("YAHOO_FILTERS") or [])),
         ("Confirmation from the reported financials", _rule_phrases(
@@ -309,6 +309,12 @@ def _method_html() -> str:
         ("Scored by AI", None),
         ("Picked", long_pick),
     ]
+    ranked = (p.get("LONG_TERM_SCREEN") or {}).get("MAX_CANDIDATES")
+    if ranked:  # 2026-10-25: only the best of those the screens let through are scored
+        long_steps.insert(-2, ("Best by the rubric's own figures", [
+            f"Only the best {ranked} of those go on, ranked on valuation (PEG, forward P/E), financial health (debt, "
+            f"liquidity, free cash flow), growth (revenue, earnings, operating margin), and what usually comes with a "
+            f"moat (gross margin, return on equity)."]))
 
     setups = []
     if pullback.get("ENABLED", True):
@@ -335,7 +341,9 @@ def _method_html() -> str:
                   f"Still early in the move: no more than {_num(early.get('MAX_RUN_ATR', 3))} ATR above the "
                   f"{early.get('LOOKBACK_DAYS', 10)}-day low, RSI {early.get('MAX_RSI', 70)} or less, and not above "
                   f"the upper Bollinger Band.",
-                  "More than half of them from different sectors."]
+                  f"More than half of them from different {group}s."]
+    for size, count in p.get("SWING_MIN_NON_TECH") or []:
+        swing_pick.append(f"With {size} or more ideas, at least {count} outside tech ({tech}) if one qualifies.")
     swing_steps = [
         ("Looser quality screen", _rule_phrases(swing.get("YAHOO_FILTERS") or [])),
         ("A setup in the daily prices", setups),
