@@ -65,15 +65,29 @@ ping_hc() {  # $1: "/start" or "/<exit code>"; $2: message
 }
 
 ping_hc /start ""
-exec 9> /tmp/finnbot.lock
+LOCK="${FINNBOT_LOCK:-/tmp/finnbot.lock}"
+HOLDER="$LOCK.holder"  # "<job> <pid>" of the job holding the lock, so a job that times out can tell who it waited for
+exec 9> "$LOCK"
 # Wait up to 15 minutes for another job to finish; 75 is a distinct exit code for when that wait times out
-if ! flock -w 900 9; then
-  CODE=75
+if ! flock -w "${FINNBOT_LOCK_WAIT:-900}" 9; then
+  # 2026-10-25 (Andres): a watchdog or digest that waited out a digest that is still running (alive: its pid answers)
+  # isn't a failure: no watchdog check is due right after a digest, and the next digest run is retried within its
+  # window. Any other holder, or one that has gone, is still 75: a stuck job turns its checks red.
+  read -r HOLDER_JOB HOLDER_PID < "$HOLDER" 2> /dev/null || true
+  if [ "$JOB" != backup ] && [ "${HOLDER_JOB:-}" = digest ] && [ -n "${HOLDER_PID:-}" ] && kill -0 "$HOLDER_PID" 2> /dev/null; then
+    echo "Skipped: an earlier digest is still running and held the lock for 15 minutes." > "$STATUS_FILE"
+    echo "$(date -u +%FT%TZ) $(cat "$STATUS_FILE")" >> "$OUT"
+    CODE=0
+  else
+    CODE=75
+  fi
 elif [ "$JOB" != backup ] && UNTIL="$(paused_until)"; then
+  echo "$JOB $$" > "$HOLDER"
   echo "Skipped: maintenance mode until $(date -u -d "@$UNTIL" +%H:%MZ) (scripts/maintenance.sh)." > "$STATUS_FILE"
   echo "$(date -u +%FT%TZ) $(cat "$STATUS_FILE")" >> "$OUT"
   CODE=0
 else
+  echo "$JOB $$" > "$HOLDER"
   "${CMD[@]}" >> "$OUT" 2>&1
   CODE=$?
 fi

@@ -47,7 +47,7 @@ if str(project_root) not in sys.path:
 
 from src.tracking.idea_positions import attach_idea_origins
 from src.market.market_session import is_in_session, market_date, market_phase
-from src.market.watchdog_schedule import check_due
+from src.market.watchdog_schedule import check_due, digest_just_ran
 from src.config.parameters import params_dict
 from src.personalized.add_metrics import HoldingsDataFetcher
 from src.personalized.LLM_hold_instr import current_recommendation
@@ -334,6 +334,10 @@ def check_user(
         f"tripwire={settings.tripwire} due={is_due} ({schedule.reason})"
     )
     if not is_due and not settings.tripwire:
+        return alert_logs
+    if not is_due and digest_just_ran(now, user_state["last_digest_at"]):
+        # 2026-10-25 (Andres): the digest evaluated every holding within the hour, so there is nothing to trip over
+        debug(f"{tag} A digest went out less than an hour ago. No tripwire check.")
         return alert_logs
 
     # Cheap snapshot: holdings, P&L, RSI/NATR (no Finnhub / Twelve Data / Claude)

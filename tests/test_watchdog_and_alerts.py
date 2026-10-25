@@ -4,7 +4,7 @@ import logging
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pandas as pd
@@ -291,3 +291,15 @@ def test_run_usage_reports_open_files_and_peak_memory():
     from src.ops.run_logging import run_usage
     import re
     assert re.fullmatch(r" \(\d+ files open, peak memory \d+ MB\)", run_usage())
+
+
+def test_the_tripwire_waits_out_the_hour_after_a_digest(watchdog_env, monkeypatch):
+    # Claude-authored (2026-10-25, Andres): a digest evaluated every holding, so the hourly tripwire has nothing to compare
+    monkeypatch.setattr(wd, "get_watchdog_settings", lambda user: SimpleNamespace(interval_hours=4, session="24_7", tripwire=True))
+    monkeypatch.setattr(wd, "check_due", lambda *a, **k: SimpleNamespace(due=False, reason="test"))
+    watchdog_env.state["users"]["Andres"] = {"last_digest_at": (NOW - timedelta(minutes=35)).isoformat()}
+    wd.check_user("Andres", NOW, EMPTY_LOG)
+    assert watchdog_env.behaviour["payload_calls"] == 0  # No tripwire pass
+    watchdog_env.state["users"]["Andres"]["last_digest_at"] = (NOW - timedelta(hours=2)).isoformat()
+    wd.check_user("Andres", NOW, EMPTY_LOG)
+    assert user_state(watchdog_env)["last_check"] is None  # The tripwire ran (nothing due), without a scheduled check

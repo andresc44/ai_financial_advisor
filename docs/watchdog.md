@@ -220,7 +220,8 @@ Since 2026-10-25 (Andres) a check is due **N hours after the user's last check o
 3. **Skipped before a digest:** a due check is skipped when a digest is due to run within 1.5 hours after it (not for an interval of 1 hour).
 4. **Last check of the session:** when the next check would fall after the close, one runs at the last :45 before it instead (19:45 for `extended`), unless a check or digest ran within the 1.5 hours before it (18:15 or later).
 5. **`24_7`:** no session, so no first or last check; the clock rolls on from the last check or digest, and the skip before a digest still applies. No digest on weekends, so no reset.
-6. **Unchanged:** changing a user's interval or session makes them due at once, a check stopped by a key problem is retried next run, and the tripwire works as before.
+6. **Unchanged:** changing a user's interval or session makes them due at once, and a check stopped by a key problem is retried next run.
+7. **Tripwire:** works as before, except that a user whose digest went out less than an hour ago gets no tripwire pass (the digest just evaluated every holding).
 
 Check times on a full trading day with a pre-market digest at 7:10 and a post-market one at 16:10 (a digest can run a little later if it was retried):
 

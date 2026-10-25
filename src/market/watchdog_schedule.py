@@ -60,6 +60,14 @@ def slot_at_or_after(moment) -> pd.Timestamp:
     return slot if slot >= ts else slot + pd.Timedelta(hours=1)
 
 
+def digest_just_ran(now, last_digest_at: Optional[str], minutes: int = 60) -> bool:
+    """
+    True when the user's last digest went out less than `minutes` before `now`. The digest has just evaluated every
+    holding, so the tripwire (a price move since the last evaluation) has nothing to compare against that hour.
+    """
+    return bool(last_digest_at) and timedelta(0) <= _utc(now) - _utc(last_digest_at) < timedelta(minutes=minutes)
+
+
 def digest_about_to_run(now, user_name: str, due_digest: Optional[Callable] = None,
                         already_sent: Optional[Callable] = None) -> bool:
     """True when a digest for `user_name` is due to run within NEAR_DIGEST after `now` (it runs at :10 each hour)."""

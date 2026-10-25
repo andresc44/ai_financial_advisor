@@ -100,3 +100,13 @@ def test_a_long_interval_on_a_regular_session_has_no_check():
     # The clock from the 7:10 digest runs out at 15:45, right before the 16:10 digest, which skips it (Andres, 2026-10-25)
     assert run_day("regular", 8) == [] and run_day("regular", 24) == []
     assert run_day("extended", 8) == ["04:45", "19:45"]
+
+
+def test_no_tripwire_check_within_an_hour_of_a_digest():
+    from src.market.watchdog_schedule import digest_just_ran
+
+    now = at(datetime(2026, 10, 21), "07:45")
+    assert digest_just_ran(now, at(datetime(2026, 10, 21), "07:35").isoformat())
+    assert not digest_just_ran(now, at(datetime(2026, 10, 21), "06:35").isoformat())  # Exactly an hour ago: not "just"
+    assert not digest_just_ran(now, None)
+    assert not digest_just_ran(now, at(datetime(2026, 10, 21), "08:10").isoformat())  # A digest still to come
