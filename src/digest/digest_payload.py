@@ -28,6 +28,7 @@ from src.tracking.usage_tracking import shared_usage  # Claude-authored (2026-10
 from src.personalized.personalized_consolidated import get_ideas_only_content, get_personal_content
 from src.digest.pre_vs_post import determine_recipients, get_digest_period
 from src.digest.digest_schedule import due_digest, ended_digests, record_sent, users_already_sent
+from src.personalized.holdings_state import update_user_state
 from src.market.market_session import market_date
 from src.ops.run_logging import name_thread, run_usage, start_run_log, write_run_status
 from src.telegram_alert.earnings_reminder import send_earnings_reminders
@@ -287,6 +288,9 @@ def run_daily_digests(
                     else:
                         digest.send_daily_digest_to(user, personal=future.result())
                         record_sent(day, period, user)  # Not sent again if a later hourly run is still in the window
+                        # 2026-10-25 (Andres): a digest resets the clock of the user's next watchdog check
+                        update_user_state(user, lambda state: state.__setitem__(
+                            "last_digest_at", datetime.now(timezone.utc).isoformat()))
                         print(f"[{stamp}] Successfully sent digest to {user}.")
                     sent.append(user)
                 except Exception as e:

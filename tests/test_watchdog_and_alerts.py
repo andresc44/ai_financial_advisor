@@ -30,7 +30,7 @@ def watchdog_env(monkeypatch):
     monkeypatch.setattr(wd, "update_user_state", lambda user, updater, *a, **k: updater(get_user_state(state, user)))
     monkeypatch.setattr(wd, "get_watchdog_settings", lambda user: SimpleNamespace(interval_hours=4, session="24_7", tripwire=False))
     monkeypatch.setattr(wd, "is_in_session", lambda now, session: True)
-    monkeypatch.setattr(wd, "block_id", lambda now, hours, session: "BLOCK-1")
+    monkeypatch.setattr(wd, "check_due", lambda *a, **k: SimpleNamespace(due=True, reason="test"))
     monkeypatch.setattr(wd, "symbols_with_news_since", lambda states, symbols: {})
     behaviour = {"resolve_error": None, "key_error": None, "evaluated": set(), "payload_calls": 0, "issues": [], "empty": False}
 
@@ -68,7 +68,7 @@ def test_missing_key_skips_spend_and_notifies_once(watchdog_env, telegram):
     watchdog_env.behaviour["resolve_error"] = ApiKeyUnusable("Anthropic", "missing", "Andres")
     logs = wd.check_user("Andres", NOW, EMPTY_LOG)
     assert watchdog_env.behaviour["payload_calls"] == 0
-    assert user_state(watchdog_env)["claude_calls"]["count"] == 0 and user_state(watchdog_env)["last_block"] is None
+    assert user_state(watchdog_env)["claude_calls"]["count"] == 0 and user_state(watchdog_env)["last_check"] is None
     assert len(telegram.messages) == 1 and "not set" in telegram.messages[0][1]
 
     wd.check_user("Andres", NOW, logs)  # Same problem within the cooldown
@@ -78,13 +78,13 @@ def test_missing_key_skips_spend_and_notifies_once(watchdog_env, telegram):
 def test_credits_running_out_counts_only_real_evaluations(watchdog_env):
     watchdog_env.behaviour.update(key_error=ApiKeyUnusable("Anthropic", "no_credits", "Andres"), evaluated={"AAA"})
     wd.check_user("Andres", NOW, EMPTY_LOG)
-    assert user_state(watchdog_env)["claude_calls"]["count"] == 1 and user_state(watchdog_env)["last_block"] is None
+    assert user_state(watchdog_env)["claude_calls"]["count"] == 1 and user_state(watchdog_env)["last_check"] is None
 
 
 def test_healthy_key_marks_the_check_done(watchdog_env, telegram):
     watchdog_env.behaviour["evaluated"] = {"AAA", "BBB", "CCC"}
     wd.check_user("Andres", NOW, EMPTY_LOG)
-    assert user_state(watchdog_env)["claude_calls"]["count"] == 3 and user_state(watchdog_env)["last_block"] == "BLOCK-1"
+    assert user_state(watchdog_env)["claude_calls"]["count"] == 3 and user_state(watchdog_env)["last_check"]["at"] == NOW.isoformat()
     assert telegram.messages == []
 
 

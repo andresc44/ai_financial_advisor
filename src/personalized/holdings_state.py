@@ -20,7 +20,8 @@ File layout:
 {
   "users": {
     "<user>": {
-      "last_block": "<market_session.block_id of the last successful scheduled check>",
+      "last_check": {"at": "<time of the last successful scheduled check>", "interval": 4, "session": "extended"},
+      "last_digest_at": "<time this user's last digest went out; resets the next check's clock>",
       "claude_calls": {"date": "YYYY-MM-DD", "count": int},
       "symbols": {
         "<symbol>": {"evaluated_at": iso, "price": float, "natr": float, "recommendation": str,
@@ -84,7 +85,8 @@ def save_state(state: dict, path: Path = STATE_PATH) -> None:
 def get_user_state(state: dict, user_name: str) -> dict:
     """Returns (creating if needed) the mutable state dict for one user."""
     user_state = state["users"].setdefault(user_name, {})
-    user_state.setdefault("last_block", None)
+    user_state.setdefault("last_check", None)  # {"at", "interval", "session"} of the last successful scheduled check
+    user_state.setdefault("last_digest_at", None)  # When this user's last digest went out (the clock for the next check)
     user_state.setdefault("claude_calls", {"date": None, "count": 0})
     user_state.setdefault("symbols", {})
     return user_state

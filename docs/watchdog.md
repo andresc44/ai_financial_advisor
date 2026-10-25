@@ -26,7 +26,7 @@ Cron starts `src/telegram_alert/hourly_watchdog.py` every hour at :45. For each 
 
 1. **Watchdog on?** `watchdog_interval_hours` is above 0.
 2. **In session?** The time falls inside the user's session (`regular`, `extended` or `24_7`), using real exchange calendars, so holidays and 13:00 half-days are handled.
-3. **Due or tripwire?** The user is *due* when the current N-hour block differs from the block of their last successful scheduled check. If they aren't due and the tripwire is off, nothing happens this hour.
+3. **Due or tripwire?** The user is *due* N hours after their last successful scheduled check or digest (see [Schedules](#schedules)). If they aren't due and the tripwire is off, nothing happens this hour.
 4. **Cheap snapshot.** Holdings, P&L, RSI and NATR, plus a price suited to the market phase (see [Prices outside regular hours](#prices-outside-regular-hours)). No Finnhub, Twelve Data or Claude calls. If the brokerage returns nothing, the run stops without marking the check as done, because an outage looks the same as an empty portfolio.
 5. **Choose stocks.** Only stocks that changed get a new evaluation (see [When Claude is called](#when-claude-is-called)). Every other stock keeps its last recommendation.
 6. **Daily cap.** At most `MAX_CLAUDE_CALLS_PER_USER_DAY` watchdog evaluations per user per day. When the cap binds, the stocks whose last recommendation was most severe go first.
@@ -214,18 +214,26 @@ In the payload, `api_key_issues` and `data_source_issues` carry both texts: `mes
 
 ## Schedules
 
-**Regular and extended:** blocks are counted from the session start and restart each trading day. **24_7:** blocks are counted continuously in UTC, so daylight-saving changes never shift them, and intervals like 5 or 48 hours stay evenly spaced. Changing a user's interval or session makes them due immediately.
+Since 2026-10-25 (Andres) a check is due **N hours after the user's last check or digest**, not on fixed blocks (`src/market/watchdog_schedule.py`, `check_due`). With cron at :45 for the watchdog and :10 for the digest:
+1. **A digest counts as a check** at the next :45 (7:10 counts as 7:45). The next check is due N hours after the later of that and the last watchdog check, at the first run on or after it. The digest's actual send time is recorded per user (`last_digest_at` in `data/watchdog_state.json`).
+2. **The first check of each market day** is due at the first run in the session, whatever yesterday did. A digest before the session opens (7:10, for a regular session from 9:30) resets the clock like any other, so a regular 4-hour user has no 9:45 check.
+3. **Skipped before a digest:** a due check is skipped when a digest is due to run within 1.5 hours after it (not for an interval of 1 hour).
+4. **Last check of the session:** when the next check would fall after the close, one runs at the last :45 before it instead (19:45 for `extended`), unless a check or digest ran within the 1.5 hours before it (18:15 or later).
+5. **`24_7`:** no session, so no first or last check; the clock rolls on from the last check or digest, and the skip before a digest still applies. No digest on weekends, so no reset.
+6. **Unchanged:** changing a user's interval or session makes them due at once, a check stopped by a key problem is retried next run, and the tripwire works as before.
 
-Check times with cron at :45 ET on a full trading day:
+Check times on a full trading day with a pre-market digest at 7:10 and a post-market one at 16:10 (a digest can run a little later if it was retried):
 
 | Interval | `regular` (9:30–16:00) | `extended` (4:00–20:00) |
 |---|---|---|
-| 1 | 9:45, 10:45 … 15:45 (7 checks) | 4:45 … 19:45 (16 checks) |
-| 2 | 9:45, 11:45, 13:45, 15:45 | 4:45, 6:45 … 18:45 |
-| 4 | 9:45, 13:45 | 4:45, 8:45, 12:45, 16:45 |
-| ≥ session length | 9:45 (once a day) | 4:45 (once a day) |
+| 1 | 9:45 … 15:45 (7 checks) | 4:45–6:45, 8:45–15:45, 17:45–19:45 |
+| 2 | 9:45, 11:45, 13:45 | 4:45, 9:45, 11:45, 13:45, 18:45 |
+| 3 | 10:45, 13:45 | 4:45, 10:45, 13:45, 19:45 |
+| 4 | 11:45 | 4:45, 11:45, 19:45 |
+| 6 | 13:45 | 4:45, 13:45, 19:45 |
+| 8 or more | none (the clock from the 7:10 digest runs out at 15:45, just before the 16:10 digest) | 4:45, 19:45 |
 
-With `24_7` and an interval of 4, blocks start at 00/04/08/12/16/20 UTC, every day including weekends.
+Switching to this schedule gave every user one extra check on its first run (the old state had no `last_check`).
 
 ## When Claude is called
 
@@ -274,7 +282,7 @@ A full fetch costs about 9 Finnhub calls and 6 Twelve Data credits per stock. A 
 
 | File | Written by | Contents |
 |---|---|---|
-| `data/watchdog_state.json` | `holdings_state.py` (watchdog + digest) | Per user: last scheduled block, Claude calls today, and per stock the last evaluation (time, price, NATR, recommendation, rationale, SAR stop, next earnings date). Sold positions are dropped. |
+| `data/watchdog_state.json` | `holdings_state.py` (watchdog + digest) | Per user: the last scheduled check and last digest (the clock for the next check), Claude calls today, and per stock the last evaluation (time, price, NATR, recommendation, rationale, SAR stop, next earnings date). Sold positions are dropped. |
 | `data/market_context_cache.json` | `add_metrics.py` | Shared daily market context per stock. |
 | `data/alerts_sent/telegram_alerts_timestamped.csv` | `hourly_watchdog.py` | Alert log used for the cooldown (kept 30 days). |
 | `data/usage/api_usage.jsonl` | `usage_tracking.py` (watchdog + digest + universal) | One line per Claude or Gemini call: user, source, model, tokens, estimated cost. Append-only. |
@@ -815,7 +823,7 @@ Everything below was written by Claude (Claude Opus 5.5 via Claude Code) on 2026
 
 | File | What Claude wrote | Why |
 |---|---|---|
-| `src/market/market_session.py` (new) | Market phases, session windows, N-hour block ids, cache refresh boundary | Lets one hourly cron serve per-user intervals and sessions, with holidays, half-days and DST handled by exchange calendars. Pure functions of `now` so they can be tested at fixed times. |
+| `src/market/market_session.py` (new) | Market phases, session windows, cache refresh boundary (`block_id`, the old fixed-block schedule, is no longer used) | Lets one hourly cron serve per-user intervals and sessions, with holidays, half-days and DST handled by exchange calendars. Pure functions of `now` so they can be tested at fixed times. |
 | `src/personalized/user_settings.py` (new) | Reads, validates and defaults per-user settings | One place that turns `.env` values into settings, so a typo can't crash the run or send an invalid API request. |
 | `src/personalized/holdings_state.py` (new) | `data/watchdog_state.json` storage | The memory needed to evaluate "only when needed", shared by the watchdog and the digest. |
 | `src/personalized/add_metrics.py` | Whole file: market context for holdings, plus the daily cache | Gives the sell-side LLM the same evidence as the buy-side LLM, and keeps API use bounded at higher check frequencies. |

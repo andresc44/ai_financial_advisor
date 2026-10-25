@@ -46,7 +46,8 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.tracking.idea_positions import attach_idea_origins
-from src.market.market_session import block_id, is_in_session, market_date, market_phase
+from src.market.market_session import is_in_session, market_date, market_phase
+from src.market.watchdog_schedule import check_due
 from src.config.parameters import params_dict
 from src.personalized.add_metrics import HoldingsDataFetcher
 from src.personalized.LLM_hold_instr import current_recommendation
@@ -323,12 +324,14 @@ def check_user(
 
     # Gate: not due and no tripwire -> nothing to do this hour
     phase = market_phase(now)
-    block = block_id(now, settings.interval_hours, settings.session)
     user_state = get_user_state(load_state(), user_name)
-    is_due = block is not None and block != user_state["last_block"]
+    # 2026-10-25 (Andres): due N hours after the last check or digest, not on fixed blocks (market/watchdog_schedule.py)
+    schedule = check_due(now, settings.interval_hours, settings.session, user_state["last_check"],
+                         user_state["last_digest_at"], user_name)
+    is_due = schedule.due
     debug(
         f"{tag} session={settings.session} phase={phase} interval={settings.interval_hours}h "
-        f"tripwire={settings.tripwire} due={is_due} block={block}"
+        f"tripwire={settings.tripwire} due={is_due} ({schedule.reason})"
     )
     if not is_due and not settings.tripwire:
         return alert_logs
@@ -394,7 +397,7 @@ def check_user(
 
     def _bookkeeping(state: dict) -> None:
         if is_due and key_error is None:  # A check stopped by a key problem stays due, so it's retried next run
-            state["last_block"] = block
+            state["last_check"] = {"at": now.isoformat(), "interval": settings.interval_hours, "session": settings.session}
         add_claude_calls(state, today, claude_calls)
         state["symbols"] = {s: v for s, v in state["symbols"].items() if s in held_symbols}  # forget sold positions
 
