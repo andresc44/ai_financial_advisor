@@ -1,6 +1,6 @@
 # Finnbot admin handbook
 
-Andres's reference for running Finnbot: the commands first, then every part of the pipeline and where its details live. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request, and brought up to date on 2026-10-26. State: branch `feature/watchdog-digest-upgrades` (not merged to `main`), running on the VM.
+Andres's reference for running Finnbot: the commands first, then every part of the pipeline and where its details live. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request, and brought up to date on 2026-10-26. State: branch `feature/watchdog-digest-upgrades` (ahead of `main`, which stops at 2026-10-23's `7096535`), running on the VM.
 
 **Contents.** Sections 1-11 are the reference: 1 commands, 2 a day in Finnbot, 3 the ideas, 4 the holdings, 5 the email, 6 Telegram messages, 7 settings, 8 users and onboarding, 9 models and costs, 10 files, 11 quick troubleshooting. Sections 12-18 are the memory: 12 how it is set up and running, 13 why it is built this way (the decisions and their evidence), 14 how it was tested, 15 **upgrading to a new LLM and comparing models**, 16 **diagnosing a problem and recreating Finnbot from nothing**, 17 the comparison tool, 18 open items.
 
@@ -349,7 +349,7 @@ Sections 1 to 11 say what each part does. This part says what is actually instal
 | Size | 2 vCPUs, about 3.8 GB of memory, 4 GB of swap, a 38 GB disk (about 12 GB used on 2026-10-26) |
 | Software | Python 3.14.4 from `/usr/bin/python3.14`, a venv at `~/ai_financial_advisor/venv` built from `requirements.txt` (exact pins; `requirements-dev.txt` adds pytest) |
 | Clock | UTC. The crontab starts with `CRON_TZ=America/Toronto`, but the jobs have been observed running on UTC (the backup at 02:30Z), so it appears to have no effect on this cron. The digest doesn't depend on it: the digest decides what is due from the exchange calendar, not from the clock. |
-| Git | `origin` is `git@github.com:andresc44/ai_financial_advisor.git`, pushed with the VM's SSH key. The live branch is `feature/watchdog-digest-upgrades`; it has never been merged to `main`. |
+| Git | `origin` is `git@github.com:andresc44/ai_financial_advisor.git`, pushed with the VM's SSH key. The live branch is `feature/watchdog-digest-upgrades`; `main` stops at 2026-10-23's `7096535`, and the branch is ahead of it (fast-forwardable, no conflicts). |
 | Provider | **OVHcloud, a VPS-1 plan, about A$85 a year** (confirmed by Andres, 2026-10-26). It is not the Google Cloud e2-micro that `docs/vm_setup.md` was written for; that guide's Ubuntu, Python, cron, swap, healthchecks and backup steps still apply, but its Google Cloud console and `gcloud` steps (creating the VM, changing the machine type) don't: use OVH's control panel (the account is Andres's; `.env`'s `OVH_VM_PW` is the machine's login password, never print it) to reboot or reinstall the VM if SSH stops answering. The yearly plan renews once a year: put the renewal date in your calendar, since an unrenewed VPS takes Finnbot down without a trace in its own logs. |
 | Measured load | A full digest for three users: about 25 minutes, peak memory 788-798 MB, about 80 open files at the end (`logs/digest.log`'s last line shows both). A watchdog run: seconds to a minute or two. |
 
@@ -662,6 +662,6 @@ Open:
 - **VM renewal:** the OVH VPS-1 plan is yearly (about A$85); note the renewal date, and confirm whether auto-renew is on.
 - **Healthchecks grace:** set the `finnbot-digest` and `finnbot-watchdog` checks' grace period on healthchecks.io (operations.md, step 6); a digest takes about 25 minutes.
 - **News costs:** confirm the Flash-Lite news cost over a few real digests (per stock at 3 per request, and how many holdings the evening digest refreshes).
-- **The branch:** `feature/watchdog-digest-upgrades` has not been merged to `main`.
+- **The branch:** `feature/watchdog-digest-upgrades` is 23 commits ahead of `main` (fast-forward, no conflicts). Merge after a clean Post-Market digest on the new code (section 16.1's checks), then keep the VM on `main`: under maintenance mode, `git checkout main && git pull` (same files, so no change in behaviour).
 - **Unused code:** `src/llm/gemini_key_rotation.py` and its tests, and the two `GEMINI_FREE_*` keys in `check_config`, do nothing without a free key; remove them if you won't try a free key again.
 - **The comparison tool's first real use:** it was validated on 2026-10-26 on a small live run (a capture of 11 holdings and 35 + 31 idea candidates, then Haiku low and medium on the holdings, DeepSeek Flash with no thinking on the ideas, and two Flash-Lite models on the news: about $0.12), which found and fixed a crash in `report` for a single reference run. The first full comparison after a model release is its real test.

@@ -280,4 +280,4 @@ Runtime state lives in `data/` and logs in `logs/`. Both are gitignored, since t
 
 ## Status
 
-Running on a VM since 2026-10-23 ([docs/vm_setup.md](docs/vm_setup.md)): the hourly digest and watchdog under cron, the nightly Drive backup, and the healthchecks.io heartbeat. Three users, with Andres as admin. Work on the VM is done under maintenance mode (see [CLAUDE.md](CLAUDE.md)). The branch `feature/watchdog-digest-upgrades` has not been merged to `main`.
+Running on a VM since 2026-10-23 ([docs/vm_setup.md](docs/vm_setup.md)): the hourly digest and watchdog under cron, the nightly Drive backup, and the healthchecks.io heartbeat. Three users, with Andres as admin. Work on the VM is done under maintenance mode (see [CLAUDE.md](CLAUDE.md)). `main` is at the 2026-10-23 work (`7096535`); the live branch `feature/watchdog-digest-upgrades` is ahead of it.
