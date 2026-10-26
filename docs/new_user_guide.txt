@@ -449,7 +449,10 @@ What it is: Telegram is a free messaging app. Finnbot's Telegram bot sends you:
 Only the sell alerts and the stop or target alerts are marked urgent.
 Your three choices in the form:
   Yes, with the watchdog      Everything above. The watchdog (3.9) runs with its standard settings,
-                              so an urgent sell can reach you during the day, not only at digests.
+                              so an urgent sell can reach you at any time from 4:00 AM to 8:00 PM
+                              ET on trading days, not only at digests. It also takes a closer look
+                              around earnings: in the 4 trading days before a report and on the
+                              trading day after it.
   Yes, without the watchdog   Everything above, but only as each digest finds it: urgent sells and
                               stop and target alerts arrive right after a digest instead of during
                               the day. Earnings reminders and notices are the same.
@@ -469,7 +472,9 @@ Steps:
 3.9 The watchdog: how often, when, and the tripwire
 ---------------------------------------------------
 What it is: between digests, the watchdog re-checks your holdings during the day and sends an
-urgent sell alert on Telegram if one is needed. It needs Telegram (3.8).
+urgent sell alert on Telegram if one is needed. It needs Telegram (3.8). Every digest already
+reviews all your holdings and sends any urgent sell right after it arrives, so the watchdog
+covers the hours between digests.
 Your choice: only on or off ("Yes, with the watchdog" in the form). It runs with the standard
 settings below: every 4 hours, extended hours, tripwire on. You can change any of them by asking
 Andres; the options are listed under each, and section 5 lists everything else you can change.
@@ -509,15 +514,17 @@ C) The tripwire
    Standard: on. Other option: off.
    Cost: nothing unless a big move triggers a review.
 
-Watchdog cost per month (21 trading days). The watchdog hasn't run on a schedule for long enough
-to measure, so the first two columns are estimates; the last is the hard maximum.
+Watchdog cost per month (21 trading days). The watchdog has only run on a schedule since late
+October 2026, so the first two columns are still estimates; the last is the hard maximum.
 
   Quiet (~5 reviews/day)  Busy (~12/day)  Maximum (40/day cap)
   ----------------------  --------------  --------------------
   $0.20                   $0.50           $1.70
 
   "Quiet" is roughly 10 holdings with the standard settings on a normal day; more holdings,
-  hourly checks, earnings season, or a volatile market push it toward "busy". Each review costs
+  hourly checks, earnings season (a reporting stock is reviewed at every check in the 4 trading
+  days before its report and on the trading day after), or a volatile market push it toward
+  "busy". Each review costs
   about $0.0015-0.002 on your Anthropic key. Most checks review nothing: a stock that hasn't moved
   and was reviewed in the last 24 hours (every digest reviews them all) keeps its signal.
 
@@ -618,6 +625,8 @@ WHAT YOU CAN CHANGE, AND HOW
   Watchdog: tripwire              On                     On or off                    Ask Andres
   Long-term ideas per digest      3                      1 to 10                      Ask Andres
   Swing ideas per digest          5                      1 to 10                      Ask Andres
+  Watchdog: extra checks around   4 trading days before  0 or more days each side     Ask Andres
+  earnings                        and 1 day after
 
 And more on request: if there's something else you'd like Finnbot to do differently for you,
 ask Andres. Much of Finnbot can be adjusted, and good suggestions may become an option for
@@ -747,9 +756,9 @@ Ideas only, optionally (in the form):
 
 Both lists start every digest from the same place: every US-listed stock (NYSE, Nasdaq, NYSE
 American) that is large (currently $8 billion in market value and up), trades at least 1 million
-shares a day, and costs at least $15 a share. That is several hundred stocks. Two screens then narrow
-them down, the survivors are scored by an AI model, and the best scores become the ideas. The
-scoring model is DeepSeek V4.1 Flash, chosen in a comparison against stronger models; Andres pays
+shares a day, and costs at least $15 a share. That is several hundred stocks. Two screens then
+narrow them down, the survivors are scored by an AI model, and the best scores become the ideas.
+The scoring model is DeepSeek V4.1 Flash, chosen in a comparison against stronger models; Andres pays
 for it.
 How many: up to 3 long-term and 5 swing ideas per digest; ask Andres for anywhere from 1 to 10 of
 each. A day with fewer stocks above the pass mark shows fewer.

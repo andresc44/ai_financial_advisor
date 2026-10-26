@@ -60,14 +60,13 @@ Skip this if you're using SnapTrade or ideas only.
    | `currency` | No | Optional: Finnbot detects it by default |
 
    Any other column (for example "notes") is ignored.
-3. Share the sheet so Finnbot can read it. Either:
-   - **Private (recommended):** click **Share**, paste Finnbot's service-account email
-     (`finnbot-service@finnbot-504921.iam.gserviceaccount.com`), set it to **Viewer**, untick **Notify people**, and
-     click **Share**. Only you and Finnbot can see the sheet. 
-
+3. Share the sheet with Finnbot only: click **Share**, paste Finnbot's service-account email
+   (`finnbot-service@finnbot-504921.iam.gserviceaccount.com`), set it to **Viewer**, untick **Notify people**, and
+   click **Share**. Only you and Finnbot can see the sheet. Don't use "Anyone with the link".
 4. Find the sheet's ID: the long code in its web address, between `/d/` and `/edit`. For example, in
    `https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit#gid=0` the ID is
-   `1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789`. The ID alone opens nothing, but is required for Google Sheets setup.
+   `1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789`. The ID alone opens nothing, but it is required: you send it in step 9, not in
+   the form.
 
 For symbol formats on other exchanges, how to enter prices (including London stocks, priced in pence), and a full
 worked example, see [new_user_guide.txt, section 2.2](new_user_guide.txt).
@@ -93,8 +92,10 @@ Only needed if you want news for each holding.
 
 ## 8. Fill in the sign-up form
 
-Andres sends you the link. It asks for your name, email, which digests you want, and your choices.
-**Never put a key in the form**: its answers are stored in a spreadsheet.
+Andres sends you the link. It asks for your name, email, which digests you want, how Finnbot should see your holdings,
+and a few choices (brokerage name, timezone, home currency, news, Telegram). It doesn't ask for your sheet ID or any key.
+**Never put a key in the form**: its answers are stored in a spreadsheet. To change a choice later, fill the form in
+again with the same name and email.
 
 ## 9. Send your keys to Andres, privately
 

@@ -1,4 +1,4 @@
-# Choosing Finnbot's AI models (2026-10-22)
+# Choosing Finnbot's AI models (2026-10-22; news model added 2026-10-26)
 
 Finnbot asks an AI model to score new-stock ideas (long-term and swing) and to review each user's holdings. This
 document explains how the models were compared on 2026-10-22, what the results were, and which settings were chosen.
@@ -11,6 +11,7 @@ document explains how the models were compared on 2026-10-22, what the results w
 | Long-term picks | Pass mark **85**, **3** picks, at least **1 outside tech** (which may score from 80), at most **2 tech** (2026-10-23) | Flash 4.1 scores long-term ideas ~2 points above the reference, so 85 plays the role 83 would for it; the pick count and the non-tech rule are Andres's choices |
 | Swing picks | Pass mark **75** (set earlier the same day) | — |
 | Holdings | **Claude Haiku 5.5, low effort** (`LLM.HOLDINGS`), for every user, with a clearer rubric worked from facts computed in code | With the new rubric it gives Opus's label for 93% of holdings, for about $0.05 a run against Opus's $2.04, and keeps users' data with Anthropic |
+| News (holdings and macro) | **Gemini 3.5 Flash-Lite with Google Search** (`GEMINI_MODELS`, 2026-10-26) | About half the cost of `gemini-3.6-flash` (a quarter once its price doubles on 2027-01-01), with news close to it; no free tier option (see [the news model](#the-news-model-2026-10-26)) |
 
 ## What was tested
 
@@ -179,6 +180,30 @@ On 2026-10-22's candidates, with Flash 4.1 high, about 7 stocks reached 85, near
 non-tech stocks scored 82–84 (VEEV, NVT, NBIX, VRT, STT). With different sectors required, that left 1–2 long-term
 picks, all tech, and a non-tech pick held to 85 could not be found. Andres set its mark at 80, so on that day one of
 those stocks would have joined the picks.
+
+## The news model (2026-10-26)
+
+Holding news and macro news use Gemini with Google Search. On 2026-10-26 four settings were compared with Finnbot's real news code (`fetch_symbol_news`, `fetch_live_macro_stories`), swapping only the model, on Andres's 11 holdings (3 per request) and the macro news, 2 runs each, plus one 20-holding run on the free model. Nothing was emailed or recorded.
+
+| | `gemini-3.6-flash` (was the default) | `gemini-robotics-er-2-preview` (free key) | **`gemini-3.5-flash-lite`** | `gemini-3.1-flash-lite` |
+|---|---|---|---|---|
+| Prices per million tokens (in / out) | $0.75 / $3.75, then $1.50 / $7.50 from 2027-01-01 | $0 on a free key | $0.30 / $2.50 | $0.25 / $1.50 |
+| Holdings news, cost per run | $0.0175 ($0.0350 from 2027) | $0 | **$0.0087** | $0.0134 |
+| Macro news, cost per digest | $0.0042 | $0 | $0.0026 | $0.0023 |
+| Thinking tokens per holdings run | 836 | 4,347 | **0** | 5,058 |
+| Seconds per holdings run | 12 | 17 | **8** | 14 |
+| Stocks with no news, of 11 | 1.5 | 3.0 | 2.0 | 3.5 |
+| Links that resolved (holdings / macro) | 96% / 100% | 100% / 100% | 100% / 75% | 100% / 100% |
+| Errors or limit hits | none | none (the 20-holding run: 28.7 s, 17 of 20 stocks with news) | none | none |
+
+- **Chosen: 3.5 Flash-Lite.** It found most of the stories the baseline did, and some it missed (Agilent's earnings beat, NextEra's dividend), at about half the cost, because it doesn't think and thinking is billed as output. The weaknesses: one stale item (a story from Oct 6, outside the 7-day window) and 2 of its 4 macro links didn't resolve.
+- **3.1 Flash-Lite** is cheaper per token, but thought about 5,000 tokens a run, so a run cost 54% more than 3.5's, and it had the most filler and the most empty stocks. One of its items (NextEra shareholders approving a merger with Dominion Energy) couldn't be confirmed.
+- **The free robotics model** was the only one that searched on a free key, and left about twice as many stocks without news (real news existed for Agilent, AdaptHealth, and Viking). It's a preview model Google can withdraw.
+- **The free tier has no search quota**: every grounded request on every other current model got `429 RESOURCE_EXHAUSTED` on a free key (the 2.0 and 2.5 models are gone or closed to new users; Gemma errored with an internal error; antigravity rejected the search tool), while the same requests worked on a billed key and plain requests worked on the free one.
+- **Not different:** every model's answers varied between its own two runs (the baseline matched its own top story for 1 of 9 stocks), so run-to-run variation doesn't separate them. SPXL, a leveraged ETF, got no news from any model.
+- **Quality scores** were judged by reading every stock side by side, not by a formula. Searches cost the same on every model ($14 per 1,000 beyond 5,000 a month per key, so none at Finnbot's volume).
+
+Repeat it when Google changes the models or prices: the script was a working file and isn't in the repository.
 
 ## Caveats
 

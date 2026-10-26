@@ -2,7 +2,9 @@
 
 Everything to move Finnbot from the Windows PC to an always-on Google Cloud VM, step by step. Written by Claude (Claude Opus 5.5 via Claude Code) on 2026-10-23, at Andres's request (Google Cloud only). Monitoring and backups are covered in more depth in [operations.md](operations.md); every command is in [admin_handbook.md](admin_handbook.md).
 
-Until the VM runs, nothing in Finnbot happens on a schedule: no hourly digest runs (so no digests, earnings reminders, sign-up sync, or settings sync), no watchdog, and no backups.
+**Status (2026-10-26): Finnbot has run on a VM since 2026-10-23**, with the hourly digest and watchdog under cron, the nightly Drive backup, and the healthchecks.io heartbeat all set up. The machine in use measures 2 vCPUs, about 3.8 GB of memory, 4 GB of swap, a 38 GB disk, Ubuntu, and Python 3.14, so it is bigger than the free e2-micro this guide starts with; the steps below still apply to any Ubuntu VM. Measured on it: a full digest for three users takes about 25 minutes (1,501 s on 2026-10-26) and peaks at about 790-800 MB (788 MB on 2026-10-25, 798 MB on 2026-10-26).
+
+Without a running VM, nothing in Finnbot happens on a schedule: no hourly digest runs (so no digests, earnings reminders, sign-up sync, or settings sync), no watchdog, and no backups. Code changes on the VM are made in maintenance mode (`bash scripts/maintenance.sh on`; [CLAUDE.md](../CLAUDE.md)).
 
 ---
 
@@ -186,7 +188,7 @@ grep -E '^(GOOGLE_APPLICATION_CREDENTIALS|UNIVERSAL_LLM)' .env      # The new pa
 ```bash
 cd ~/ai_financial_advisor
 venv/bin/python -m src.config.check_config                      # Every required setting OK; fix anything MISSING or INVALID
-venv/bin/python -m pytest                                # About 380 tests, offline (a few minutes on the e2-micro)
+venv/bin/python -m pytest                                # About 440 tests, offline (a few minutes on the e2-micro)
 venv/bin/python -m src.config.remote_settings --sync            # Reads the Parameters tab: proves the service account works
 venv/bin/python src/digest/digest_payload.py --check     # Says whether a digest is due and for whom; sends nothing
 venv/bin/python src/telegram_alert/hourly_watchdog.py --dry-run   # Which users and stocks it would check; sends nothing
@@ -209,7 +211,7 @@ A `[Test]` digest should reach your inbox within a minute of the last command.
 
 | Result | Then |
 |---|---|
-| Maximum resident set size under about 800,000 kB (800 MB), and the run under about 45 minutes | Keep the e2-micro (free). |
+| Maximum resident set size under about 800,000 kB (800 MB), and the run under about 45 minutes | Keep the e2-micro (free). Note that the measured peak on the VM in use was already 790-800 MB, so an e2-micro would be at its edge, and a larger digest (more users or holdings) would tip it over. |
 | More memory than that, a run killed ("Killed", or "Out of memory" in `sudo dmesg \| tail`), or well over 45 minutes | Move to e2-small, below. |
 
 To change the machine type, **on the PC** (about two minutes; the disk, the files, and the crontab stay as they are):

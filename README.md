@@ -2,7 +2,7 @@
 
 AI-powered assistant that recommends new stocks to explore and alerts you when it's time to sell.
 
-Finnbot emails each user a stock-market digest every trading day, before the open and after the close, and watches their holdings in between, sending a Telegram alert when something needs action. One admin (Andres) runs it for a small group of invited users. Each user pays only for the AI that reviews their own holdings, through their own API keys: about $0.90 to $1.50 a month for 10 holdings.
+Finnbot emails each user a stock-market digest every trading day, before the open and after the close, and watches their holdings in between, sending a Telegram alert when something needs action. One admin (Andres) runs it for a small group of invited users. Each user pays only for the AI that reviews their own holdings, through their own API keys: about $0.90 to $1.40 a month for 10 holdings.
 
 > Finnbot's signals and ideas are AI-generated opinions from public market data and news. They are not financial advice. Always make your own decisions.
 
@@ -33,7 +33,7 @@ Finnbot emails each user a stock-market digest every trading day, before the ope
 | Hold | Everything else: healthy, or recovering normally |
 
 **On Telegram:**
-- Sell alerts from the watchdog.
+- Urgent sell alerts: right after each digest (for every user with Telegram), and from the watchdog between digests.
 - Alerts when a stock bought from a swing idea reaches the idea's stop or target, and a monthly scorecard of how those ideas did against the S&P 500.
 - Earnings reminders 24 hours before a held stock reports.
 - Notices when a brokerage connection or holdings sheet stops working.
@@ -46,8 +46,8 @@ Finnbot emails each user a stock-market digest every trading day, before the ope
 
 **Use cases:**
 - **A morning plan and an evening wrap-up:** what moved, why, and what needs attention, before the open and after the close.
-- **Watching positions between digests:** hourly price checks, re-reviews when a stock moves a lot or nears earnings, and an alert only when it's urgent.
-- **Finding ideas:** about 600 large US stocks screened every day for long-term quality and short-term swing setups, scored by an AI model against a fixed rubric, with an explicit trade plan for each swing idea.
+- **Watching positions between digests:** a check every 4 hours through extended trading hours, re-reviews when a stock moves a lot or nears earnings, an hourly tripwire for big moves, and an alert only when it's urgent.
+- **Finding ideas:** several hundred large US stocks screened every day for long-term quality and short-term swing setups, scored by an AI model against a fixed rubric, with an explicit trade plan for each swing idea.
 - **Following through on ideas:** a stock bought from an idea is recognized, its plan is tracked, and its outcome is scored.
 - **Running it for friends cheaply:** a sign-up form onboards new users, and each one pays a few cents a day on their own keys.
 
@@ -62,33 +62,34 @@ flowchart TD
     due -- no --> extras["Earnings reminders, holiday notice, monthly scorecards"]
     due -- yes --> universal & personal
     subgraph universal["Universal content (admin's keys)"]
-        u1["~600 large US stocks"] --> u2["Long-term screens: Yahoo, Finnhub, ADX"]
+        u1["Several hundred large US stocks"] --> u2["Long-term screens: Yahoo, Finnhub, ADX"]
         u1 --> u3["Swing screen: setup, trade plan in code"]
         u2 --> u4["AI scoring: DeepSeek V4.1 Flash"]
         u3 --> u4
-        u4 --> u5["Picks: pass marks, sector and tech rules"]
-        u6["Markets dashboard"] ~~~ u7["Macro news: Gemini + Google Search"]
+        u4 --> u5["Picks: pass marks, industry and tech rules"]
+        u6["Markets dashboard"] ~~~ u7["Macro news: Gemini Flash-Lite + Google Search"]
     end
     subgraph personal["Each user's content (their own keys)"]
         p1["Holdings: SnapTrade or Google Sheet"] --> p2["Market data + facts computed in code"]
         p2 --> p3["AI review per holding: Claude Haiku 5.5"]
-        p1 --> p4["News per holding: Gemini, reused later the same day"]
+        p1 --> p4["News per holding: Gemini Flash-Lite, reused later the same day"]
         p3 --> p5["Portfolio review: Claude Haiku 5.5"]
         p4 --> p5
     end
     universal --> email["Email: HTML + AMP, trimmed for Gmail"]
     personal --> email
-    watchdog["cron, every hour at :45: watchdog"] --> w1["Re-review holdings that moved or near earnings"] --> tg["Telegram alerts"]
+    email --> tg
+    watchdog["cron, every hour at :45: watchdog"] --> w1["Re-review holdings that moved or near earnings"] --> tg["Telegram: urgent sells"]
 ```
 
 **The ideas** (shared by everyone):
-- **The starting list:** every US-listed stock over a market-cap, volume, and price floor (about 600).
+- **The starting list:** every US-listed stock over a market-cap, volume, and price floor ($8 billion, 1 million shares a day, $15; several hundred stocks).
 - **Long-term:**
   - screened for quality (analyst coverage, profitability, growth, valuation, debt) and scored out of 100 on valuation, financial health, growth, and competitive moat;
-  - **picks:** up to 3 scoring 85 or more, from different sectors, with at most 2 tech stocks and at least 1 outside tech.
+  - **picks:** up to 3 scoring 85 or more, each from a different industry, with at least a third (1 of 3) outside tech, which may score from 80; a list the mix rules would leave short is filled with the best of the rest. A user can ask for 1 to 10 ideas.
 - **Swing:**
   - screened for a pullback in a healthy trend or a fresh uptrend, with a trade plan worked out in code, then scored on setup, reward against risk, momentum, and catalysts;
-  - **picks:** up to 5 scoring 75 or more that are still early in their move.
+  - **picks:** up to 5 scoring 75 or more that are still early in their move, mostly from different industries, with at least 1 outside tech in a list of 4 or more.
 - **Close calls:** a score near the bar is scored again, and the middle score is kept.
 
 **The holdings** (per user):
@@ -104,13 +105,14 @@ Plain-language details for users: [docs/new_user_guide.txt](docs/new_user_guide.
 
 | Job | When | What it does |
 |---|---|---|
-| Digest run | Every hour at :10 (cron) | Syncs settings and users, then sends the Pre-Market digest (from 07:00 ET until the open) or the Post-Market digest (16:10 ET, retried for 4 hours) when due. Also sends earnings reminders, the US-holiday notice, and the monthly idea scorecards. |
-| Watchdog | Every hour at :45 | For users with Telegram: re-reviews holdings that moved about a day's range, report within 7 days, or have reviews over 24 h old. An hourly tripwire catches bigger moves. At most 40 reviews per user per day. |
+| Digest run | Every hour at :10 (cron) | Syncs settings and users, then sends the Pre-Market digest (from 07:00 ET until the open) or the Post-Market digest (16:10 ET, retried for 4 hours) when due, followed by each user's urgent sell alerts on Telegram. Also sends earnings reminders, the US-holiday notice, and the monthly idea scorecards. |
+| Watchdog | Every hour at :45 | For users who chose Telegram with the watchdog: a check every 4 hours (default) from 4:00 AM to 8:00 PM ET on trading days, counted from the last check or digest. It re-reviews holdings that moved about a day's range, report within 4 trading days or the day after, or have reviews over 24 h old; an hourly tripwire catches bigger moves. At most 40 reviews per user per day. |
 | Settings sync | Every digest run | Applies valid changes from the **Parameters** tab of the sign-up spreadsheet; a change in `parameters.py` wins over the tab. |
 | Sign-up sync | Every cron digest run | Imports new or edited sign-up form answers into `.env` and the list of active users. |
-| Backup | 02:30 UTC daily | Encrypted copy of the state to Google Drive (90 days of versions), plus the run logs. |
+| Backup | 02:30 on the VM's clock (UTC), daily | Encrypted copy of the state to Google Drive (90 days of versions), plus the run logs. |
 | Heartbeat | Every job | Pings healthchecks.io, which alerts on Telegram when a job fails, hangs, or doesn't run. |
 | Failure alerts | When something breaks | The admin gets a Telegram message (once per problem per 6 hours); users see what went wrong at the top of their email. |
+| Maintenance mode | By hand | `bash scripts/maintenance.sh on` pauses the digest and watchdog while code changes on the VM (see [CLAUDE.md](CLAUDE.md)). |
 
 ---
 
@@ -119,25 +121,25 @@ Plain-language details for users: [docs/new_user_guide.txt](docs/new_user_guide.
 | Job | Model | Paid by |
 |---|---|---|
 | Idea scoring | DeepSeek V4.1 Flash (high effort) | Admin |
-| Macro news | Gemini 3.6 Flash with Google Search (low thinking) | Admin |
+| Macro news | Gemini 3.5 Flash-Lite with Google Search | Admin |
 | Holdings reviews and the portfolio review | Claude Haiku 5.5 (low effort) | Each user (Anthropic key) |
-| News for each holding | Gemini 3.6 Flash with Google Search (low thinking, 3 holdings per request) | Each user (Gemini key; only with news on) |
+| News for each holding | Gemini 3.5 Flash-Lite with Google Search (3 holdings per request) | Each user (Gemini key with billing on; only with news on) |
 
-Each model was chosen in a side-by-side comparison against Claude Opus 5.5 ([docs/model_selection.md](docs/model_selection.md)).
+Each model was chosen in a side-by-side comparison ([docs/model_selection.md](docs/model_selection.md)): the ideas and holdings models against Claude Opus 5.5, and the news model against four Gemini options. Google's free tier has no web search on any current model, so a Gemini key needs billing on.
 
 **Per user, per month** (21 trading days; estimates at October 2026 prices; the watchdog adds about $0.20-0.50 for 10 holdings):
 
 | Digests a day | Holdings | News off | News on |
 |---|---|---|---|
-| 1 | 10 | $0.45 | $0.87 |
-| 2 | 10 | $0.90 | $1.43 |
-| 2 | 20 | $1.74 | $2.79 |
+| 1 | 10 | $0.45 | $0.66 |
+| 2 | 10 | $0.90 | $1.17 |
+| 2 | 20 | $1.74 | $2.27 |
 
-The full table, per stock per run included, is in the user guide (3.10). Gemini's prices double on 2027-01-01, which roughly doubles the news cost. An ideas-only user pays nothing.
+The full table, split by Anthropic and Google, is in the user guide (3.10). An ideas-only user pays nothing.
 
 **Admin:**
-- **The shared part:** about $0.17 per digest (mostly the idea scoring), so about $7 a month.
-- **Hosting:** the VM is planned on Google Cloud's free e2-micro (about $12 a month if a bigger machine turns out to be needed; see [docs/vm_setup.md](docs/vm_setup.md)).
+- **The shared part:** about $0.17 per digest (almost all of it the idea scoring; the macro news is about $0.003), so about $7 a month.
+- **Hosting:** one VM (2 vCPUs, about 4 GB of memory); a full digest peaks at about 800 MB and takes about 25 minutes (see [docs/vm_setup.md](docs/vm_setup.md)).
 - **Measured, not guessed:** every API call's cost is recorded in `data/usage/api_usage.jsonl` and shown at the bottom of each digest.
 
 ---
@@ -149,7 +151,7 @@ The full table, per stock per run included, is in the user guide (3.10). Gemini'
 - a Google Cloud service account (for the Google Sheets);
 - a Gmail account to send from;
 - a Telegram bot;
-- API keys: Anthropic and/or DeepSeek, Gemini, Finnhub, FRED, and Twelve Data (optional).
+- API keys: Anthropic and/or DeepSeek, Gemini (billing on), Finnhub, FRED, and Twelve Data (optional).
 
 **Set up:**
 ```bash
@@ -169,6 +171,7 @@ venv/bin/python -m src.config.check_config                                    # 
 | `venv/bin/python src/telegram_alert/hourly_watchdog.py --dry-run` | Shows what the watchdog would check |
 | `venv/bin/python -m src.config.remote_settings --sync` | Applies the Parameters tab now |
 | `venv/bin/python -m src.users.import_signup --sync` | Imports the sign-up form's answers now |
+| `venv/bin/python -m src.llm.compare_models capture\|score\|report` | Compares LLM settings on identical inputs (handbook section 15) |
 | `venv/bin/python -m pytest` | The tests |
 
 **Deploy:** [docs/vm_setup.md](docs/vm_setup.md) has the step by step for a Google Cloud VM, plus monitoring and backups.
@@ -176,10 +179,10 @@ venv/bin/python -m src.config.check_config                                    # 
 ### Adding a user
 
 Through the sign-up form (built by [docs/finnbot_signup_form.gs](docs/finnbot_signup_form.gs), explained in [docs/new_user_guide.txt](docs/new_user_guide.txt)):
-1. The new user fills in the form and sends their API keys privately, never in the form.
-2. Each cron digest run applies every user's newest answer to `.env`, and puts the users with nothing required missing in `ACTIVE_USERS`.
-3. A key a user's choices need but hasn't arrived yet is written as `KEY=None`. Replace it with the key they send (`python -m src.users.import_signup <Name> --enter-keys` takes it with hidden input), and the next run activates them.
-4. The admin hears about each sign-up, activation, and deactivation on Telegram.
+1. The new user fills in the form and sends their API keys, and their sheet ID if they chose a Google Sheet, privately, never in the form.
+2. Every cron run (digest at :10 and watchdog at :45) applies every user's newest answer to `.env`, and puts the users with nothing required missing in `ACTIVE_USERS`. The form doesn't ask for the watchdog's interval, session, or tripwire: users who chose it get the defaults in `parameters.py` (every 4 hours, extended hours, tripwire on) unless `<NAME>_WATCHDOG_*` is set in `.env`.
+3. A key a user's choices need but hasn't arrived yet is written as `KEY=None`, and a missing sheet ID or Telegram chat ID as an empty line. Replace them with what the user sends (`python -m src.users.import_signup <Name> --enter-keys` takes keys with hidden input), and the next run activates them.
+4. The admin hears about each sign-up, activation, and deactivation on Telegram. An answer the importer can't read (for example after the form's wording changes) leaves an active user active and tells the admin.
 
 Without the sheet: add the name to `ACTIVE_USERS` in `src/config/parameters.py`, print the `.env` lines to fill in with `python -m src.config.check_config --template <Name>`, then run `python -m src.config.check_config`.
 
@@ -210,15 +213,19 @@ src/
   llm/                      The AI models
     llm_models.py               Which model does which job, and its provider
     deepseek_client.py          DeepSeek requests and answer repair
+    claude_cache.py             Prompt caching for the holdings reviews
     gemini_settings.py          Gemini's thinking level and output cap for every call
+    gemini_key_rotation.py      Optional free-tier Gemini key tried before the paid one (unused: no web search on the free tier)
   market/                   Market time and money
-    market_session.py           Exchange calendars and sessions
+    market_session.py           Exchange calendars, sessions, and trading-day counts
+    watchdog_schedule.py        When each user's watchdog check is due
     fx_rates.py                 Exchange rates to USD
   tracking/                 What Finnbot recommended and spent
     track_record.py             How past signals and ideas played out
     idea_positions.py           Holdings bought from ideas: labels, alerts, scorecards
     usage_tracking.py           Tokens and cost of every API call
   ops/                      Running it
+    cron_start.py               What every cron run does first: the settings tab, then the sign-up answers
     run_logging.py              Run logs and crash alerts
     shared_locks.py             The lock around the shared market-data keys
   universal/                The shared content
@@ -228,13 +235,14 @@ src/
   personalized/             Each user's content
     pull_holdings_data.py       Holdings from SnapTrade or a Google Sheet, prices, FX
     holding_checks.py           Facts computed in code for the review
+    holdings_state.py           Each stock's latest review and each user's watchdog clock
     recommendation.py, LLM_hold_instr.py   The holdings review and its rubric
     symbol_specific_news.py, news_reuse.py, portfolio_review.py
-  digest/                   Scheduling, the email (create_html.py, email_template.html), sending
+  digest/                   Scheduling, the email (create_html.py, email_template.html), the glossary page, sending
   telegram_alert/           Watchdog, notices, earnings reminders, holiday notice
-scripts/                    The cron wrapper (healthchecks.io pings), the Drive backup, a cron test
+scripts/                    The cron wrapper (healthchecks.io pings), the Drive backup, maintenance mode
 docs/                       Guides (below), and the sign-up form's Apps Script
-tests/                      About 380 offline tests
+tests/                      About 440 offline tests
 ```
 
 At the top level: `requirements.txt` / `requirements-dev.txt`, `pytest.ini`, `.env.example` (every key `.env` takes), and `CONVENTIONS.md` (coding rules).
@@ -247,12 +255,13 @@ Runtime state lives in `data/` and logs in `logs/`. Both are gitignored, since t
 
 | Doc | For | What's in it |
 |---|---|---|
+| [docs/setup_instructions.md](docs/setup_instructions.md) | New users | The accounts and keys to get ready, in order, in two pages |
 | [docs/new_user_guide.txt](docs/new_user_guide.txt) | New users | Every choice, what it costs, how to get each key, Gmail setup, how ideas and holdings work, keeping keys safe |
-| [docs/admin_handbook.md](docs/admin_handbook.md) | The admin | Every command and option, the pipeline, Telegram messages, settings, onboarding, files, troubleshooting |
+| [docs/admin_handbook.md](docs/admin_handbook.md) | The admin | Every command and option, the pipeline, Telegram messages, settings, onboarding, files; how it's set up and running, why it's built this way and the evidence, how it was tested, how to upgrade to a new LLM and compare models, how to diagnose problems and recreate it from nothing |
 | [docs/vm_setup.md](docs/vm_setup.md) | The admin | Moving Finnbot to a Google Cloud VM, step by step |
 | [docs/operations.md](docs/operations.md) | The admin | healthchecks.io monitoring and the Google Drive backup |
 | [docs/watchdog.md](docs/watchdog.md) | Developers | The full technical reference: every setting, file, and design decision |
-| [docs/model_selection.md](docs/model_selection.md) | Developers | How the models and efforts were compared and chosen |
+| [docs/model_selection.md](docs/model_selection.md) | Developers | How the models and efforts were compared and chosen (ideas, holdings, and the news model), with the results |
 
 ---
 
@@ -271,4 +280,4 @@ Runtime state lives in `data/` and logs in `logs/`. Both are gitignored, since t
 
 ## Status
 
-Running on Andres's PC; the move to a Google Cloud VM ([docs/vm_setup.md](docs/vm_setup.md)) is next, followed by the healthchecks.io heartbeat and the Drive backup on that VM. Until then, nothing runs on a schedule.
+Running on a VM since 2026-10-23 ([docs/vm_setup.md](docs/vm_setup.md)): the hourly digest and watchdog under cron, the nightly Drive backup, and the healthchecks.io heartbeat. Three users, with Andres as admin. Work on the VM is done under maintenance mode (see [CLAUDE.md](CLAUDE.md)). The branch `feature/watchdog-digest-upgrades` has not been merged to `main`.

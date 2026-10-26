@@ -1,6 +1,6 @@
 # Holdings watchdog and per-user model selection
 
-The watchdog re-evaluates each user's holdings on that user's own schedule and sends a Telegram alert when Claude recommends `urgent_sell`. Each user also picks which Claude model and effort level evaluates their holdings.
+The watchdog re-evaluates each user's holdings between digests and sends a Telegram alert when the model recommends `urgent_sell`. Since 2026-10-22 every user's holdings are evaluated by the same model (`LLM["HOLDINGS"]`, Claude Haiku 5.5 at low effort, on the user's own Anthropic key); the per-user model and effort settings described below are no longer read. Since 2026-10-26 the sign-up form only asks whether a user wants the watchdog, so its interval, session, and tripwire come from the defaults in `parameters.py` (or the Parameters tab) unless the user's `.env` sets them. Each digest also sends its own urgent alerts as soon as its emails are out (see [Alerts](#alerts)).
 
 **Holdings signals** (changed 2026-10-18; `src/personalized/LLM_hold_instr.py`):
 
@@ -24,14 +24,14 @@ In the email, Buy more is light blue, Hold a deeper blue, and Profit sell green 
 
 Cron starts `src/telegram_alert/hourly_watchdog.py` every hour at :45. For each user in `ACTIVE_USERS` (`src/config/parameters.py`, the same list the digest uses) with a holdings source (`SNAPTRADE` or `SHEETS`) and a Telegram chat ID, it checks the gates below in order, cheapest first, and stops at the first one that says skip:
 
-1. **Watchdog on?** `watchdog_interval_hours` is above 0.
+1. **Watchdog on?** `watchdog_interval_hours` is above 0. The sign-up sync writes 0 for a user who chose Telegram without the watchdog, or no Telegram.
 2. **In session?** The time falls inside the user's session (`regular`, `extended` or `24_7`), using real exchange calendars, so holidays and 13:00 half-days are handled.
 3. **Due or tripwire?** The user is *due* N hours after their last successful scheduled check or digest (see [Schedules](#schedules)). If they aren't due and the tripwire is off, nothing happens this hour.
 4. **Cheap snapshot.** Holdings, P&L, RSI and NATR, plus a price suited to the market phase (see [Prices outside regular hours](#prices-outside-regular-hours)). No Finnhub, Twelve Data or Claude calls. If the brokerage returns nothing, the run stops without marking the check as done, because an outage looks the same as an empty portfolio.
 5. **Choose stocks.** Only stocks that changed get a new evaluation (see [When Claude is called](#when-claude-is-called)). Every other stock keeps its last recommendation.
 6. **Daily cap.** At most `MAX_CLAUDE_CALLS_PER_USER_DAY` watchdog evaluations per user per day. When the cap binds, the stocks whose last recommendation was most severe go first.
 7. **Evaluate.** Market context (from the daily cache) plus Claude, run only for the chosen stocks.
-8. **Alert.** One Telegram message covers every held stock whose latest recommendation is an alert level and isn't in cooldown.
+8. **Alert.** One Telegram message covers every held stock whose latest recommendation is an alert level and isn't in cooldown. The same function sends the digest's alerts (below).
 
 Errors are contained per user: one user's failure is printed with a traceback, and the other users still run.
 
@@ -71,13 +71,15 @@ Since 2026-10-23 every setting in `src/config/parameters.py` can also be changed
 | `DIGEST.MAX_PARALLEL_USERS` | `4` | Users whose digest content is built at the same time, alongside the universal content. |
 | `DIGEST.SYMBOL_NEWS_BULLETS` | `2` | Gemini news stories per holding card (3 before 2026-10-20). |
 | `DIGEST.SYMBOL_NEWS_MIN_PRIORITY` | `"MEDIUM"` | Lowest story priority kept (added 2026-10-20): LOW stories, such as routine commentary and recaps, are left out. |
-| `DIGEST.SYMBOL_NEWS_CONCURRENCY` | `4` | Gemini news requests in flight at once per user. Lower it if a free-tier Gemini key keeps hitting per-minute limits. |
+| `DIGEST.SYMBOL_NEWS_CONCURRENCY` | `4` | Gemini news requests in flight at once per user. Lower it if a Gemini key keeps hitting per-minute limits. |
 | `DIGEST.SYMBOL_NEWS_BATCH_SIZE` | `3` | Holdings covered by one Gemini news request (2026-10-23; was one request each, then 5). |
 | `DIGEST.NEWS_REUSE` | `{"ENABLED": True, "MAX_MOVE_NATR": 1.0}` | Show news fetched earlier the same US Eastern day again instead of asking Gemini (2026-10-23). |
 | `DIGEST.PORTFOLIO_REVIEW_MAX_TOKENS` | `8000` | Cap on the portfolio review's answer, thinking included (2026-10-23). |
 | `GEMINI_CONFIG` | `{"effort": "low", "max_output_tokens": 8192}` | Thinking level and output cap for every Gemini call: holding news and macro news (2026-10-23). |
+| `GEMINI_MODELS` | `{"HOLDING_NEWS": "gemini-3.5-flash-lite", "MACRO_NEWS": "gemini-3.5-flash-lite"}` | The Gemini model for each news job, both with Google Search (2026-10-26; was `gemini-3.6-flash`, see [Choosing the news model](#choosing-the-news-model-2026-10-26)). |
+| `MKTCAP_MIN` / `LASTSALE_MIN` | `8000` / `15` | The ideas' first screen: market cap in millions of USD and share price (2026-10-26, from the settings sheet; were 10000 and 30). |
 | `DIGEST.REUSE_EVALUATION_MAX_AGE_MINUTES` | `60` | The digest reuses an evaluation this recent (if the stock moved less than `REEVAL_NATR_MULTIPLE` NATRs since) instead of calling Claude again. `0` turns reuse off. |
-| `ALLOWED_CLAUDE_MODELS` | see file | Models a user may pick, each with the effort levels it accepts. |
+| `ALLOWED_CLAUDE_MODELS` | see file | The Claude models any LLM job may use, each with the effort levels it accepts. |
 | `CLAUDE_REFUSAL_FALLBACK` | `True` | On models that support it, a request refused by a safety classifier is re-run server-side on a recommended model. |
 
 ### Per user (`.env`, mapped through `src/personalized/user_profiles.py`)
@@ -86,17 +88,16 @@ The profile maps each setting to an `.env` key, the same pattern as the existing
 
 | Profile key | `.env` example | Allowed values |
 |---|---|---|
-| `watchdog_interval_hours` | `ANDRES_WATCHDOG_INTERVAL_HOURS=4` | `0` (off) to `168` |
-| `watchdog_session` | `ANDRES_WATCHDOG_SESSION=extended` | `regular`, `extended`, `24_7` |
-| `watchdog_tripwire` | `ANDRES_WATCHDOG_TRIPWIRE=true` | `true` / `false` (also `yes`/`no`, `1`/`0`) |
-| `holdings_llm_model` | `ANDRES_HOLDINGS_LLM_MODEL=deepseek-flash` | any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS` (default `LLM["HOLDINGS"]`) |
-| `holdings_llm_effort` | `ANDRES_HOLDINGS_LLM_EFFORT=low` | Claude: `low` `medium` `high` `xhigh` `max`; DeepSeek: `none` (no thinking) `low` (the default) `high` `max` |
-| `holdings_claude_model` / `holdings_claude_effort` | `ANDRES_HOLDINGS_CLAUDE_MODEL=claude-sonnet-5-5` | older names, still read when the `LLM` ones above are unset |
+| `watchdog_interval_hours` | `ANDRES_WATCHDOG_INTERVAL_HOURS=4` | `0` (off) to `168`. Unset: `WATCHDOG.DEFAULT_INTERVAL_HOURS`. The sign-up sync writes `0` for Telegram without the watchdog or no Telegram, and clears an earlier `0` when the user chooses the watchdog; it never writes another value (2026-10-26) |
+| `watchdog_session` | `ANDRES_WATCHDOG_SESSION=extended` | `regular`, `extended`, `24_7`. Unset: `WATCHDOG.SESSION` |
+| `watchdog_tripwire` | `ANDRES_WATCHDOG_TRIPWIRE=true` | `true` / `false` (also `yes`/`no`, `1`/`0`). Unset: `WATCHDOG.TRIPWIRE_DEFAULT` |
+| `holdings_llm_model` / `holdings_llm_effort` / `holdings_claude_model` / `holdings_claude_effort` | `ANDRES_HOLDINGS_LLM_MODEL=deepseek-flash` | **Ignored since 2026-10-22** (every user gets `LLM["HOLDINGS"]`); the sign-up sync clears them. They were any key of `ALLOWED_CLAUDE_MODELS` or `ALLOWED_DEEPSEEK_MODELS` with the effort levels each accepts |
 | `receive_holding_news` | `ANDRES_RECEIVE_HOLDING_NEWS=True` | `True` / `False` (default `True`): Gemini news bullets for each holding |
 | `long_recs` / `swing_recs` | `MAURICIO_LONG_RECS=5` | `1` to `10`: the most long-term / swing ideas their digest shows (default `LONG_TERM_N_AMOUNT` / `SWING_TERM_N_AMOUNT`). Added 2026-10-24; `.env` only, not on the sign-up form. Each size is picked from the same scores (no extra LLM cost, beyond re-scoring close calls for the longest list) |
 | `anthropic_api_key` | `ANDRES_ANTHROPIC_API_KEY=sk-ant-...` | the user's own Anthropic key (required when their model is Claude) |
 | `deepseek_api_key` | `ANDRES_DEEPSEEK_API_KEY=sk-...` | the user's own DeepSeek key (required when their model is DeepSeek) |
-| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news (only needed with the news on since 2026-10-23, when the portfolio review moved to the holdings model) |
+| `gemini_api_key` | `ANDRES_GEMINI_API_KEY=...` | the user's own Gemini API key, used for the per-holding news (only needed with the news on since 2026-10-23, when the portfolio review moved to the holdings model). **Its project needs billing on**: the free tier has no Google Search quota (2026-10-26) |
+| `gemini_free_api_key` | `ANDRES_GEMINI_FREE_API_KEY=...` | optional, unused: a free-tier key tried before `gemini_api_key` (`src/llm/gemini_key_rotation.py`). Leave unset: it never worked for news |
 | `home_currency` (added 2026-10-21) | `ANDRES_HOME_CURRENCY=CAD` | `HOLDINGS.HOME_CURRENCIES`: `USD` (the default, `HOLDINGS.DEFAULT_HOME_CURRENCY`), `CAD`, `EUR`, `GBP`, `AUD`, `COP`. The email's overview shows the portfolio in it, and also in USD |
 | `holdings_source` | `KOBY_HOLDINGS_SOURCE=NO_HOLDINGS` | `SNAPTRADE`, `SHEETS`, or `NO_HOLDINGS` (an ideas-only user, below) |
 
@@ -119,7 +120,7 @@ Every job that took a Claude model can take a DeepSeek model instead. `src/llm/l
 | Job | Set in | Key |
 |---|---|---|
 | New-stock scoring (~37 calls a run) | `UNIVERSAL_LLM_MODEL` / `UNIVERSAL_LLM_EFFORT` in `.env` (added 2026-10-17), else `LLM["UNIVERSAL"]` in `parameters.py` | shared `ANTHROPIC_API_KEY` or `DEEPSEEK_API_KEY` |
-| Holdings evaluation (watchdog and digest) | `LLM["HOLDINGS"]`, overridden per user by `<NAME>_HOLDINGS_LLM_MODEL` / `_EFFORT` | the user's own `<NAME>_ANTHROPIC_API_KEY` or `<NAME>_DEEPSEEK_API_KEY` |
+| Holdings evaluation (watchdog and digest) | `LLM["HOLDINGS"]` for every user (the per-user `<NAME>_HOLDINGS_LLM_MODEL` / `_EFFORT` were overridden until 2026-10-22, and are now ignored) | the user's own `<NAME>_ANTHROPIC_API_KEY` (or `<NAME>_DEEPSEEK_API_KEY` if `LLM["HOLDINGS"]` is a DeepSeek model) |
 
 **DeepSeek models** (checked 2026-10-16):
 - **`deepseek-flash`** (V4.1-Flash): cheap and fast.
@@ -696,8 +697,7 @@ Each pick in `recommendations.top_long_term` / `top_swing` carries Claude's reas
   The field names are unchanged, so older payloads and the track record still read. The old bands described three setups that rarely happen together (breakout, at support, bouncing from oversold), and never scored the model's own levels.
 - **Early entries only** (`SWING_EARLY_ENTRY`, added 2026-10-18): a swing pick must still be early in its move. A stock that scores 80+ is left out if it is more than 3 normal days' ranges (14-day ATR) above its 10-day low, has an RSI above 70, or closes above its upper Bollinger Band (`scorer.too_far_along`; the log says which). The check only removes picks, so a day with no good early setup has no swing picks. Calibrated on 2026-10-16's 97 candidates: stocks just turning up near support were 0.9-1.9 ranges above their 10-day low, and 26 of 97 were more than 3, including TRU (up 20% in 10 days), which the model had scored as the best swing setup. The screening counts show "Still early in their run" under "Swing score 80+".
 - **Sector mix** (`PICK_SECTOR_RULES`, added 2026-10-17): the long-term picks (3 since 2026-10-22, were 2) are from different sectors (`all_different`), and more than half the swing picks are from different sectors (`majority_different`: distinct sectors > picks / 2, e.g. 3 sectors among 5 picks), by Yahoo's industry (`PICK_GROUP_BY`, since 2026-10-25; before that its sector). Long-term lists also hold at least a third non-tech picks, rounded up when the list has two or more (`LONG_TERM_MIN_NON_TECH_SHARE`), which may score from 80, and tech picks follow the industry rule too. Swing lists of 4 or more ideas hold at least 1 non-tech pick (2 from 8 ideas) when one cleared the bar (`SWING_MIN_NON_TECH`). A stock the rule leaves out makes room for the next best that fits and clears the bar; when none fits, the best left-out stocks fill the list (2026-10-25, Andres; `scorer.fill_relaxed`), so a list is short only when too few stocks clear the minimum score. The log names each stock left out and each one added back. A stock without a sector counts as its own. `"any"` turns a rule off.
-- **At least one long-term pick outside tech** (added 2026-10-22, Andres's rule; `LONG_TERM_MIN_NON_TECH_PICKS` 1, `TECH_SECTORS`, `LONG_TERM_NON_TECH_MIN_SCORE` 80): when the picks are all tech, the best non-tech candidate scoring 80 or more, from a sector not already picked, joins them: added when there are fewer than 3 picks, otherwise in place of the lowest-scoring tech pick (`scorer.with_non_tech_picks`). So the non-tech pick may score under the usual 85. If none scores 80, or nothing reached 85, the picks stay as they are and the log says so. Tech is Yahoo's Technology and Communication Services sectors: the internet and ad-tech names (GOOGL, META, RDDT, APP) sit in the second.
-- **At most two tech picks** (added 2026-10-23, Andres's rule; `LONG_TERM_MAX_TECH_PICKS` 2): with 3 or more long-term picks, at most 2 are tech, and tech stocks may share a sector with each other; the other sectors still follow `PICK_SECTOR_RULES` (`scorer.pick_with_sector_rule`'s `capped`). Before, `all_different` let only one Technology stock in: on 2026-10-22 all nine candidates at 85+ were Technology (TSM 94, NVDA, ASML, AVGO, ANET, SKHY, LRCX, MU), so the list had only TSM and BAM (82.5, from the non-tech rule). With the new rule it would have been TSM, NVDA, and BAM.
+- **Non-tech picks** (Andres's rule since 2026-10-22, reshaped 2026-10-25): a third of the long-term list, rounded up (`LONG_TERM_MIN_NON_TECH_SHARE` 0.33: 1 of 3), is outside tech (`TECH_SECTORS`: Technology and Communication Services, which holds the internet and ad-tech names GOOGL, META, RDDT, APP), and those picks may score from `LONG_TERM_NON_TECH_MIN_SCORE` 80, under the usual 85 (`scorer.with_non_tech_picks`; `scorer.min_non_tech`). With none at 80, or nothing at 85, the picks stay as they are and the log says so. This replaced a flat "at least one" (`LONG_TERM_MIN_NON_TECH_PICKS`) and a cap of two tech picks (`LONG_TERM_MAX_TECH_PICKS`, 2026-10-23): picks now follow the industry rule whether tech or not, and the cap on tech is just the other side of the third: a list of 3 holds at most 2 tech stocks.
 - **Track record:** it also keeps each pick's sentiment and swing levels, for checking later whether they held up.
 
 **Macro content.** It is switched with `UNIVERSAL_EXTRAS`, and both parts are on by default. Both run in the background while the picks are built, and both are included even when no picks could be made.
@@ -752,7 +752,7 @@ These are estimates from token counts and list prices. They can't see credits, d
 
 **When the section started:** each user's payload also has `personal_started_at`, the moment their personal section began. It's given in their home timezone (`<NAME>_TIMEZONE`) and in US Eastern: `{"home_timezone", "home", "home_iso", "us_eastern", "us_eastern_iso"}`. The display strings look like `Friday, October 16, 2026, 7:02 AM EDT`. If the timezone isn't a valid IANA name, the home fields are `null` and only Eastern time is shown; `check_config` reports the setting as INVALID.
 
-**Keeping prices current:** prices are in `params_dict["API_PRICES"]` as dated lists. To add a price change, append an entry with its `"from"` date. Usage before that date keeps the old price, so past months don't change. For example, the gemini-3.6-flash entry already holds the doubled price that starts 2027-01-01. Update `AS_OF` when you check the price pages listed in `SOURCES`. Model ids match on the longest prefix, so `claude-opus-5-5` gets its own price, not `claude-opus-5`'s.
+**Keeping prices current:** prices are in `params_dict["API_PRICES"]` as dated lists. To add a price change, append an entry with its `"from"` date. Usage before that date keeps the old price, so past months don't change. For example, the gemini-3.6-flash entry already holds the doubled price that starts 2027-01-01. The gemini-3.5-flash-lite ($0.30 in, $2.50 out per million tokens) and gemini-3.1-flash-lite ($0.25 / $1.50) entries, added 2026-10-26, have no announced change. Update `AS_OF` when you check the price pages listed in `SOURCES`. Model ids match on the longest prefix, so `claude-opus-5-5` gets its own price, not `claude-opus-5`'s.
 
 ## Changing settings from the spreadsheet (2026-10-23)
 
@@ -813,12 +813,17 @@ Medium effort, tried twice on the same 5 stocks, cost 2.5 times as much as low a
 
 **Not added: a count of the 5,000 free searches.** Finnbot can't know the true number: with a response schema Gemini doesn't report its searches, Google has no way to ask how much of a key's allowance is used, and the key could be used outside Finnbot.
 
+### Choosing the news model (2026-10-26)
+
+Holding news and macro news moved from `gemini-3.6-flash` to **`gemini-3.5-flash-lite`** (`GEMINI_MODELS`), after a comparison with four settings on Andres's 11 holdings and the macro news, two runs each ([model_selection.md](model_selection.md#the-news-model-2026-10-26)): about half the cost today and a quarter of it once 3.6's introductory price doubles on 2027-01-01, with news close to 3.6's. Flash-Lite doesn't think, so its cost is steadier. Findings:
+- **The free tier has no Google Search quota on any current model** (tested on every Flash and Flash-Lite, the aliases, and the others on the free list, with the same request that works on a billed key): each grounded request gets `429 RESOURCE_EXHAUSTED` without the quota details. Only the preview robotics model answered, and it left about twice as many stocks without news. So a Gemini key needs billing on, and `gemini_key_rotation` (the free-key-first trial of the same day) is unused.
+- **A free key that kept returning that 429 never switched to the paid key**, because the error classified as a per-minute `rate_limited`, which didn't switch; the 2026-10-26 morning digest went out with no news. `gemini_key_rotation.free_key_failed` now treats a rate limit that outlasted the retries as a failure, so a free key set again would switch to paid in the same run.
+
 ## Known limitations
 
 - **TSX symbol formats.** Some brokerage symbols don't match Yahoo's format; for example `DLR.U.TO` (Yahoo uses `DLR-U.TO`). Those stocks get no price history, no NATR and no extended-hours price, so only the age and earnings triggers re-evaluate them.
 - **Sheets timestamp.** The Sheets source records `data_as_of` as naive local time. The price age is clipped at 0 rather than corrected.
 - **Session windows** must stay within one market-local day. The default offsets do.
-- **Digest recording.** Evaluations from the digest are recorded automatically through `add_recommendations`, but `src/digest/digest_payload.py` itself still needs its own fixes before it can run.
 - **New-stock scoring.** `src/universal/recommendations/LLM_recommendation.py` doesn't use per-user models; it's shared across users and uses `LLM["UNIVERSAL"]` (Claude or DeepSeek). On Claude it sends a strict tool schema with `tool_choice: auto` and refusal fallbacks, like the holdings evaluator.
 
 ## Authorship

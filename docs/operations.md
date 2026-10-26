@@ -54,7 +54,7 @@ Why rclone, not the Finnbot service account: a service account has no Drive stor
    ```bash
    sudo -v ; curl https://rclone.org/install.sh | sudo bash
    ```
-2. **Install rclone on your Windows PC** too, for the one-time Google sign-in (the VM has no browser):
+2. **Install rclone on a computer with a browser** too (Andres used his Windows PC), for the one-time Google sign-in (the VM has no browser):
    ```powershell
    winget install Rclone.Rclone
    ```
@@ -66,7 +66,7 @@ Why rclone, not the Finnbot service account: a service account has no Drive stor
    - `service_account_file`: press Enter to leave it blank.
    - Edit advanced config: `n`
    - Use web browser to authenticate: **`n`**. rclone prints a command like `rclone authorize "drive" "eyJ..."`.
-   - On your PC, paste that command into PowerShell. A browser opens. Sign in with the Google account whose Drive should hold the backups, and allow access. PowerShell then prints a token. Paste it back into the VM's prompt.
+   - On that computer, paste that command into PowerShell (or a terminal). A browser opens. Sign in with the Google account whose Drive should hold the backups, and allow access. PowerShell then prints a token. Paste it back into the VM's prompt.
    - Configure as a Shared Drive: `n`. Keep this remote: `y`.
 4. **Add encryption on top.** This is recommended, because the state files show what each user holds. Run `rclone config` again:
    - `n`, name: **`finnbot-backup`**
@@ -106,15 +106,15 @@ On a new VM, install rclone and create both remotes again with the **same crypt 
 
 ## Crontab
 
-Replace the old Finnbot lines (`crontab -e` on the VM) with:
+Replace the old Finnbot lines (`crontab -e` on the VM) with the following (on 2026-10-26 the VM's crontab also has lines for the Claude Code session, which are in [admin_handbook.md](admin_handbook.md)):
 
 ```cron
-45 * * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh watchdog
-10 * * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh digest
-30 2 * * * cd ~/ai_financial_advisor && bash scripts/cron_job.sh backup
+45 * * * * ulimit -n 65536 && cd ~/ai_financial_advisor && bash scripts/cron_job.sh watchdog
+10 * * * * ulimit -n 65536 && cd ~/ai_financial_advisor && bash scripts/cron_job.sh digest
+30 2 * * * ulimit -n 65536 && cd ~/ai_financial_advisor && bash scripts/cron_job.sh backup
 ```
 
-The wrapper now does what the old lines did: `flock -w 900 /tmp/finnbot.lock`, `venv/bin/python ...`, and `>> digest.log`. It also does the pinging. With the VM's clock on UTC, 02:30 is 22:30 or 21:30 ET, after the post-market digest window has closed.
+(The `ulimit` is also set inside the wrapper; keep both, since a rewritten crontab would otherwise lose it.) The wrapper now does what the old lines did: `flock -w 900 /tmp/finnbot.lock`, `venv/bin/python ...`, and `>> digest.log`. It also does the pinging. With the VM's clock on UTC, 02:30 is 22:30 or 21:30 ET, after the post-market digest window has closed.
 
 Files the wrapper writes, all in the gitignored `logs/` folder:
 - `logs/<job>.status`: the last run's status line;
