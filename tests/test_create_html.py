@@ -625,6 +625,15 @@ def test_market_mood_reads_vix_and_fear_greed_together():
     assert flat(view["markets_summary"]).startswith("S&P 500 +0.2% prev. day · Mood: Confident")
 
 
+@pytest.mark.parametrize("clock, expected", [
+    ("03:59", "Hello, Test"), ("04:00", "Good morning, Test"), ("11:29", "Good morning, Test"),
+    ("11:30", "Good afternoon, Test"), ("17:59", "Good afternoon, Test"), ("18:00", "Good evening, Test"),
+])
+def test_the_greeting_follows_the_users_local_time(clock, expected):
+    assert ch._greeting({"home_iso": f"2026-10-16T{clock}:00-04:00"}, "Test") == expected
+    assert ch._greeting({}, "Test") == "Hello, Test"
+
+
 def test_the_heat_map_button_is_under_the_greeting():
     # Claude-authored (2026-10-21): Finviz's S&P 500 map over the past week (DIGEST.HEAT_MAP_URL), for every reader
     for digest_payload in (payload(), payload(holdings=[], user_name="Koby")):

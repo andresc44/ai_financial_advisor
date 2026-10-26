@@ -460,10 +460,12 @@ def _clock(display: Optional[str], iso: Optional[str]) -> Optional[str]:
 def _greeting(started: dict, user_name: str) -> str:
     """By the hour in the user's home timezone, when their section of the digest was built."""
     iso = started.get("home_iso") or started.get("us_eastern_iso")
-    hour = datetime.fromisoformat(iso).hour if iso else None
-    if hour is None or hour < 5:
+    # Claude-authored (2026-10-26, Andres): "Good morning" from 4:00 to 11:30
+    moment = datetime.fromisoformat(iso) if iso else None
+    minutes = moment.hour * 60 + moment.minute if moment else None
+    if minutes is None or minutes < 4 * 60:
         return f"Hello, {user_name}"
-    part = "morning" if hour < 12 else "afternoon" if hour < 18 else "evening"
+    part = "morning" if minutes < 11 * 60 + 30 else "afternoon" if minutes < 18 * 60 else "evening"
     return f"Good {part}, {user_name}"
 
 
