@@ -211,17 +211,18 @@ NOTES: dict[str, str] = {
     "OPS.LOG_BACKUPS": "Old run logs kept. Takes effect from the next run.",
 
     # ---------------------------------------------------------------- Watchdog
-    "WATCHDOG.SESSION": "When the watchdog checks holdings, by default: regular (market hours), extended (4:00-20:00 ET), "
-                        "or 24_7.",
+    "WATCHDOG.SESSION": "When the watchdog checks holdings: regular (market hours), extended (4:00-20:00 ET), or 24_7. "
+                        "For every watchdog user, unless <NAME>_WATCHDOG_SESSION is set in .env.",
     "WATCHDOG.TIMEZONE": "The market's timezone, for trading dates and times. Takes effect from the next run.",
     "WATCHDOG.EXCHANGE_CALENDARS": "Exchange calendars; a day is a trading day if any of them trades (XNYS = NYSE, "
                                    "XTSE = Toronto).",
     "WATCHDOG.SESSIONS.*": "The watchdog's session windows: minutes before the open and after the close, and whether "
                            "only trading days count.",
-    "WATCHDOG.DEFAULT_INTERVAL_HOURS": "Hours between the watchdog's scheduled checks, for users who haven't chosen "
-                                       "(0 = off).",
+    "WATCHDOG.DEFAULT_INTERVAL_HOURS": "Hours between the watchdog's scheduled checks, for every user who chose the "
+                                       "watchdog on the form, unless <NAME>_WATCHDOG_INTERVAL_HOURS is set in .env.",
     "WATCHDOG.MAX_INTERVAL_HOURS": "Longest interval a user may choose.",
-    "WATCHDOG.TRIPWIRE_DEFAULT": "Hourly price check between scheduled checks, for users who haven't chosen.",
+    "WATCHDOG.TRIPWIRE_DEFAULT": "Hourly price check between scheduled checks, for every watchdog user, unless "
+                                 "<NAME>_WATCHDOG_TRIPWIRE is set in .env.",
     "WATCHDOG.REEVAL_NATR_MULTIPLE": "On a scheduled check, review again a stock that moved at least this many normal "
                                      "days' ranges (NATR).",
     "WATCHDOG.TRIPWIRE_NATR_MULTIPLE": "Between checks, review early a stock that moved at least this many NATRs.",

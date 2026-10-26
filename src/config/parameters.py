@@ -9,7 +9,7 @@ params_dict = {
     "ACTIVE_USERS": [  # Synced from the sign-up sheet (src/users/import_signup.py): edit the sheet
         "Andres",
         "Mauricio",
-    "Claudia",  # Added from the sign-up form (2026-10-24)
+        "Claudia",
     ],
     # Lookback and Lookahead Windows (Days)
     "COMPANY_NEWS_LOOKBACK_DAYS": 30,
@@ -751,7 +751,7 @@ params_dict = {
     # spend bounded by only re-evaluating stocks that changed. Full walkthrough: docs/watchdog.md
     # ==============================================================================================
     "WATCHDOG": {
-        "SESSION": "regular",                    # Default for all users: "regular" | "extended" | "24_7" (per-user override: watchdog_session)
+        "SESSION": "extended",                   # Default for all users: "regular" | "extended" | "24_7" (per-user override: watchdog_session); 2026-10-26: extended, was regular
         "TIMEZONE": "America/New_York",          # Market-local timezone used for trading dates and the "evaluated at" time
         "EXCHANGE_CALENDARS": ["XNYS", "XTSE"],  # exchange_calendars codes; a day is a trading day if ANY of these trades
         "SESSIONS": {

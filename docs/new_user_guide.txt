@@ -1,6 +1,7 @@
 FINNBOT: GUIDE FOR NEW USERS
 Every choice you'll make when joining Finnbot, what each option costs, and how to get what it needs.
-Prices and features as of October 2026.
+Prices and features as of October 26, 2026. The short version, step by step, is
+setup_instructions.md; this guide explains each choice in full.
 
 
 CONTENTS
@@ -8,7 +9,7 @@ CONTENTS
   1. The basics (everyone)
        1.4 Make the email's dropdowns work in Gmail (dynamic email)
   2. The main decision: how Finnbot sees your holdings
-       2.1 Option A: SnapTrade (link your brokerage)
+       2.1 Option A: SnapTrade (link your brokerage; recommended)
        2.2 Option B: Google Sheets (type your holdings in a spreadsheet)
        2.3 Option C: Ideas only (no holdings)
   3. Settings for users with holdings
@@ -23,7 +24,7 @@ CONTENTS
        3.9  The watchdog: how often, when, and the tripwire
        3.10 What it all costs per month
   4. Which choices make other settings unnecessary
-  5. What happens after you send your answers
+  5. What happens after you send your answers, and what you can change later
   6. Keeping your keys and data safe
        6.1 Why an API key matters
        6.2 Store every key safely the moment you create it
@@ -51,8 +52,9 @@ The digest can include:
   - Long-term ideas: US businesses that look worth owning for years at today's price.
   - Your portfolio (if you connect holdings): its value, the day's change, unrealized gain or
     loss, which positions need attention, upcoming earnings, a review of risks across the whole
-    portfolio, and a card for each holding (its price, your average purchase price, gain or loss,
-    signal, reasoning, and news).
+    portfolio (with a chart of how it's spread across sectors), and a card for each holding (its
+    price, your average purchase price, gain or loss, signal, reasoning, and news).
+  - A daily price chart for every US stock, on its card (holdings and ideas alike).
 
 Each holding gets one of five signals from an AI model:
   Buy more     The stock has pulled back and the data suggests it will recover: a time to add.
@@ -69,7 +71,12 @@ holdings are assessed.
 Who pays for what:
   - The ideas, the market signals, and the macro news are shared by everyone. Andres covers them.
   - Anything about YOUR holdings (the AI review of each stock, its news, and the portfolio review)
-    runs on YOUR OWN API keys, so those providers bill you directly. Section 3.10 shows the totals.
+    runs on YOUR OWN API keys, so those providers bill you directly:
+      Anthropic (the reviews): about $1-2 a month for 10-20 holdings with both digests, plus a
+        few cents to a dollar or so for the watchdog.
+      Google (the news, optional): free on Google's free tier, which is where everyone starts. Only
+        if Andres asks you to turn on billing does it cost anything (about $0.50-1.05 a month).
+    Section 3.10 has the full table.
   - An ideas-only user (section 2.3) pays nothing.
 
 
@@ -111,8 +118,7 @@ Your options:
   Post-Market   Pros: the day's final results.
   only          Cons: arrives in the evening in North America, and overnight in Asia-Pacific
                 (for example about 4:40 AM in Perth).
-  Neither       Only useful with holdings and Telegram, to get the watchdog's alerts without
-                emails.
+Ideas only (2.3) costs you nothing either way, so both is the natural choice there.
 
 Converting ET to your time (approximate; daylight saving shifts these by an hour for part of the
 year): Toronto and New York: same. Bogota: 1 hour earlier for most of the year. London: 5 hours
@@ -142,16 +148,23 @@ Cost: none.
 2. THE MAIN DECISION: HOW FINNBOT SEES YOUR HOLDINGS
 ================================================================================
 
-Choose one of three options. This choice decides which of the later sections apply to you.
+Choose one of three options. This choice decides which of the later sections apply to you. In the
+sign-up form they read:
+  "Link automatically to brokerage, RECOMMENDED (through SnapTrade)"   = option A
+  "Manually update a Google Sheet"                                     = option B
+  "No holdings, just suggestions to buy (free)"                        = option C
 
   Option              Effort to set up   Stays up to date        Costs you
   ------------------  -----------------  ----------------------  -------------------------------
   A. SnapTrade        Medium             Automatically           AI costs (section 3.10)
+     (recommended)
   B. Google Sheets    Low-medium         Only when you edit it   AI costs (section 3.10)
   C. Ideas only       None               (no holdings)           Nothing
 
-2.1 Option A: SnapTrade (link your brokerage)
----------------------------------------------
+You can switch later (section 5).
+
+2.1 Option A: SnapTrade (link your brokerage; recommended)
+----------------------------------------------------------
 What it is: SnapTrade is a service that connects to your brokerage account (for example Questrade
 or Wealthsimple) and lets Finnbot READ your positions: what you own, how many shares, in which
 accounts, and what you paid. Finnbot never places trades.
@@ -172,9 +185,10 @@ Cons:
 IMPORTANT, READ BEFORE CHOOSING SNAPTRADE:
   SnapTrade's own guidance says a Personal API key "must not be distributed in an app or shared
   with other people", and that it "can access your brokerage data and may be able to trade where
-  trading is enabled". Finnbot only ever reads your positions, but sending the key to anyone means
-  trusting them with that access. Talk to Andres before choosing this option. Google Sheets
-  (option B) avoids the issue entirely, because nothing is connected to your brokerage.
+  trading is enabled". Finnbot only ever reads your positions, but sending the key to Andres means
+  trusting him with that access. Choose read-only access when SnapTrade offers it (step 3), and if
+  you'd rather not share that access at all, Google Sheets (option B) avoids the issue entirely,
+  because nothing is connected to your brokerage.
 
 Steps (from SnapTrade's documentation; the dashboard's exact wording may differ):
   1. Go to snaptrade.com and sign up for a free Personal account.
@@ -186,8 +200,8 @@ Steps (from SnapTrade's documentation; the dashboard's exact wording may differ)
   4. Open the dashboard's API Key page and create your Personal API key. You get two values: a
      Client ID and a Consumer Key. The Consumer Key works like a password to your brokerage data:
      store both right away as described in section 6.
-  5. Only after agreeing it with Andres, send them to him through the private channel he gives you
-     (section 6), never through the sign-up form, email, or a chat app's group.
+  5. Send both to Andres through the private channel he gives you (section 6), never through the
+     sign-up form, email, or a chat app's group.
 Cost: SnapTrade says Personal users are currently free. Finnbot adds no charge.
 
 2.2 Option B: Google Sheets (type your holdings in a spreadsheet)
@@ -210,19 +224,17 @@ Steps:
   2. On the FIRST tab (the one the spreadsheet was created with), type the column names below in
      row 1, exactly as written: lowercase, with underscores.
   3. Add one row per position, starting in row 2.
-  4. Share the sheet so Finnbot can read it. Either:
-       a) Private (recommended): click Share, paste Finnbot's service-account email address
-          (finnbot-service@finnbot-504921.iam.gserviceaccount.com), set it to "Viewer", untick
-          "Notify people", and click Share. Only you and Finnbot can see the sheet.
-       b) By link: click Share, set "General access" to "Anyone with the link", role "Viewer".
-          Simpler, but anyone who gets the link can see your holdings.
-  5. Send Andres the sheet's ID. It's the long code in the sheet's web address, between "/d/" and
-     "/edit". For example, in
+  4. Share the sheet with Finnbot only: click Share, paste Finnbot's service-account email address
+     (finnbot-service@finnbot-504921.iam.gserviceaccount.com), set it to "Viewer", untick
+     "Notify people", and click Share. Only you and Finnbot can see the sheet. (Don't use "Anyone
+     with the link": then anyone who gets the link can see your holdings.)
+  5. Send Andres the sheet's ID, PRIVATELY with your keys (section 6.3); the sign-up form doesn't
+     ask for it. It's the long code in the sheet's web address, between "/d/" and "/edit". For
+     example, in
        https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit#gid=0
      the ID is 1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789
-     If you shared the sheet privately (4a), the ID alone opens nothing, so it can go in the sign-up
-     form. If you shared it by link (4b), anyone with the ID can see your holdings: send it
-     PRIVATELY, like a key (section 6.3).
+     You can't start until Finnbot has it: until then your answers wait, and you're switched on
+     at the first hourly check after it's in (section 5).
 
 THE COLUMNS (row 1)
 
@@ -298,6 +310,8 @@ Cons: no portfolio overview, no reviews of your stocks, no holdings news, no Tel
 earnings reminders.
 If you choose this, skip to section 4. A timezone (3.2) is optional; it only sets whether the
 email says good morning, afternoon, or evening.
+Every digest shows up to 3 long-term and 5 swing ideas (section 8). Want more or fewer? Ask Andres
+for anywhere from 1 to 10 of each; this applies to every user, with holdings or not.
 
 
 ================================================================================
@@ -359,7 +373,7 @@ so the provider bills you directly for your holdings' reviews. You need:
   ---------  ----------------------------------------  -------------------------------------------
   Anthropic  Always, with holdings                     Reviewing each holding, and the
                                                        portfolio review
-  Gemini     With holdings and news on (3.7)           News for each holding
+  Gemini     With holdings and news on (3.7)           News for each holding (free tier to start)
 
 Before you start: have a safe place ready to store each key the moment you create it (section 6).
 Anthropic shows a key only once; if you lose it, you have to create a new one.
@@ -381,26 +395,30 @@ GETTING AN ANTHROPIC KEY (everyone with holdings)
      console never shows it again.
 
 GETTING A GEMINI KEY (only if you want news for each holding, 3.7)
-  1. Go to aistudio.google.com and sign in with a Google account.
-  2. Click "Get API key" in the sidebar, then "Create API key". Choose an existing Google Cloud
-     project or let it create one (any name is fine, e.g. Finnbot).
-  3. Turn on billing for that project: AI Studio links to it, or go to console.cloud.google.com,
-     open Billing, and attach a payment card to the project. For 10 holdings with news on and both
-     digests, Google's part is about $0.55 a month.
-     Google also has a free tier with tight request limits on some models. Finnbot may work with it,
-     but your holdings' news can be slower or cut short, and Google's terms for free-tier data
-     differ, so check them before relying on it.
-  4. Recommended: in Google Cloud's Billing, set a budget alert so you're emailed if costs rise.
-  5. Copy the key (it usually starts with AIza) and save it in your password manager.
-  Each Gemini key includes 5,000 free web searches a month, far more than Finnbot uses, so you pay
-  only for the text.
+  1. Go to aistudio.google.com/api-keys and sign in with a Google account.
+  2. Click "Create API key". Choose an existing Google Cloud project or let it create one (any name
+     is fine, e.g. Finnbot).
+  3. Copy the key (it usually starts with AIza) and save it in your password manager.
+  That's all: no card, no billing. The key starts on Google's free tier, which costs nothing and
+  has daily limits (about 1,500 requests and 500 web searches a day, reset at midnight Pacific
+  time) that are far above what Finnbot needs: a 20-holding digest uses about 7 requests, since
+  each covers 3 stocks. It also has a per-minute limit, which can now and then leave a stock
+  without news in one digest.
+  When billing is needed: if your holdings' news is often missing, or Google stops the key for
+  being over a free limit (the top of your email says so), Andres may ask you to turn on billing:
+  go to console.cloud.google.com, open Billing, and attach a payment card to the key's project.
+  The same key keeps working. That costs about $0.50 a month for 10 holdings and about $1.05 for
+  20, with both digests (3.10). Then set a budget alert in Billing, so you're emailed if costs rise.
+  Google's free-tier terms let it use what's sent to improve its products. For Finnbot that's only
+  your stocks' symbols and company names (6.6), never your share counts, prices, or accounts.
 
 Tips for both:
   - Create a key used ONLY for Finnbot. If it ever leaks, you can delete it without affecting
     anything else you use the provider for.
   - Check your usage page after the first week to confirm costs match section 3.10.
-  - If a key stops working (expired, out of credit), the top of your email says so, and the rest
-    of your digest still arrives. Create a new key or top up, and send Andres the new key.
+  - If a key stops working (expired, out of credit, over a free-tier limit), the top of your email
+    says so, and the rest of your digest still arrives. Create a new key, top up, or turn on
+    billing, and send Andres the new key if you made one.
 
 3.7 News for each holding
 -------------------------
@@ -408,16 +426,18 @@ What it is: for each holding, Gemini searches the web for its most important rec
 writes up to 2 short summaries (medium priority or higher), each with a link to its source. They
 appear on the stock's card and feed the portfolio review.
 Options: on (default) or off.
-Cost: about $0.002 per stock for a digest's news. The Post-Market digest shows the morning's news
-again for stocks that haven't moved much, kept their signal, and haven't reported earnings since, so
-most of its news costs nothing. (Until October 23, 2026 it was about $0.012 per stock per digest,
-85% of the bill; Gemini now thinks less and covers 3 stocks per request.)
+Cost: nothing on Google's free tier (3.6), which is where you start. With billing on, about $0.002
+per stock for a digest's news. The Post-Market digest shows the morning's news again for stocks
+that haven't moved much, kept their signal, and haven't reported earnings since, so most of its
+news costs nothing.
+How much you see: with up to 10 holdings, each card shows up to 2 stories. With more, each shows its
+single most important story, except stocks flagged risky or urgent sell, which keep 2. This keeps
+the email under Gmail's size limit.
 Pros (on): explains WHY a stock is moving, with sources; the reviews can weigh real events.
-Cons (on): costs more; with 20 or more holdings the email nears Gmail's size limit and Finnbot
-shortens the news to fit.
+Cons (on): needs a Gemini key; costs a little if you ever need billing on.
 Turning it off means you don't need a Gemini key at all.
-Note: Google has announced that this model's prices double on January 1, 2027, which roughly
-doubles the news cost from then on.
+Note: Google has announced that this model's prices double on January 1, 2027. That doubles the
+news cost with billing on; the free tier stays free.
 
 3.8 Telegram
 ------------
@@ -431,8 +451,14 @@ What it is: Telegram is a free messaging app. Finnbot's Telegram bot sends you:
   - Notices when your holdings can't be read, for example the sheet isn't shared with Finnbot or
     your brokerage connection expired. (Problems with an API key show in the email instead.)
 Only the sell alerts and the stop or target alerts are marked urgent.
-Required: no. Without Telegram you get none of the above; the watchdog doesn't run, and urgent
-sells appear only in the email.
+Your three choices in the form:
+  Yes, with the watchdog      Everything above. The watchdog (3.9) runs with its standard settings.
+  Yes, without the watchdog   Everything above except the watchdog's urgent sell alerts: earnings
+                              reminders, stop and target alerts (checked at each digest instead of
+                              during the day), and notices. Urgent sells still show in the email.
+  No Telegram                 None of the above. Urgent sells and holdings problems appear only in
+                              the email.
+Required: no. Telegram is only for users with holdings.
 Cost: free.
 
 Steps:
@@ -447,6 +473,9 @@ Steps:
 ---------------------------------------------------
 What it is: between digests, the watchdog re-checks your holdings during the day and sends an
 urgent sell alert on Telegram if one is needed. It needs Telegram (3.8).
+Your choice: only on or off ("Yes, with the watchdog" in the form). It runs with the standard
+settings below: every 4 hours, extended hours, tripwire on. You can change any of them by asking
+Andres; the options are listed under each, and section 5 lists everything else you can change.
 
 How a check works, and why it stays cheap: each check first looks at prices without any AI.
 Only stocks that need it get a new AI review:
@@ -457,25 +486,29 @@ Every other stock keeps its latest signal. There is also a hard cap of 40 AI rev
 your watchdog, whatever happens.
 
 A) How often (hours between checks)
-   Options: 1 to 168 hours, or 0 to turn the watchdog off. Default: 4.
+   Standard: every 4 hours. Other options: 1 to 168 hours, or 0 (off).
      1 hour     Fastest reaction to news. More checks, so more reviews (still capped).
-     4 hours    The default: about two checks during a regular trading day.
+     4 hours    The standard: about 3-4 checks across a trading day's extended hours. The clock
+                counts from the last check or digest, and a check that would land within about
+                1.5 hours of a digest is skipped, since the digest reviews everything anyway.
+                One more check runs shortly before the 4:00 PM close.
      24 hours   One check a day.
-     0          Off. No urgent sell alerts by Telegram; earnings reminders and notices still come
-                if you have Telegram.
 
 B) When it runs (session)
-     Regular (default)  9:30 AM-4:00 PM ET on trading days (shorter on half-days).
-     Extended           4:00 AM-8:00 PM ET on trading days, including pre-market and after-hours,
-                        when many companies release earnings. More checks, so a bit more cost.
+     Extended (standard) 4:00 AM-8:00 PM ET on trading days, including pre-market and
+                        after-hours, when many companies release earnings. Outside regular
+                        hours it uses the pre-market or after-hours price.
+     Regular            9:30 AM-4:00 PM ET on trading days (shorter on half-days). Fewer checks,
+                        so a little less cost, but it misses earnings news that lands before the
+                        open or after the close until the next check.
      Around the clock   Every hour, every day, weekends and holidays included. Stocks barely
                         trade then, so this mostly adds checks without adding much.
 
 C) The tripwire
    What it is: a quick price check every hour between scheduled checks. If a stock moves about
    twice its average daily range, it gets an AI review right away instead of waiting for the next
-   scheduled check.
-   Options: on (default) or off.
+   scheduled check. It pauses for the hour after a digest, which has just reviewed everything.
+   Standard: on. Other option: off.
    Cost: nothing unless a big move triggers a review.
 
 Watchdog cost per month (21 trading days). The watchdog hasn't run on a schedule for long enough
@@ -485,47 +518,51 @@ to measure, so the first two columns are estimates; the last is the hard maximum
   ----------------------  --------------  --------------------
   $0.20                   $0.50           $1.70
 
-  "Quiet" is roughly 10 holdings checked every 4 hours on a normal day; hourly checks, extended
-  hours, earnings season, or a volatile market push it toward "busy".
+  "Quiet" is roughly 10 holdings with the standard settings on a normal day; more holdings,
+  hourly checks, earnings season, or a volatile market push it toward "busy". Each review costs
+  about $0.0015-0.002 on your Anthropic key. Most checks review nothing: a stock that hasn't moved
+  and was reviewed in the last 24 hours (every digest reviews them all) keeps its signal.
 
 3.10 What it all costs per month
 --------------------------------
 Your bill = digests + watchdog (3.9). Ideas, market signals, and macro news are covered by Andres.
 
 What each digest costs you:
-  - The AI review: about $0.002 per holding (Claude Haiku 5.5, 3.4).
-  - News, if on: about $0.002 per holding. With both digests, the Post-Market one reuses most of
-    the morning's news (3.7), so its news costs much less.
-  - The portfolio review: about $0.0015 per digest, however many holdings you have.
+  - The AI review: about $0.002 per holding (Claude Haiku 5.5, 3.4). Anthropic bills it.
+  - The portfolio review: about $0.0015 per digest, however many holdings you have. Anthropic.
+  - News, if on: nothing on Google's free tier (3.6). With billing on, about $0.002 per holding;
+    with both digests, the Post-Market one reuses most of the morning's news (3.7), so its news
+    costs much less. Google bills it.
 
-Estimates for 21 trading days a month. "Per stock per run" is the cost of one digest divided by
-your number of holdings, the portfolio review included, which is why it falls a little as the
-portfolio grows.
+Estimates for 21 trading days a month:
 
-  Digests  Holdings  NEWS OFF                      NEWS ON
-  a day              per stock    per month        per stock    per month
-                     per run                       per run
-  -------  --------  -----------  ---------        -----------  ---------
-  1        1         $0.0035      $0.07            $0.0055      $0.12
-  1        10        $0.0022      $0.45            $0.0042      $0.87
-  1        20        $0.0021      $0.87            $0.0041      $1.71
-  2        1         $0.0035      $0.15            $0.0048      $0.20
-  2        10        $0.0022      $0.90            $0.0034      $1.43
-  2        20        $0.0021      $1.74            $0.0033      $2.79
+  Digests  Holdings  ANTHROPIC (always)     GOOGLE (news; $0 on the free tier,
+  a day              per month              this only once billing is on)
+  -------  --------  ---------------------  ----------------------------------
+  1        1         $0.07                  $0.05
+  1        10        $0.45                  $0.42
+  1        20        $0.87                  $0.84
+  2        1         $0.15                  $0.05
+  2        10        $0.90                  $0.53
+  2        20        $1.74                  $1.05
 
-Then add the watchdog from 3.9 (typically $0.20-0.50 a month for 10 holdings, at most $1.70).
+Then add the watchdog from 3.9, also on Anthropic (typically $0.20-0.50 a month for 10 holdings;
+the hard maximum is $1.70, whatever the number of holdings).
 
 Examples:
-  - 10 holdings, news on, both digests, watchdog every 4 hours:
-      about $1.43 + $0.20 = roughly $1.65 a month (Anthropic about $1.10, Google about $0.55).
+  - 10 holdings, news on (free tier), both digests, watchdog on:
+      about $0.90 + $0.20 = roughly $1.10 a month, all Anthropic.
+  - The same, if Andres asks you to turn on Google billing: add about $0.53, so about $1.65.
+  - 20 holdings, news on (free tier), both digests, watchdog on:
+      about $1.74 + $0.20-0.50 = roughly $2.00-2.25 a month; at most $3.45 if the watchdog hits
+      its daily cap every day, plus about $1.05 with Google billing on.
   - 10 holdings, news off, Pre-Market only, watchdog off:
       about $0.45 a month.
 
-Who bills you: Anthropic for the reviews of your holdings (including the watchdog's) and the
-portfolio review, and Google for the news. From January 1, 2027, Google's part roughly doubles
-(3.7): for example 10 holdings, news on, both digests, goes from about $1.43 to about $1.95.
-All figures are estimates at October 2026 prices; your real costs depend on market activity and
-on how much the models write. The news figures are the least certain.
+From January 1, 2027, Google's prices roughly double (3.7), so its column doubles too, but only if
+your billing is on. All figures are estimates at October 2026 prices; your real costs depend on
+market activity and on how much the models write. Measured digests so far have come in at or a
+little under these figures. The news figures are the least certain.
 
 
 ================================================================================
@@ -536,33 +573,68 @@ on how much the models write. The news figures are the least certain.
   ------------------------------  ------------------------------------------------------------
   Ideas only (2.3)                All of section 3: brokerage name, home currency, every API
                                   key, news, Telegram, watchdog. Timezone is optional.
-  SnapTrade (2.1, check with      The Google Sheet.
-  Andres first)
+  SnapTrade (2.1)                 The Google Sheet and its ID.
   Google Sheets (2.2)             The SnapTrade Client ID and Consumer Key.
-  No Telegram                     All watchdog settings (it can't run without Telegram).
+  No Telegram                     The chat ID, and the watchdog (it can't run without Telegram).
+  Telegram without the watchdog   Nothing extra: you still send the chat ID.
   News off (3.7)                  The Gemini key.
-  Watchdog off (0 hours)          The watchdog's session and tripwire. Earnings reminders and
-                                  notices still come by Telegram.
   Home currency USD               Nothing extra; it's the default.
+  Any watchdog setting            Nothing: the standard settings (3.9) apply unless you ask
+                                  Andres for others.
 
 Things that are still needed even though you might expect otherwise:
-  - Neither digest: you still give an email address.
+  - Google Sheets: the sheet's ID, sent privately (the form doesn't ask for it).
+  - News on with the free tier: a Gemini key, even though it costs nothing.
 
 
 ================================================================================
-5. WHAT HAPPENS AFTER YOU SEND YOUR ANSWERS
+5. WHAT HAPPENS AFTER YOU SEND YOUR ANSWERS, AND WHAT YOU CAN CHANGE LATER
 ================================================================================
 
-  1. Andres adds you as a user and enters your settings and keys.
-  2. He runs Finnbot's settings check, which confirms nothing required is missing or invalid.
-  3. With Google Sheets, he confirms Finnbot can read your sheet.
-  4. Your first digest arrives at the next scheduled time on a trading day.
+  1. Finnbot reads the form's answers every hour and saves your settings. Andres gets a message
+     listing anything still missing (your keys, chat ID, or sheet ID).
+  2. Andres enters what you sent him privately.
+  3. At the next hourly check after nothing is missing, you're switched on automatically, and
+     Andres is told. Ideas-only users have nothing to send, so they're on within the hour.
+  4. Your first digest arrives at the next scheduled time on a trading day: 7:00 AM or 4:10 PM
+     New York time, about 20-30 minutes after it starts. A digest already being built when you're
+     switched on doesn't include you.
   5. If something goes wrong later (a key runs out, a connection expires, the sheet can't be
      read), the top of your email tells you what happened (sheet and brokerage problems also come
      by Telegram) and says "Contact Andres to address this issue." Andres is the only admin.
 
-To change a setting later (news off, a different watchdog interval), just ask
-Andres. Changes apply from the next run.
+WHAT YOU CAN CHANGE, AND HOW
+
+  Setting                         Standard               Your options                 How
+  ------------------------------  ---------------------  ---------------------------  ---------
+  Digests                         (your answer)          Both, Pre-Market, or         The form
+                                                         Post-Market only
+  How Finnbot sees your holdings  (your answer)          SnapTrade, Google Sheet,     The form
+                                                         or ideas only
+  Brokerage name                  (your answer)          Any label                    The form
+  Timezone                        (your answer)          Any city-based name (3.2)    The form
+  Home currency                   USD                    USD, CAD, EUR, GBP, AUD, COP The form
+  News for each holding           On                     On or off                    The form
+  Telegram                        (your answer)          With the watchdog, without   The form
+                                                         it, or none
+  Watchdog: hours between checks  4                      1 to 168, or 0 (off)         Ask Andres
+  Watchdog: session               Extended               Regular, extended, or        Ask Andres
+                                                         around the clock (3.9)
+  Watchdog: tripwire              On                     On or off                    Ask Andres
+  Long-term ideas per digest      3                      1 to 10                      Ask Andres
+  Swing ideas per digest          5                      1 to 10                      Ask Andres
+
+And more on request: if there's something else you'd like Finnbot to do differently for you,
+ask Andres. Much of Finnbot can be adjusted, and good suggestions may become an option for
+everyone.
+
+  - Through the form: fill it in again with the same first name and email. Your newest answer
+    replaces the old one at the next hourly check. If the new choice needs something new (for
+    example a Gemini key when you turn news on, or a sheet ID when you switch to Google Sheets),
+    your digests pause until Andres has entered it, so send it to him privately before you send
+    the new answer.
+  - Through Andres: message him. Changes apply from the next run.
+  - To stop Finnbot altogether, tell Andres.
 
 
 ================================================================================
@@ -614,8 +686,8 @@ How to send your keys to Andres:
 6.4 Limit the damage in advance
 -------------------------------
   - Create a key used only for Finnbot, so you can delete it without affecting anything else.
-  - Set a monthly spend limit (Anthropic) or a budget alert (Google), so a leak can never cost
-    much.
+  - Set a monthly spend limit (Anthropic) or, once billing is on, a budget alert (Google), so a
+    leak can never cost much. A Gemini key on the free tier can't run up a bill at all.
   - Turn on two-factor authentication for each provider account and for SnapTrade.
   - Look at each provider's usage page now and then. Usage you don't recognise is the first sign of
     a leak.
@@ -632,10 +704,11 @@ How to send your keys to Andres:
 ------------------------
   - Your holdings (symbols, share counts, prices paid) are sent to Anthropic, whose AI model
     reviews them and writes the portfolio review (with your account names). Gemini's news
-    searches use only the symbols and company names.
+    searches use only the symbols and company names; on the free tier, Google may use those to
+    improve its products.
   - With SnapTrade, SnapTrade can read your brokerage positions.
-  - With Google Sheets, only you, Finnbot's service account, and anyone you shared the sheet with
-    can see it.
+  - With Google Sheets, only you and Finnbot's service account can see it (2.2).
+  - Andres sees your settings and keys in order to run Finnbot for you, and never shares them.
 
 
 ================================================================================
@@ -645,32 +718,32 @@ How to send your keys to Andres:
 Most answers go in Finnbot's sign-up form. Everything marked (PRIVATELY) never goes in the form:
 get it ready first, then send it through the private channel Andres gives you (section 6.3).
 
-Everyone:
+Everyone (in the form):
   [ ] Your first name
   [ ] Your email address
-  [ ] Which digests: Pre-Market, Post-Market, both, or neither
-  [ ] Holdings: SnapTrade, Google Sheets, or ideas only
-  [ ] Gmail: allow Finnbot's dynamic email (1.4), so the dropdowns work
+  [ ] Which digests: both, Pre-Market only, or Post-Market only
+  [ ] Holdings: link your brokerage (SnapTrade), a Google Sheet, or no holdings
+  [ ] Gmail: allow Finnbot's dynamic email (1.4), so the dropdowns work (not in the form)
 
 SnapTrade only:
-  [ ] SnapTrade Client ID and Consumer Key (PRIVATELY, and only after agreeing it with Andres)
+  [ ] SnapTrade Client ID and Consumer Key (PRIVATELY)
 
 Google Sheets only:
-  [ ] The sheet's ID: in the form if shared only with Finnbot's service account; PRIVATELY if
-      shared by link
+  [ ] The sheet, shared with Finnbot's service account (2.2)
+  [ ] The sheet's ID (PRIVATELY)
 
-With holdings (SnapTrade or Google Sheets):
+With holdings (SnapTrade or Google Sheets), in the form:
   [ ] Brokerage name (any label for a sheet)
   [ ] Timezone, e.g. America/Toronto
   [ ] Home currency: USD, CAD, EUR, GBP, AUD, or COP (default USD)
-  [ ] Anthropic key (PRIVATELY)
   [ ] News for each holding: on or off (default on)
-  [ ] Gemini key (PRIVATELY; only with news on)
-  [ ] Telegram chat ID (optional, PRIVATELY)
-  [ ] Watchdog, if you use Telegram: hours between checks (default 4, 0 = off), session (regular,
-      extended, or around the clock; default regular), tripwire on or off (default on)
+  [ ] Telegram: with the watchdog, without it, or none (3.8)
+And sent PRIVATELY:
+  [ ] Anthropic key
+  [ ] Gemini key (only with news on; free tier, no billing needed to start)
+  [ ] Telegram chat ID (only if you chose Telegram)
 
-Ideas only, optionally:
+Ideas only, optionally (in the form):
   [ ] Timezone, for the greeting
 
 
@@ -684,6 +757,11 @@ shares a day, and costs at least $30 a share. That is about 600 stocks. Two scre
 them down, the survivors are scored by an AI model, and the best scores become the ideas. The
 scoring model is DeepSeek V4.1 Flash, chosen in a comparison against stronger models; Andres pays
 for it.
+How many: up to 3 long-term and 5 swing ideas per digest; ask Andres for anywhere from 1 to 10 of
+each. A day with fewer stocks above the pass mark shows fewer.
+"Different industries" below uses Yahoo Finance's industries (about 140, such as Semiconductors
+or Regional Banks), so two Technology stocks that do different things can both be picked. "Tech"
+means the Technology and Communication Services sectors.
 
 8.1 Long-term ideas: businesses worth owning for years
   1. Quality screen (Yahoo Finance): at least 8 analysts follow it and their average rating leans
@@ -694,13 +772,15 @@ for it.
   2. Confirmation (Finnhub, over the last 12 months): revenue up at least 9%, earnings per share
      growing, debt at most 1.75 times equity, and a P/E between 0 and 65.
   3. Not overheated: a trend-strength reading (ADX) of 45 or less.
-  4. Scoring: the model scores each survivor out of 100 on valuation, financial health, growth,
-     and competitive advantage (its "moat"). A score within 5 points of the pass mark is scored
-     twice more and the middle score kept, so one unlucky run can't decide a close call.
-  5. Picking: up to 3 ideas scoring 85 or more, highest first, each from a different sector, with
-     two exceptions: at most 2 of the 3 may be tech (Technology or Communication Services), and
-     those two may share a sector; and at least 1 must be outside tech, which may score from 80.
-     On a day few stocks reach 85, the list is shorter.
+     About 100 stocks usually get this far; the 35 that rate best on the scoring's own measures
+     go on to be scored.
+  4. Scoring: the model scores each one out of 100 on valuation, financial health, growth, and
+     competitive advantage (its "moat"). A score within 5 points of the pass mark is scored twice
+     more and the middle score kept, so one unlucky run can't decide a close call.
+  5. Picking: ideas scoring 85 or more, highest first, each from a different industry. At least a
+     third of the list, rounded up, is outside tech (1 of 3), and those may score from 80. These
+     mix rules only choose between stocks: if they'd leave the list short, it's filled with the
+     best of the stocks they left out. On a day few stocks reach 85, the list is shorter.
 Each card shows the score and its four parts, the model's thesis and key risk, the forward P/E,
 PEG, revenue growth, profit margin, and two momentum readings: RSI (overbought at 70+, oversold at
 30 or less) and the 12-month price return.
@@ -722,9 +802,11 @@ PEG, revenue growth, profit margin, and two momentum readings: RSI (overbought a
   4. Scoring: the model scores out of 100 on the technical setup, the plan's reward against its
      risk (worked out by Finnbot, not the model), momentum and volume, and catalysts and sentiment.
      Close calls are scored again, as above.
-  5. Picking: up to 5 ideas scoring 75 or more that are still early in their move (not already run
-     up from their recent low, RSI 70 or less, not above the upper Bollinger Band), with more than
-     half of them from different sectors.
+  5. Picking: ideas scoring 75 or more that are still early in their move (not already run up from
+     their recent low, RSI 70 or less, not above the upper Bollinger Band), with more than half of
+     them from different industries, and at least 1 outside tech in a list of 4 or more (2 in a
+     list of 8 or more). As above, a list the mix rules would leave short is filled with the best
+     of the rest.
 Each card shows the plan (entry, stop, target, and the ratio of gain to risk), what the stop and
 target are based on, and the technical readings behind the setup.
 

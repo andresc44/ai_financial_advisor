@@ -162,7 +162,7 @@ class Plan:
     name: str
     settings: dict[str, Optional[str]] = field(default_factory=dict)  # profile key -> value; None = clear if set
     wants_telegram: bool = False
-    sheet_by_link: bool = False
+    wants_watchdog: bool = False
     notes: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
@@ -186,8 +186,7 @@ def plan_from_answer(answer: Answer) -> Plan:
         s["Receive_Postmarket_Digest"] = str(digests.startswith(("Both", "Post-Market")))
 
     holdings = answer.get("How should Finnbot see your holdings?")
-    source = ("SHEETS" if holdings.startswith("Google Sheets") else "SNAPTRADE" if holdings.startswith("SnapTrade")
-              else "NO_HOLDINGS" if holdings.startswith("Ideas only") else None)
+    source = _holdings_source(holdings)
     if source is None:
         plan.problems.append(f"Unrecognised holdings answer: {holdings!r}.")
         return plan
@@ -200,10 +199,6 @@ def plan_from_answer(answer: Answer) -> Plan:
             plan.notes.append("Ideas only with neither digest: they would get nothing.")
         return plan
 
-    if source == "SHEETS":
-        plan.sheet_by_link = answer.get("How did you share the sheet?").startswith("By link")
-        if answer.get("Sheet ID"):
-            s["google_sheets_id"] = answer.get("Sheet ID")
     if answer.get("Brokerage name to show in your digest"):
         s["account_company"] = answer.get("Brokerage name to show in your digest")
     if answer.get("Home currency"):
@@ -216,23 +211,32 @@ def plan_from_answer(answer: Answer) -> Plan:
     for key in HOLDINGS_MODEL_SETTINGS:
         s[key] = None
 
+    # 2026-10-26 (Andres): the form no longer asks how often, when, or about the tripwire. With the watchdog, nothing
+    # is written, so params_dict["WATCHDOG"]'s defaults apply (every 4 h, extended hours, tripwire on) unless .env
+    # sets them, like <NAME>_LONG_RECS; apply_answer only clears a 0 left by an earlier answer without it
     telegram = answer.get("Do you want Telegram messages?")
     plan.wants_telegram = telegram.startswith("Yes")
-    if telegram.startswith("Yes, with the watchdog"):
-        if answer.get("Hours between checks"):
-            s["watchdog_interval_hours"] = answer.get("Hours between checks")
-        when = answer.get("When should it run?")
-        session = ("regular" if when.startswith("Regular") else "extended" if when.startswith("Extended")
-                   else "24_7" if when.startswith("Around") else None)
-        if session:
-            s["watchdog_session"] = session
-        if answer.get("Tripwire"):
-            s["watchdog_tripwire"] = "true" if answer.get("Tripwire").startswith("On") else "false"
-    elif telegram:
+    plan.wants_watchdog = telegram.startswith("Yes, with the watchdog")
+    if telegram and not plan.wants_watchdog:
         s["watchdog_interval_hours"] = "0"  # Telegram without the watchdog, or no Telegram
-    if answer.get("Anything else Andres should know? (optional)"):
-        plan.notes.append(f"Their note: {answer.get('Anything else Andres should know? (optional)')}")
     return plan
+
+
+def _holdings_source(holdings: str) -> Optional[str]:
+    """
+    The holdings answer as SNAPTRADE, SHEETS, or NO_HOLDINGS (None if unrecognised). Claude-authored (2026-10-26):
+    the form's options were reworded that day ("Link automatically to brokerage, ... (through SnapTrade)", "Manually
+    update a Google Sheet", "No holdings, just suggestions to buy (free)"); the first form's wording still reads.
+    Matched by keyword, so a spelling fix in the form (as that day's "auomatically") needs no change here.
+    """
+    lowered = holdings.lower()
+    if "snaptrade" in lowered:
+        return "SNAPTRADE"
+    if "google sheet" in lowered:
+        return "SHEETS"
+    if lowered.startswith(("no holdings", "ideas only")):
+        return "NO_HOLDINGS"
+    return None
 
 
 # ---------------------------------------------------------------------------- Writing .env and ACTIVE_USERS
@@ -431,10 +435,8 @@ def missing_report(name: str, env: dict[str, Optional[str]], plan: Plan) -> list
         required = _required(rule, source, provider, news)
         if key == "telegram_chat_id" and plan.wants_telegram and source in ("SNAPTRADE", "SHEETS"):
             required, description = True, "Telegram chat ID (they chose Telegram; sent privately)"
-        if key == "google_sheets_id" and plan.sheet_by_link:
-            description += " (shared by link, so they send the ID privately)"
         if key in ("anthropic_api_key", "deepseek_api_key", "gemini_api_key", "snaptrade_client_id",
-                   "snaptrade_consumer_key"):
+                   "snaptrade_consumer_key", "google_sheets_id"):  # 2026-10-26: the form no longer asks for the sheet ID
             description += " (sent privately)"
         current = value(key)
         if current is None:
@@ -477,6 +479,7 @@ class Applied:
     shared_email_with: list[str] = field(default_factory=list)
     changes: list[EnvChange] = field(default_factory=list)
     rows: list[tuple[str, str, str]] = field(default_factory=list)
+    env: dict[str, Optional[str]] = field(default_factory=dict)  # .env once applied (as it would be, in a dry run)
     activated: bool = False
     activation: str = ""
 
@@ -508,6 +511,8 @@ def apply_answer(answer: Answer, env_path: Path = ENV_PATH, params_path: Path = 
         if key.endswith("_EMAIL") and not key.startswith(prefix + "_") and form_email
         and (value or "").strip().lower() == form_email.lower()})
 
+    if plan.wants_watchdog and (env.get(profile["watchdog_interval_hours"]) or "").strip() == "0":
+        plan.settings["watchdog_interval_hours"] = None  # Off from an earlier answer: back to the default
     if write:
         result.changes = update_env(env_path, prefix, plan.name,
                                     {profile[key]: value for key, value in plan.settings.items()}, dry_run=dry_run)
@@ -528,14 +533,19 @@ def apply_answer(answer: Answer, env_path: Path = ENV_PATH, params_path: Path = 
             after = {**after, **placeholders} if dry_run else dotenv_values(env_path)
         # Claude-authored (2026-10-24, Andres): an empty <NAME>_TELEGRAM_CHAT_ID= line when .env has none, so there's
         # a spot for the chat ID once they have one. 2026-10-25 (Andres): only when the form says they'll use Telegram.
-        # A value already there is never touched
-        telegram = profile["telegram_chat_id"]
-        if plan.wants_telegram and telegram not in after:
-            result.changes += update_env(env_path, prefix, plan.name, {telegram: ""}, dry_run=dry_run)
-            after = {**after, telegram: ""} if dry_run else dotenv_values(env_path)
+        # A value already there is never touched. 2026-10-26 (Andres): the same for <NAME>_SHEETS_ID when they chose a
+        # Google Sheet, since the form no longer asks for its ID; once it's filled in, the sync activates them
+        spots = [profile["telegram_chat_id"]] if plan.wants_telegram else []
+        if plan.settings["holdings_source"] == "SHEETS":
+            spots.append(profile["google_sheets_id"])
+        blanks = {env_key: "" for env_key in spots if env_key not in after}
+        if blanks:
+            result.changes += update_env(env_path, prefix, plan.name, blanks, dry_run=dry_run)
+            after = {**after, **blanks} if dry_run else dotenv_values(env_path)
     if keys and not dry_run and enter_keys(env_path, plan.name, result.rows):
         after = dotenv_values(env_path)
         result.rows = missing_report(plan.name, after, plan)
+    result.env = after
     if not plan.wants_telegram and plan.settings["holdings_source"] != "NO_HOLDINGS" and (
             after.get(profile["telegram_chat_id"]) or "").strip():
         plan.notes.append(f"They chose no Telegram, but {profile['telegram_chat_id']} is set: earnings reminders and "
@@ -618,12 +628,30 @@ def _activation_notice(result: Applied) -> tuple[str, str]:
     lines += [f"{label}: {s[key]}" for key, label in (("home_currency", "Home currency"), ("home_timezone", "Timezone"))
               if s.get(key)]
     if source != "ideas only":
-        watchdog = s.get("watchdog_interval_hours")
-        lines.append("Telegram: " + ("no" if not plan.wants_telegram else "yes, no watchdog" if watchdog in (None, "", "0")
-                                     else f"yes, watchdog every {watchdog} h ({s.get('watchdog_session') or 'regular'})"))
+        lines.append("Telegram: " + ("no" if not plan.wants_telegram else _watchdog_summary(plan.name, result.env)))
     return (f"active {plan.name} {date.today().isoformat()}",
             f"✅ New Finnbot user added: {html.escape(plan.name)}. Nothing required is missing, so they get the next "
             f"digest.\n\n" + "\n".join(f"- {html.escape(line, quote=False)}" for line in lines))
+
+
+def _watchdog_summary(name: str, env: dict[str, Optional[str]]) -> str:
+    """
+    Claude-authored (2026-10-26): "yes, watchdog every 4 h (extended), tripwire on" for a Telegram user: their .env
+    settings, else params_dict["WATCHDOG"]'s defaults (the form no longer asks).
+    """
+    profile, watchdog = build_profile(name), params_dict["WATCHDOG"]
+
+    def value(key: str) -> Optional[str]:
+        current = (env.get(profile[key]) or "").strip()
+        return current if current and current != MISSING_VALUE else None
+
+    hours = value("watchdog_interval_hours") or str(watchdog["DEFAULT_INTERVAL_HOURS"])
+    if hours == "0":
+        return "yes, no watchdog"
+    tripwire = value("watchdog_tripwire")
+    tripwire_on = watchdog["TRIPWIRE_DEFAULT"] if tripwire is None else tripwire.lower() in ("true", "1", "yes", "on")
+    return (f"yes, watchdog every {hours} h ({value('watchdog_session') or watchdog['SESSION']}), "
+            f"tripwire {'on' if tripwire_on else 'off'}")
 
 
 def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, sheet_id: Optional[str] = None) -> list[str]:
@@ -639,7 +667,8 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
     - The admins hear on Telegram, once each: a new or edited answer (with what's missing), a user becoming active
       ("New Finnbot user added", with what they signed up for; also when added by hand, 2026-10-22) or inactive,
       and a name clash.
-    If the sheet can't be read or has no answers, nothing changes, so a glitch can't switch everyone off.
+    If the sheet can't be read or has no answers, nothing changes, so a glitch can't switch everyone off; an answer
+    that can't be read (2026-10-26) leaves its user as they were, and the admins are told once.
     Never raises: a problem is logged and the digest goes on. Returns the users who became active.
     """
     sheet_id = sheet_id or os.environ.get(SHEET_ID_KEY, "").strip()
@@ -650,8 +679,9 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
         if not answers:
             print("[signup] The sheet has no answers, so ACTIVE_USERS is left as it is.")
             return []
-        wanted, waiting, notices = [], {}, []  # Notices go last, once the run's users and settings are in place
+        wanted, waiting, kept, notices = [], {}, [], []  # Notices go last, once the run's users and settings are in place
         results = {}
+        before = _listed_users(params_path)
         for answer in answers.values():
             result = apply_answer(answer, env_path, params_path, activate=False)
             results[result.plan.name] = result
@@ -661,7 +691,11 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
                 wanted.append(result.plan.name)
             elif result.status == "applied":
                 waiting[result.plan.name] = missing
-        before = _listed_users(params_path)
+            elif result.status == "invalid" and result.plan.name in before:
+                # Claude-authored (2026-10-26): an answer that can't be read (e.g. the form's wording changed, as on
+                # 2026-10-26, when every user was switched off) leaves an active user active, settings untouched
+                wanted.append(result.plan.name)
+                kept.append(result.plan.name)
         set_active_users(params_path, wanted)
         load_dotenv(env_path, override=True)  # This run sees the new settings
         params_dict["ACTIVE_USERS"][:] = wanted
@@ -684,10 +718,11 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
         for reason, body in notices:
             _notify_admins(reason, body)
         # 2026-10-24: logged when something changed or is waiting; every hour otherwise only while debugging
-        (print if added or removed or waiting else debug)(
+        (print if added or removed or waiting or kept else debug)(
               f"[signup] {len(answers)} user(s) in the sheet. ACTIVE_USERS: {', '.join(wanted) or 'none'}"
               + (f"; added {', '.join(added)}" if added else "") + (f"; removed {', '.join(removed)}" if removed else "")
-              + (f"; waiting for settings: {', '.join(waiting)}" if waiting else "") + ".")
+              + (f"; waiting for settings: {', '.join(waiting)}" if waiting else "")
+              + (f"; kept as they were (answer unreadable): {', '.join(kept)}" if kept else "") + ".")
         return added
     except Exception as e:
         print(f"[ERROR] Sign-up sync failed ({type(e).__name__}: {e}); the digest goes on without it.")
@@ -702,7 +737,12 @@ def _report_answer(result: Applied, answer: Answer, notices: list[tuple[str, str
     plan, name = result.plan, html.escape(result.plan.name)
     fingerprint = answer.fingerprint()[:12]  # The notice goes once per version of the answer
     if result.status == "invalid":
-        print(f"[signup] Row {answer.row_number}: no name or holdings choice; skipped.")
+        print(f"[signup] Row {answer.row_number}: {' '.join(plan.problems) or 'no name or holdings choice.'} Skipped.")
+        if plan.name:  # 2026-10-26: e.g. a reworded option in the form, which the import has to learn
+            notices.append((f"unreadable {plan.name} {fingerprint}", (
+                f"⚠️ {name}'s sign-up answer couldn't be read: {html.escape(' '.join(plan.problems), quote=False)} "
+                f"If {name} was active, they stay active with their current settings. Check the form's wording "
+                f"against src/users/import_signup.py.")))
         return
     if result.status == "conflict":
         print(f"[signup] {plan.name}: the name is already used with another email; not imported.")

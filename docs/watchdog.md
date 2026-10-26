@@ -53,7 +53,7 @@ Since 2026-10-23 every setting in `src/config/parameters.py` can also be changed
 | Key | Default | Meaning |
 |---|---|---|
 | `ACTIVE_USERS` | Synced from the sign-up sheet (`src/users/import_signup.py`, 2026-10-22) | Users the digest **and** the watchdog run for. Each needs a profile in `user_profiles.py`; unknown names are skipped with a warning. Their `.env` settings still decide which digests they get and whether the watchdog runs for them. |
-| `WATCHDOG.SESSION` | `"regular"` | Default session for all users. |
+| `WATCHDOG.SESSION` | `"extended"` | Default session for all users (2026-10-26; was `"regular"`). Since that day the sign-up form only asks whether a user wants the watchdog: the interval, session, and tripwire are these defaults unless `<NAME>_WATCHDOG_INTERVAL_HOURS` / `_SESSION` / `_TRIPWIRE` are set in `.env`, which the sign-up sync leaves alone. |
 | `WATCHDOG.SESSIONS` | see file | `pre_open_minutes` / `post_close_minutes` are measured from each day's actual open and close. `extended` = 330 / 240, which is 4:00–20:00 ET on a full day. Set `pre_open_minutes` to 150 to start at 7:00. |
 | `WATCHDOG.EXCHANGE_CALENDARS` | `["XNYS", "XTSE"]` | A day counts as a trading day if **any** listed exchange trades, so US Thanksgiving is a trading day because the TSX is open. |
 | `WATCHDOG.DEFAULT_INTERVAL_HOURS` | `4` | Hours between scheduled checks. |

@@ -224,3 +224,26 @@ def test_saved_values_apply_when_parameters_py_is_imported(tmp_path, monkeypatch
     params = {"MARKET_SIGNALS": {"MOOD_MATRIX": {"calm": {"greed": ("Confident", "pos", "Old.")}}}}
     store.apply_saved(params)
     assert params["MARKET_SIGNALS"]["MOOD_MATRIX"]["calm"]["greed"][0] == "Confident"
+
+
+def test_the_watchdog_defaults_come_from_env_then_the_tab_then_parameters_py(sheet, monkeypatch):
+    # Claude-authored (2026-10-26, Andres): the form only asks whether a user wants the watchdog, so its interval,
+    # session, and tripwire are the defaults on the tab (else parameters.py), unless the user's .env sets them
+    from src.personalized import user_settings
+    from src.personalized.user_profiles import USER_PROFILES, build_profile
+    monkeypatch.setitem(USER_PROFILES, "Tester", build_profile("Tester"))
+    for key in ("INTERVAL_HOURS", "SESSION", "TRIPWIRE"):
+        monkeypatch.delenv(f"TESTER_WATCHDOG_{key}", raising=False)
+    defaults = params_dict["WATCHDOG"]
+    assert user_settings.get_watchdog_settings("Tester") == user_settings.WatchdogSettings(
+        defaults["DEFAULT_INTERVAL_HOURS"], defaults["SESSION"], defaults["TRIPWIRE_DEFAULT"])
+
+    sheet.edit("WATCHDOG.DEFAULT_INTERVAL_HOURS", "2")
+    sheet.edit("WATCHDOG.SESSION", "24_7")
+    sheet.edit("WATCHDOG.TRIPWIRE_DEFAULT", "False")
+    rs.sync_settings(sheet, now=LATER)
+    assert user_settings.get_watchdog_settings("Tester") == user_settings.WatchdogSettings(2, "24_7", False)
+
+    monkeypatch.setenv("TESTER_WATCHDOG_INTERVAL_HOURS", "6")
+    monkeypatch.setenv("TESTER_WATCHDOG_SESSION", "regular")
+    assert user_settings.get_watchdog_settings("Tester") == user_settings.WatchdogSettings(6, "regular", False)

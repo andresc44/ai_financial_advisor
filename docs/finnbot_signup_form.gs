@@ -1,6 +1,10 @@
 /**
  * Finnbot new-user sign-up form, built with Google Apps Script.
  *
+ * 2026-10-26: the live form was edited by hand and no longer matches this script. Its holdings options are reworded,
+ * and it no longer asks for the sheet ID (sent privately), how the sheet is shared, the watchdog's interval, session,
+ * or tripwire (the defaults apply), or for a note. src/users/import_signup.py reads both versions' answers.
+ *
  * How to use:
  *   1. Go to script.google.com and click "New project".
  *   2. Replace the contents of Code.gs with this whole file, and click Save.

@@ -7,51 +7,53 @@ from dotenv import dotenv_values
 import src.users.import_signup as signup
 from src.config.parameters import params_dict
 
-# The answers sheet's header, as the first form (docs/finnbot_signup_form.gs) created it: titles repeat. The model
-# questions were dropped on 2026-10-22 (NEW_HEADER); an answer from either form clears per-user model choices
-HEADER = ["Timestamp", "Your first name", "Email address for the digest", "Which digests do you want?",
-          "How should Finnbot see your holdings?", "Please confirm", "Please confirm your sheet's layout",
-          "How did you share the sheet?", "Sheet ID", "Your timezone (optional)",
-          "Brokerage name to show in your digest", "Your timezone", "Home currency", "News for each holding",
-          "Which AI model should review your holdings?", "Claude model", "Effort (how long it thinks)",
-          "DeepSeek model", "Effort (how long it thinks)", "Please confirm", "Do you want Telegram messages?",
-          "Hours between checks", "When should it run?", "Tripwire", "Please confirm",
-          "Anything else Andres should know? (optional)", "Email address"]
-MODEL_QUESTIONS = {"Which AI model should review your holdings?", "Claude model", "Effort (how long it thinks)",
-                   "DeepSeek model"}
-NEW_HEADER = [title for title in HEADER if title not in MODEL_QUESTIONS]
+# The answers sheet's header, as Andres edited the form on 2026-10-26 (no sheet ID, watchdog, or note questions: the
+# watchdog's defaults apply unless .env sets them)
+HEADER = ["Timestamp", "Email address", "Your first name", "Email address for the digest", "Which digests do you want?",
+          "How should Finnbot see your holdings?", "Your timezone (optional)", "Brokerage name to show in your digest",
+          "Your timezone", "Home currency", "News for each holding", "Do you want Telegram messages?"]
+# The first form's (docs/finnbot_signup_form.gs), with titles that repeat; its answers still read
+OLD_HEADER = ["Timestamp", "Your first name", "Email address for the digest", "Which digests do you want?",
+              "How should Finnbot see your holdings?", "Please confirm", "Please confirm your sheet's layout",
+              "How did you share the sheet?", "Sheet ID", "Your timezone (optional)",
+              "Brokerage name to show in your digest", "Your timezone", "Home currency", "News for each holding",
+              "Which AI model should review your holdings?", "Claude model", "Effort (how long it thinks)",
+              "DeepSeek model", "Effort (how long it thinks)", "Please confirm", "Do you want Telegram messages?",
+              "Hours between checks", "When should it run?", "Tripwire", "Please confirm",
+              "Anything else Andres should know? (optional)", "Email address"]
 CLEARED = dict.fromkeys(["holdings_llm_model", "holdings_llm_effort", "holdings_claude_model", "holdings_claude_effort"])
 BOTH = "Both: Pre-Market (starts 7:00 AM ET) and Post-Market (starts 4:10 PM ET)"
+WITH_WATCHDOG = "Yes, with the watchdog: urgent sell alerts, earnings reminders, and notices"
 SAM = {
     "Timestamp": "10/22/2026 10:00:00", "Your first name": "sam", "Email address for the digest": "sam@example.com",
-    "Which digests do you want?": BOTH,
-    "How should Finnbot see your holdings?": "Google Sheets: I'll keep my holdings in a spreadsheet",
-    "How did you share the sheet?": "Privately, with Finnbot's service-account email (recommended)",
-    "Sheet ID": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", "Brokerage name to show in your digest": "My portfolio",
-    "Your timezone": "Europe/London", "Home currency": "GBP",
-    "News for each holding": "On (default): about $0.012 per stock per digest",
-    "Which AI model should review your holdings?": "Choose a Claude model (needs an Anthropic key)",
-    "Claude model": "Claude Opus 5.5: about $0.054, stronger reasoning", ("Effort (how long it thinks)", 0): "High",
-    "Do you want Telegram messages?": "Yes, with the watchdog: urgent sell alerts, earnings reminders, and notices",
-    "Hours between checks": "2",
-    "When should it run?": "Extended: 4:00 AM-8:00 PM ET on trading days (pre-market and after-hours too)",
-    "Tripwire": "Off", "Anything else Andres should know? (optional)": "I hold mostly ETFs.",
+    "Which digests do you want?": BOTH, "How should Finnbot see your holdings?": "Manually update a Google Sheet",
+    "Brokerage name to show in your digest": "My portfolio", "Your timezone": "Europe/London", "Home currency": "GBP",
+    "News for each holding": "On (default)", "Do you want Telegram messages?": WITH_WATCHDOG,
 }
 KIM = {  # Ideas only
     "Your first name": "Kim", "Email address for the digest": "kim@example.com",
     "Which digests do you want?": "Pre-Market only (starts 7:00 AM ET, before the US market opens)",
-    "How should Finnbot see your holdings?": "Ideas only: no holdings, free", "Your timezone (optional)": "America/Toronto",
+    "How should Finnbot see your holdings?": "No holdings, just suggestions to buy (free)",
+    "Your timezone (optional)": "America/Toronto",
 }
-LEE = {  # A sheet shared by link, a DeepSeek model, no Telegram
+LEE = {  # A Google Sheet, no news, no Telegram
+    "Your first name": "Lee", "Email address for the digest": "lee@example.com", "Which digests do you want?": BOTH,
+    "How should Finnbot see your holdings?": "Manually update a Google Sheet",
+    "Brokerage name to show in your digest": "Wealthsimple", "Your timezone": "America/Bogota", "Home currency": "COP",
+    "News for each holding": "Off", "Do you want Telegram messages?": "No Telegram",
+}
+OLD_FORM_LEE = {  # The first form's wording, a sheet shared by link, a DeepSeek model, and watchdog answers
     "Your first name": "Lee", "Email address for the digest": "lee@example.com", "Which digests do you want?": BOTH,
     "How should Finnbot see your holdings?": "Google Sheets: I'll keep my holdings in a spreadsheet",
     "How did you share the sheet?": "By link (\"Anyone with the link can view\"): I'll send the sheet's ID to Andres "
                                     "privately, since anyone with it can see my holdings",
+    "Sheet ID": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
     "Brokerage name to show in your digest": "Wealthsimple", "Your timezone": "America/Bogota", "Home currency": "COP",
     "News for each holding": "Off: saves that cost",
     "Which AI model should review your holdings?": "Choose a DeepSeek model (needs a DeepSeek key; cheapest, data goes to DeepSeek)",
     "DeepSeek model": "DeepSeek V4 Pro: about $0.007, stronger", ("Effort (how long it thinks)", 1): "None (no thinking)",
-    "Do you want Telegram messages?": "No Telegram",
+    "Do you want Telegram messages?": WITH_WATCHDOG, "Hours between checks": "2",
+    "When should it run?": "Regular: 9:30 AM-4:00 PM ET", "Tripwire": "Off",
 }
 ENV = ("# Shared\r\nANDRES_EMAIL=andres@example.com\r\nANDRES_GEMINI_API_KEY=secret-gemini-value\r\n\r\n"
        "# --- Steven ---\r\nSTEVEN_HOLDINGS_SOURCE=SHEETS\r\nSTEVEN_EMAIL=${ANDRES_EMAIL}  # TEMP: Andres's\r\n"
@@ -85,26 +87,37 @@ def active_users(params):
 
 def test_each_answer_becomes_the_matching_settings():
     sam = signup.plan_from_answer(answer(SAM))
-    assert sam.name == "Sam" and sam.wants_telegram and not sam.sheet_by_link
+    assert sam.name == "Sam" and sam.wants_telegram and sam.wants_watchdog
+    # 2026-10-26: with the watchdog, no watchdog settings are written, so the defaults (or .env) apply
     assert sam.settings == {
         "destination_email": "sam@example.com", "Receive_Premarket_Digest": "True", "Receive_Postmarket_Digest": "True",
-        "holdings_source": "SHEETS", "home_timezone": "Europe/London",
-        "google_sheets_id": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789", "account_company": "My portfolio",
-        "home_currency": "GBP", "receive_holding_news": "True", **CLEARED,  # A model answered on the old form: ignored
-        "watchdog_interval_hours": "2", "watchdog_session": "extended", "watchdog_tripwire": "false"}
-    assert sam.notes == ["Their note: I hold mostly ETFs."]
-    # The new form has no model questions: the same settings
-    new_form = {title: value for title, value in SAM.items() if (title[0] if isinstance(title, tuple) else title) not in MODEL_QUESTIONS}
-    assert signup.plan_from_answer(answer(new_form, header=NEW_HEADER)).settings == sam.settings
+        "holdings_source": "SHEETS", "home_timezone": "Europe/London", "account_company": "My portfolio",
+        "home_currency": "GBP", "receive_holding_news": "True", **CLEARED}
     lee = signup.plan_from_answer(answer(LEE))
     # No Telegram turns the watchdog off
-    assert all(lee.settings[key] is None for key in CLEARED)
-    assert lee.sheet_by_link and "google_sheets_id" not in lee.settings and not lee.wants_telegram
+    assert not lee.wants_telegram and not lee.wants_watchdog
     assert lee.settings["watchdog_interval_hours"] == "0" and lee.settings["receive_holding_news"] == "False"
     kim = signup.plan_from_answer(answer(KIM))
     assert kim.settings == {"destination_email": "kim@example.com", "Receive_Premarket_Digest": "True",
                             "Receive_Postmarket_Digest": "False", "holdings_source": "NO_HOLDINGS",
                             "home_timezone": "America/Toronto"}  # Ideas only: no holdings settings at all
+
+
+def test_both_forms_holdings_wording_reads():
+    # Claude-authored (2026-10-26): the options were reworded that day; the first form's wording still reads
+    for holdings, source in (("Link automatically to brokerage, RECOMMENDED (through SnapTrade)", "SNAPTRADE"),
+                             ("Link auomatically to brokerage, RECOMMENDED (through SnapTrade)", "SNAPTRADE"),  # Its typo
+                             ("Manually update a Google Sheet", "SHEETS"),
+                             ("No holdings, just suggestions to buy (free)", "NO_HOLDINGS"),
+                             ("SnapTrade: link my brokerage", "SNAPTRADE"),
+                             ("Google Sheets: I'll keep my holdings in a spreadsheet", "SHEETS"),
+                             ("Ideas only: no holdings, free", "NO_HOLDINGS"), ("Something new", None), ("", None)):
+        assert signup._holdings_source(holdings) == source
+    # The first form's sheet ID, watchdog, and note answers are no longer read: only the model choices are cleared
+    old = signup.plan_from_answer(answer(OLD_FORM_LEE, header=OLD_HEADER))
+    assert old.settings["holdings_source"] == "SHEETS" and old.wants_watchdog
+    assert all(old.settings[key] is None for key in CLEARED)
+    assert not {"google_sheets_id", "watchdog_interval_hours", "watchdog_session", "watchdog_tripwire"} & set(old.settings)
 
 
 def test_a_holdings_user_waits_for_their_keys_then_is_activated(files, capsys):
@@ -116,13 +129,14 @@ def test_a_holdings_user_waits_for_their_keys_then_is_activated(files, capsys):
     assert "SAM_INSTITUTION='My portfolio'" in raw and "\r\n# --- Sam (from the sign-up form" in raw
     assert raw.count("\n") == raw.count("\r\n")  # Line endings kept
     missing = {key for status, key, _ in result.rows if status == "MISSING"}
-    assert missing == {"SAM_ANTHROPIC_API_KEY", "SAM_GEMINI_API_KEY", "SAM_TELEGRAM_CHAT_ID"}
+    # 2026-10-26: the form no longer asks for the sheet ID; it's sent privately like the keys
+    assert missing == {"SAM_ANTHROPIC_API_KEY", "SAM_GEMINI_API_KEY", "SAM_TELEGRAM_CHAT_ID", "SAM_SHEETS_ID"}
     # 2026-10-22: each missing API key their choices need is written as None, so the gap shows in .env (LLM["HOLDINGS"]
     # is a Claude model, so no DeepSeek key; the chat ID isn't an API key)
     values = dotenv_values(env)
     assert values["SAM_ANTHROPIC_API_KEY"] == values["SAM_GEMINI_API_KEY"] == "None"
-    # 2026-10-24: the chat ID gets an empty line instead, a spot to fill in
-    assert "SAM_DEEPSEEK_API_KEY" not in values and values["SAM_TELEGRAM_CHAT_ID"] == ""
+    # 2026-10-24: the chat ID gets an empty line instead, a spot to fill in; 2026-10-26: so does the sheet ID
+    assert "SAM_DEEPSEEK_API_KEY" not in values and values["SAM_TELEGRAM_CHAT_ID"] == values["SAM_SHEETS_ID"] == ""
     assert not result.activated and "not activated yet" in result.activation and "Sam" not in active_users(params)
     signup._print_result(result, answer(SAM), dry_run=False)
     printed = capsys.readouterr().out
@@ -131,7 +145,8 @@ def test_a_holdings_user_waits_for_their_keys_then_is_activated(files, capsys):
     # Keys arrive: Andres replaces the placeholders, and the next check finds nothing missing
     env.write_bytes(env.read_bytes().replace(b"SAM_ANTHROPIC_API_KEY=None", b"SAM_ANTHROPIC_API_KEY=sk-ant-x")
                     .replace(b"SAM_GEMINI_API_KEY=None", b"SAM_GEMINI_API_KEY=AIza-x")
-                    .replace(b"SAM_TELEGRAM_CHAT_ID=\r\n", b"SAM_TELEGRAM_CHAT_ID=123\r\n"))
+                    .replace(b"SAM_TELEGRAM_CHAT_ID=\r\n", b"SAM_TELEGRAM_CHAT_ID=123\r\n")
+                    .replace(b"SAM_SHEETS_ID=\r\n", b"SAM_SHEETS_ID=1AbC\r\n"))
     again = signup.apply_answer(answer(SAM), env, params, write=False)
     assert again.activated and active_users(params) == ["Steven", "Sam"]
 
@@ -219,13 +234,18 @@ def test_the_digests_sync_keeps_everything_matching_the_sheet(files, monkeypatch
     # A hand edit to a setting the form covers goes back to the sheet's value; once Sam's keys are in, Sam is active
     raw = (env.read_bytes().decode().replace("SAM_HOME_CURRENCY=GBP", "SAM_HOME_CURRENCY=USD")
            .replace("SAM_ANTHROPIC_API_KEY=None", "SAM_ANTHROPIC_API_KEY=sk-ant-x")
-           .replace("SAM_GEMINI_API_KEY=None", "SAM_GEMINI_API_KEY=AIza-x"))
-    env.write_bytes((raw + "SAM_TELEGRAM_CHAT_ID=1\r\n").encode())
-    assert sync() == ["Sam"]
+           .replace("SAM_GEMINI_API_KEY=None", "SAM_GEMINI_API_KEY=AIza-x")
+           .replace("SAM_TELEGRAM_CHAT_ID=\r\n", "SAM_TELEGRAM_CHAT_ID=1\r\n"))
+    env.write_bytes(raw.encode())
+    assert sync() == []  # Everything but the sheet ID: still waiting
+    assert "Sam" not in active_users(params) and dotenv_values(env)["SAM_SHEETS_ID"] == ""
+    env.write_bytes(raw.replace("SAM_SHEETS_ID=\r\n", "SAM_SHEETS_ID=1AbC\r\n").encode())
+    assert sync() == ["Sam"]  # The sheet ID filled in: active at the next sync
     assert dotenv_values(env)["SAM_HOME_CURRENCY"] == "GBP" and active_users(params) == ["Sam", "Kim"]
     sam = next(body for _, body in telegram.messages if "New Finnbot user added: Sam" in body)
     assert "- Holdings: Google Sheets" in sam and "- Digests: Pre-Market and Post-Market" in sam
-    assert "- Home currency: GBP" in sam and "- Telegram: yes, watchdog every 2 h (extended)" in sam
+    # 2026-10-26: the watchdog's defaults, since the form no longer asks
+    assert "- Home currency: GBP" in sam and "- Telegram: yes, watchdog every 4 h (extended), tripwire on" in sam
 
     # Sam edits the answer: applied, and announced once more
     answers[0] = answer({**SAM, "Home currency": "EUR"}, 2)
@@ -271,13 +291,50 @@ def test_a_holdings_user_gets_placeholders_for_the_keys_the_holdings_model_needs
     # everyone, so the Anthropic key gets a placeholder, and no DeepSeek key. 2026-10-23: Lee turned the news off, and
     # the portfolio review no longer uses Gemini, so no Gemini key is needed either
     env, params = files
-    signup.apply_answer(answer(LEE), env, params)
+    old_form = answer(OLD_FORM_LEE, header=OLD_HEADER)
+    signup.apply_answer(old_form, env, params)
     values = dotenv_values(env)
     assert values["LEE_ANTHROPIC_API_KEY"] == "None"
     assert "LEE_DEEPSEEK_API_KEY" not in values and "LEE_GEMINI_API_KEY" not in values
     before = env.read_bytes()
-    signup.apply_answer(answer(LEE), env, params)  # Already there: not written again
+    signup.apply_answer(old_form, env, params)  # Already there: not written again
     assert env.read_bytes() == before
+
+
+def test_the_watchdog_uses_the_defaults_unless_env_sets_them(files):
+    # Claude-authored (2026-10-26, Andres): the form no longer asks how often, when, or about the tripwire. .env can
+    # still set them (like <NAME>_LONG_RECS), and the sync leaves them; a 0 from an earlier "no watchdog" is cleared
+    env, params = files
+    signup.apply_answer(answer(LEE), env, params)  # No Telegram: the watchdog is off
+    assert dotenv_values(env)["LEE_WATCHDOG_INTERVAL_HOURS"] == "0"
+    lee_with_watchdog = answer({**LEE, "Do you want Telegram messages?": WITH_WATCHDOG})
+    result = signup.apply_answer(lee_with_watchdog, env, params)
+    assert dotenv_values(env)["LEE_WATCHDOG_INTERVAL_HOURS"] == ""  # Cleared: the default applies
+    assert signup._watchdog_summary("Lee", result.env) == "yes, watchdog every 4 h (extended), tripwire on"
+
+    env.write_text(env.read_text() + "LEE_WATCHDOG_INTERVAL_HOURS=2\nLEE_WATCHDOG_SESSION=regular\n"
+                                      "LEE_WATCHDOG_TRIPWIRE=false\n")
+    result = signup.apply_answer(lee_with_watchdog, env, params)
+    assert not result.changes  # Set by hand: kept
+    assert signup._watchdog_summary("Lee", result.env) == "yes, watchdog every 2 h (regular), tripwire off"
+
+
+def test_an_unreadable_answer_never_switches_an_active_user_off(files, monkeypatch, telegram):
+    # Claude-authored (2026-10-26): the form's holdings options were reworded and every answer stopped reading, so the
+    # 09:45 UTC sync emptied ACTIVE_USERS. Now an active user whose answer can't be read stays, settings untouched
+    env, params = files
+    monkeypatch.setitem(params_dict, "ACTIVE_USERS", ["Steven"])
+    monkeypatch.setattr(signup, "USER_PROFILES", {"Steven": {}})
+    reworded = {**SAM, "Your first name": "Steven", "Email address for the digest": "andres@example.com",
+                "How should Finnbot see your holdings?": "Some new wording"}
+    monkeypatch.setattr(signup, "read_answers", lambda sheet_id: [answer(reworded), answer(KIM, 3)])
+    before = env.read_bytes()
+    assert signup.sync_signups(env, params, sheet_id="sheet") == ["Kim"]
+    assert active_users(params) == ["Steven", "Kim"]
+    assert b"STEVEN_" in before and all(line in env.read_bytes() for line in before.splitlines())  # Steven untouched
+    sent = [body for _, body in telegram.messages]
+    assert any("Steven's sign-up answer couldn't be read" in body and "Some new wording" in body for body in sent)
+    assert not any("no longer active" in body for body in sent)
 
 
 def test_a_telegram_user_gets_a_chat_id_line_and_others_dont(files):
@@ -286,6 +343,9 @@ def test_a_telegram_user_gets_a_chat_id_line_and_others_dont(files):
     env, params = files
     signup.apply_answer(answer(LEE), env, params)  # No Telegram
     assert "LEE_TELEGRAM_CHAT_ID" not in dotenv_values(env)
+    assert dotenv_values(env)["LEE_SHEETS_ID"] == ""  # 2026-10-26: a Google Sheet, so a spot for its ID
+    signup.apply_answer(answer(KIM), env, params)  # Ideas only: neither
+    assert not {"KIM_TELEGRAM_CHAT_ID", "KIM_SHEETS_ID"} & set(dotenv_values(env))
     signup.apply_answer(answer(SAM), env, params)  # Telegram
     assert dotenv_values(env)["SAM_TELEGRAM_CHAT_ID"] == ""
     signup.apply_answer(answer(SAM), env, params)  # Applied again: still one line
