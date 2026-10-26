@@ -746,8 +746,8 @@ Ideas only, optionally (in the form):
 ================================================================================
 
 Both lists start every digest from the same place: every US-listed stock (NYSE, Nasdaq, NYSE
-American) that is large (currently $9 billion in market value and up), trades at least 1 million
-shares a day, and costs at least $30 a share. That is about 600 stocks. Two screens then narrow
+American) that is large (currently $8 billion in market value and up), trades at least 1 million
+shares a day, and costs at least $15 a share. That is several hundred stocks. Two screens then narrow
 them down, the survivors are scored by an AI model, and the best scores become the ideas. The
 scoring model is DeepSeek V4.1 Flash, chosen in a comparison against stronger models; Andres pays
 for it.

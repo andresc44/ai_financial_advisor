@@ -32,7 +32,7 @@ NOTES: dict[str, str] = {
     "FINNHUB_RATE_LIMIT_SLEEP": "Seconds to wait between Finnhub calls, to spread them within each minute.",
     "FINNHUB_CALLS_PER_MINUTE": "Finnhub calls allowed per minute. 60 is the free plan's limit; raise it with a paid "
                                 "plan. Takes effect from the next run.",
-    "MKTCAP_MIN": "Stage 1 screen: smallest market cap, in millions of USD (10000 = $10B).",
+    "MKTCAP_MIN": "Stage 1 screen: smallest market cap, in millions of USD (8000 = $8B).",
     "MKTCAP_MAX": "Stage 1 screen: largest market cap, in millions of USD. None = no limit.",
     "VOLUME_MIN": "Stage 1 screen: smallest daily trading volume, in millions of shares.",
     "VOLUME_MAX": "Stage 1 screen: largest daily trading volume, in millions of shares. None = no limit.",

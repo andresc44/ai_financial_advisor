@@ -29,11 +29,11 @@ params_dict = {
     # 60 is the free plan's limit (Finnhub's X-Ratelimit-Limit header). Raise it with a paid plan.
     "FINNHUB_CALLS_PER_MINUTE": 60,
     # Stage 1 Ticker Filter Parameters
-    "MKTCAP_MIN": 10000.0,  # Minimum market cap in Millions USD
+    "MKTCAP_MIN": 8000.0,  # Minimum market cap in Millions USD; 2026-10-26: 8000 as on the settings sheet (was 10000)
     "MKTCAP_MAX": None,  # Maximum market cap in Millions USD
     "VOLUME_MIN": 1.0,  # Minimum trading volume in Millions
     "VOLUME_MAX": None,  # Maximum trading volume in Millions
-    "LASTSALE_MIN": 30.0,  # Minimum share price USD
+    "LASTSALE_MIN": 15.0,  # Minimum share price USD; 2026-10-26: 15 as on the settings sheet (was 30)
     "LASTSALE_MAX": None,  # Maximum share price USD
     "REGION": None,  # Takes priority over 'country'
     "COUNTRY": None,  # Ignored when region is defined
