@@ -41,7 +41,7 @@ A full test run is the last two together: `--payload-only --period Post-Market`,
 | `python -m src.config.remote_settings --sync` | Reads the Parameters tab now, applies what's valid, writes the status back, and messages the admins about changes. Every digest run does this first. |
 | `python -m src.config.remote_settings --show` | Lists the settings from the sheet in force on this computer (`data/remote_settings.json`). |
 | `python -m src.users.import_signup --list` | Lists every sign-up answer and stops. |
-| `python -m src.users.import_signup --sync` | Syncs every user from the sign-up sheet into `.env` and `ACTIVE_USERS`, as each cron run does. It writes for real: `--dry-run` only works with one person's name (below), not with `--sync`. |
+| `python -m src.users.import_signup --sync` | Syncs every user from the sign-up sheet into `.env` and `ACTIVE_USERS`, as each cron run does. Add `--dry-run` to only print what it would change (setting names, never values) and who would be active; nothing is written or sent (fixed 2026-10-26: `--sync` used to ignore `--dry-run` and write for real). |
 | `python -m src.users.import_signup <first name or email>` | Imports one person's answer. Options: `--dry-run` (show only), `--no-activate` (leave `ACTIVE_USERS` alone), `--overwrite` (replace an existing user whose email differs), `--enter-keys` (then type their missing keys, hidden, to save them), `--sheet <ID>` (another answers sheet). |
 | `python -m src.config.check_config` | Checks every shared and per-user `.env` setting: OK, MISSING, INVALID, or unset. Run it after adding or changing a user. |
 | `python -m src.config.check_config --template <Name>` | Prints the `.env` block for a new user, to fill in. |
@@ -350,7 +350,7 @@ Sections 1 to 11 say what each part does. This part says what is actually instal
 | Software | Python 3.14.4 from `/usr/bin/python3.14`, a venv at `~/ai_financial_advisor/venv` built from `requirements.txt` (exact pins; `requirements-dev.txt` adds pytest) |
 | Clock | UTC. The crontab starts with `CRON_TZ=America/Toronto`, but the jobs have been observed running on UTC (the backup at 02:30Z), so it appears to have no effect on this cron. The digest doesn't depend on it: the digest decides what is due from the exchange calendar, not from the clock. |
 | Git | `origin` is `git@github.com:andresc44/ai_financial_advisor.git`, pushed with the VM's SSH key. The live branch is `feature/watchdog-digest-upgrades`; it has never been merged to `main`. |
-| Provider | **Not recorded in the repo: fill this in.** `docs/vm_setup.md` was written for Google Cloud, but this machine is bigger than that guide's e2-micro, and `.env` has a key named `OVH_VM_PW` (the VM's login password; never print it), which suggests OVH. Write here: the provider, where its console is, whose account and card pay for it, and how to restart the machine from the console if SSH stops answering. |
+| Provider | **OVHcloud, a VPS-1 plan, about A$85 a year** (confirmed by Andres, 2026-10-26). It is not the Google Cloud e2-micro that `docs/vm_setup.md` was written for; that guide's Ubuntu, Python, cron, swap, healthchecks and backup steps still apply, but its Google Cloud console and `gcloud` steps (creating the VM, changing the machine type) don't: use OVH's control panel (the account is Andres's; `.env`'s `OVH_VM_PW` is the machine's login password, never print it) to reboot or reinstall the VM if SSH stops answering. The yearly plan renews once a year: put the renewal date in your calendar, since an unrenewed VPS takes Finnbot down without a trace in its own logs. |
 | Measured load | A full digest for three users: about 25 minutes, peak memory 788-798 MB, about 80 open files at the end (`logs/digest.log`'s last line shows both). A watchdog run: seconds to a minute or two. |
 
 ### 12.2 What runs on it
@@ -402,7 +402,7 @@ Three: Andres (the admin; SnapTrade, news on), Mauricio (a Google Sheet, news of
 
 The order is the order they were made (2026-08-09 first commit; most of it between 2026-10-15 and 2026-10-26). For each: what was chosen, why, what evidence decided it, and how to change it. The long versions of the numbers are in [model_selection.md](model_selection.md), [watchdog.md](watchdog.md), and the comments beside each setting in `src/config/parameters.py`.
 
-**How the project grew.** August: Yahoo and Finnhub screens for new stocks, a Claude HTML email, SnapTrade and Telegram. September: Gemini headlines and macro indicators, a Google Sheets holdings source, cron, Claude scoring of candidates. 2026-10-15 to 10-17: the holdings watchdog, per-user keys, the track record, run logs and failure alerts, the test suite (84 tests then, 443 now), healthchecks and the Drive backup, DeepSeek as an alternative provider, and a mobile-first email with an AMP version. 2026-10-18 to 10-26: the model comparison, the swing screen, the sign-up form and settings sheet, cost cuts, email size work, the VM, and the watchdog and alert refinements below.
+**How the project grew.** August: Yahoo and Finnhub screens for new stocks, a Claude HTML email, SnapTrade and Telegram. September: Gemini headlines and macro indicators, a Google Sheets holdings source, cron, Claude scoring of candidates. 2026-10-15 to 10-17: the holdings watchdog, per-user keys, the track record, run logs and failure alerts, the test suite (84 tests then, 444 now), healthchecks and the Drive backup, DeepSeek as an alternative provider, and a mobile-first email with an AMP version. 2026-10-18 to 10-26: the model comparison, the swing screen, the sign-up form and settings sheet, cost cuts, email size work, the VM, and the watchdog and alert refinements below.
 
 ### 13.1 Scheduling and safety
 
@@ -593,7 +593,7 @@ Also look at, for any new model: how often answers fail to parse or are cut off 
 |---|---|
 | No digest, no errors | Maintenance mode still on; the day isn't a trading day for NYSE or Toronto; the digest was already recorded as sent (`data/digest_state.json`); a user has `<NAME>_RECEIVE_*_DIGEST` false. `--check` says which. |
 | Healthcheck red with exit code 75 | A job waited 15 minutes for `/tmp/finnbot.lock` and the holder wasn't a running digest: a stuck or manual job (`cat /tmp/finnbot.lock.holder`, `pgrep -af python`). |
-| Everyone vanished from the digest | `ACTIVE_USERS` is empty or short: the sign-up sync couldn't read the answers, a form wording changed, or a key became `None`/empty. See `[signup]` lines; incident 2026-10-26. Restore with `python -m src.users.import_signup --sync` (it writes for real) after fixing the cause, or by hand-editing the list under maintenance mode (the next sync overrides it from the sheet). |
+| Everyone vanished from the digest | `ACTIVE_USERS` is empty or short: the sign-up sync couldn't read the answers, a form wording changed, or a key became `None`/empty. See `[signup]` lines; incident 2026-10-26. Check with `python -m src.users.import_signup --sync --dry-run`, then restore with `--sync` after fixing the cause, or by hand-editing the list under maintenance mode (the next sync overrides it from the sheet). |
 | One user's section is empty or has a banner | Their key: expired, out of credit, a spend limit, or billing off (Gemini). The banner and your Telegram say which. |
 | No news anywhere | Gemini: a 429 means the key's project has no billing or no search quota; a 404 or "model not found" means the model was retired (`GEMINI_MODELS`). `grep "Gemini" logs/digest.log`. |
 | No ideas, or few | `logs/digest.log`: the screening counts per stage ("Tickers kept by each stage"), each stock left out and why, and `universal_issues` in the email's notices. A shared key (DeepSeek, Finnhub) failing shows as an admin Telegram message. |
@@ -618,7 +618,7 @@ Also look at, for any new model: how often answers fail to parse or are cut off 
 | 2026-10-26 | **Everyone removed from `ACTIVE_USERS`** at 09:45 UTC | The form's holdings options were reworded and the importer matched the old wording | Keyword matching; unreadable answers keep an active user active and tell the admins |
 | 2026-10-26 | The morning digest had **no news** | Free Gemini keys have no Google Search quota; the 429 was classified as a rate limit and never switched to the paid key | A rate limit that outlasts the retries switches; the free keys removed |
 | 2026-10-26 | Urgent sells from a digest reached Telegram an hour late, or never | The watchdog's early exits (tripwire pause, watchdog off) | The digest sends its own alerts |
-| 2026-10-26 | `import_signup --sync --dry-run` writes for real | `--sync` ignores `--dry-run` (found while writing this; a code bug, not fixed) | Use `<Name> --dry-run` per user |
+| 2026-10-26 | `import_signup --sync --dry-run` wrote for real | `--sync` ignored `--dry-run` (found while writing this handbook) | `sync_signups(dry_run=True)` prints and writes nothing; tested |
 
 ### 16.4 What will break on its own with time
 
@@ -659,10 +659,9 @@ Other recoveries: **a leaked key**: revoke it at the provider, create a new one,
 Done since 2026-10-23: Finnbot runs on the VM with the cron jobs, the healthchecks.io heartbeat, and the Drive backup; the sign-up form was rebuilt and then simplified; the digest sends its own urgent alerts; the news moved to Gemini 3.5 Flash-Lite; this handbook and the comparison tool.
 
 Open:
-- **Fill in 12.1's provider line** (who hosts the VM, the console, the billing, how to restart it).
+- **VM renewal:** the OVH VPS-1 plan is yearly (about A$85); note the renewal date, and confirm whether auto-renew is on.
 - **Healthchecks grace:** set the `finnbot-digest` and `finnbot-watchdog` checks' grace period on healthchecks.io (operations.md, step 6); a digest takes about 25 minutes.
 - **News costs:** confirm the Flash-Lite news cost over a few real digests (per stock at 3 per request, and how many holdings the evening digest refreshes).
 - **The branch:** `feature/watchdog-digest-upgrades` has not been merged to `main`.
-- **`import_signup --sync --dry-run` writes for real** (a small code bug; the handbook warns about it).
 - **Unused code:** `src/llm/gemini_key_rotation.py` and its tests, and the two `GEMINI_FREE_*` keys in `check_config`, do nothing without a free key; remove them if you won't try a free key again.
 - **The comparison tool's first real use:** it was validated on 2026-10-26 on a small live run (a capture of 11 holdings and 35 + 31 idea candidates, then Haiku low and medium on the holdings, DeepSeek Flash with no thinking on the ideas, and two Flash-Lite models on the news: about $0.12), which found and fixed a crash in `report` for a single reference run. The first full comparison after a model release is its real test.

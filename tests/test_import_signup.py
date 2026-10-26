@@ -259,6 +259,22 @@ def test_the_digests_sync_keeps_everything_matching_the_sheet(files, monkeypatch
     assert active_users(params) == ["Sam"]
 
 
+def test_a_dry_run_sync_writes_and_sends_nothing(files, monkeypatch, telegram, capsys):
+    # Claude-authored (2026-10-26): --sync --dry-run used to ignore --dry-run and write for real
+    env, params = files
+    monkeypatch.setattr(signup, "read_answers", lambda sheet_id: [answer(SAM, 2), answer(KIM, 3)])
+    monkeypatch.setitem(params_dict, "ACTIVE_USERS", ["Steven"])
+    monkeypatch.setattr(signup, "USER_PROFILES", {"Steven": {}})
+    env_before, params_before = env.read_bytes(), params.read_bytes()
+    assert signup.sync_signups(env, params, sheet_id="sheet", dry_run=True) == []
+    out = capsys.readouterr().out
+    assert env.read_bytes() == env_before and params.read_bytes() == params_before
+    assert telegram.messages == [] and params_dict["ACTIVE_USERS"] == ["Steven"] and set(signup.USER_PROFILES) == {"Steven"}
+    assert "Sam: would write SAM_" in out and "ACTIVE_USERS would be: Kim; added Kim; removed Steven" in out
+    assert "secret" not in out and "sam@example.com" not in out  # Setting names only, never values
+    assert signup.sync_signups(env, params, sheet_id="sheet") == ["Kim"]  # The real run still writes
+
+
 def test_the_sync_never_stops_the_digest_or_empties_the_list(files, monkeypatch, capsys):
     env, params = files
     before = params.read_bytes()

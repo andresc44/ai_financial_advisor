@@ -654,7 +654,8 @@ def _watchdog_summary(name: str, env: dict[str, Optional[str]]) -> str:
             f"tripwire {'on' if tripwire_on else 'off'}")
 
 
-def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, sheet_id: Optional[str] = None) -> list[str]:
+def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, sheet_id: Optional[str] = None,
+                 dry_run: bool = False) -> list[str]:
     """
     Claude-authored (2026-10-22): run first in every cron digest run (digest_payload.__main__), before the users are
     read, and by `python -m src.users.import_signup --sync`. The sign-up sheet is the reference (Andres, 2026-10-22):
@@ -670,6 +671,9 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
     If the sheet can't be read or has no answers, nothing changes, so a glitch can't switch everyone off; an answer
     that can't be read (2026-10-26) leaves its user as they were, and the admins are told once.
     Never raises: a problem is logged and the digest goes on. Returns the users who became active.
+    2026-10-26: `dry_run` (--sync --dry-run) only prints what it would change (setting names, never values) and who
+    would be active: nothing is written to .env or parameters.py, nothing is sent, and this process's users don't change.
+    Before, --dry-run was ignored by --sync, which then wrote for real.
     """
     sheet_id = sheet_id or os.environ.get(SHEET_ID_KEY, "").strip()
     if not sheet_id:
@@ -683,9 +687,12 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
         results = {}
         before = _listed_users(params_path)
         for answer in answers.values():
-            result = apply_answer(answer, env_path, params_path, activate=False)
+            result = apply_answer(answer, env_path, params_path, activate=False, dry_run=dry_run)
             results[result.plan.name] = result
-            _report_answer(result, answer, notices)
+            if dry_run and result.changes:
+                print(f"[signup dry run] {result.plan.name}: would write {', '.join(c.key for c in result.changes)}")
+            elif not dry_run:
+                _report_answer(result, answer, notices)
             missing = _incomplete(result.rows, result.plan)
             if result.status == "applied" and not missing:
                 wanted.append(result.plan.name)
@@ -696,6 +703,12 @@ def sync_signups(env_path: Path = ENV_PATH, params_path: Path = PARAMS_PATH, she
                 # 2026-10-26, when every user was switched off) leaves an active user active, settings untouched
                 wanted.append(result.plan.name)
                 kept.append(result.plan.name)
+        if dry_run:
+            print(f"[signup dry run] ACTIVE_USERS would be: {', '.join(wanted) or 'none'}"
+                  + (f"; added {', '.join(n for n in wanted if n not in before)}" if set(wanted) - set(before) else "")
+                  + (f"; removed {', '.join(n for n in before if n not in wanted)}" if set(before) - set(wanted) else "")
+                  + (f"; waiting for settings: {', '.join(waiting)}" if waiting else "") + ". Nothing was written.")
+            return []
         set_active_users(params_path, wanted)
         load_dotenv(env_path, override=True)  # This run sees the new settings
         params_dict["ACTIVE_USERS"][:] = wanted
@@ -782,8 +795,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not sheet_id:
         parser.error(f"Set {SHEET_ID_KEY} in .env, or pass --sheet.")
     if args.sync:
-        sync_signups(sheet_id=sheet_id)
-        print(f"ACTIVE_USERS is now: {', '.join(_listed_users(PARAMS_PATH)) or 'none'}")
+        sync_signups(sheet_id=sheet_id, dry_run=args.dry_run)
+        if not args.dry_run:
+            print(f"ACTIVE_USERS is now: {', '.join(_listed_users(PARAMS_PATH)) or 'none'}")
         return 0
     answers = read_answers(sheet_id)
     if args.list or not args.who:

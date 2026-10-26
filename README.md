@@ -139,7 +139,7 @@ The full table, split by Anthropic and Google, is in the user guide (3.10). An i
 
 **Admin:**
 - **The shared part:** about $0.17 per digest (almost all of it the idea scoring; the macro news is about $0.003), so about $7 a month.
-- **Hosting:** one VM (2 vCPUs, about 4 GB of memory); a full digest peaks at about 800 MB and takes about 25 minutes (see [docs/vm_setup.md](docs/vm_setup.md)).
+- **Hosting:** one OVHcloud VPS-1 (2 vCPUs, about 4 GB of memory) at about A$85 a year; a full digest peaks at about 800 MB and takes about 25 minutes (see [docs/vm_setup.md](docs/vm_setup.md)).
 - **Measured, not guessed:** every API call's cost is recorded in `data/usage/api_usage.jsonl` and shown at the bottom of each digest.
 
 ---
@@ -174,7 +174,7 @@ venv/bin/python -m src.config.check_config                                    # 
 | `venv/bin/python -m src.llm.compare_models capture\|score\|report` | Compares LLM settings on identical inputs (handbook section 15) |
 | `venv/bin/python -m pytest` | The tests |
 
-**Deploy:** [docs/vm_setup.md](docs/vm_setup.md) has the step by step for a Google Cloud VM, plus monitoring and backups.
+**Deploy:** [docs/vm_setup.md](docs/vm_setup.md) has the step by step for a VM (written for Google Cloud; Finnbot runs on an OVHcloud VPS-1), plus monitoring and backups.
 
 ### Adding a user
 
@@ -258,7 +258,7 @@ Runtime state lives in `data/` and logs in `logs/`. Both are gitignored, since t
 | [docs/setup_instructions.md](docs/setup_instructions.md) | New users | The accounts and keys to get ready, in order, in two pages |
 | [docs/new_user_guide.txt](docs/new_user_guide.txt) | New users | Every choice, what it costs, how to get each key, Gmail setup, how ideas and holdings work, keeping keys safe |
 | [docs/admin_handbook.md](docs/admin_handbook.md) | The admin | Every command and option, the pipeline, Telegram messages, settings, onboarding, files; how it's set up and running, why it's built this way and the evidence, how it was tested, how to upgrade to a new LLM and compare models, how to diagnose problems and recreate it from nothing |
-| [docs/vm_setup.md](docs/vm_setup.md) | The admin | Moving Finnbot to a Google Cloud VM, step by step |
+| [docs/vm_setup.md](docs/vm_setup.md) | The admin | Moving Finnbot to a VM, step by step (written for Google Cloud; the live one is an OVHcloud VPS-1) |
 | [docs/operations.md](docs/operations.md) | The admin | healthchecks.io monitoring and the Google Drive backup |
 | [docs/watchdog.md](docs/watchdog.md) | Developers | The full technical reference: every setting, file, and design decision |
 | [docs/model_selection.md](docs/model_selection.md) | Developers | How the models and efforts were compared and chosen (ideas, holdings, and the news model), with the results |
