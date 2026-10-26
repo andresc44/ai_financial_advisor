@@ -45,6 +45,8 @@ SHARED_KEYS = {
     "TELEGRAM_BOT_TOKEN": (True, "Telegram bot for alerts and notices"),
     "GOOGLE_APPLICATION_CREDENTIALS": (False, "Service-account JSON path; needed to read private Google Sheets"),
     "GEMINI_API_KEY": (False, "Gemini for the macro news (shared; only when headline news is enabled)"),
+    # Claude-authored (2026-10-26, Andres): tried before GEMINI_API_KEY; see src/llm/gemini_key_rotation.py
+    "GEMINI_FREE_API_KEY": (False, "A free-tier (no billing) Gemini key tried before GEMINI_API_KEY for the macro news"),
     "FRED_API_KEY": (False, "FRED yield curve (only when market indicators are enabled)"),
     # Claude-authored (2026-10-22): src/users/import_signup.py, also run at the start of every cron digest run
     "SIGNUP_FORM_SHEET_ID": (False, "The sign-up form's answers sheet, shared with the service account; without it "
@@ -81,6 +83,8 @@ USER_KEYS = {
     "deepseek_api_key": ("holdings_deepseek", "The user's own DeepSeek key (holdings evaluation on a DeepSeek model)"),
     # 2026-10-23: only for the news; the portfolio review moved from Gemini to the holdings LLM
     "gemini_api_key": ("holdings_news", "The user's own Gemini key (news for each holding)"),
+    # Claude-authored (2026-10-26, Andres): tried before gemini_api_key; see src/llm/gemini_key_rotation.py
+    "gemini_free_api_key": ("optional", "A free-tier (no billing) Gemini key tried before gemini_api_key"),
     "snaptrade_client_id": ("SNAPTRADE", "SnapTrade personal client ID"),
     "snaptrade_consumer_key": ("SNAPTRADE", "SnapTrade personal consumer key"),
     "google_sheets_id": ("SHEETS", "ID of the holdings Google Sheet (from its URL)"),

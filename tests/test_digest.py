@@ -304,7 +304,8 @@ def test_generated_profiles_keep_the_existing_env_names():
     profile = build_profile("Andres")
     assert profile["account_company"] == "ANDRES_INSTITUTION" and profile["google_sheets_id"] == "ANDRES_SHEETS_ID"
     assert profile["Receive_Premarket_Digest"] == "ANDRES_RECEIVE_PREMARKET_DIGEST"
-    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 24
+    assert profile["anthropic_api_key"] == "ANDRES_ANTHROPIC_API_KEY" and len(profile) == 25
+    assert profile["gemini_free_api_key"] == "ANDRES_GEMINI_FREE_API_KEY"  # 2026-10-26
     assert profile["deepseek_api_key"] == "ANDRES_DEEPSEEK_API_KEY" and profile["holdings_llm_model"] == "ANDRES_HOLDINGS_LLM_MODEL"
     assert profile["home_currency"] == "ANDRES_HOME_CURRENCY"  # 2026-10-21
     assert profile["long_recs"] == "ANDRES_LONG_RECS" and profile["swing_recs"] == "ANDRES_SWING_RECS"  # 2026-10-24

@@ -54,6 +54,9 @@ PROFILE_ENV_SUFFIXES = {
     "anthropic_api_key": "ANTHROPIC_API_KEY",
     "deepseek_api_key": "DEEPSEEK_API_KEY",
     "gemini_api_key": "GEMINI_API_KEY",
+    # Claude-authored (2026-10-26, Andres): a free-tier key tried before gemini_api_key, for whoever has one set
+    # (see src/llm/gemini_key_rotation.py). Unset for everyone but Andres for now.
+    "gemini_free_api_key": "GEMINI_FREE_API_KEY",
 }
 
 # Claude-authored (2026-10-22): the sign-up sync (src/users/import_signup.py) writes a required API key it found missing as

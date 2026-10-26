@@ -54,6 +54,9 @@ def isolated(tmp_path, monkeypatch):
 
     monkeypatch.setattr(add_metrics, "CONTEXT_CACHE_PATH", tmp_path / "market_context_cache.json")
     monkeypatch.setattr(idea_positions, "STATE_PATH", tmp_path / "idea_positions.json")  # 2026-10-22
+    import src.llm.gemini_key_rotation as gemini_key_rotation
+
+    monkeypatch.setattr(gemini_key_rotation, "STATE_PATH", tmp_path / "gemini_key_state.json")  # 2026-10-26
     monkeypatch.setattr(notices, "CSV_DIR", tmp_path / "alerts_sent")
     monkeypatch.setattr(notices, "CSV_PATH", tmp_path / "alerts_sent" / "alerts.csv")
     monkeypatch.setattr(fx_rates, "CACHE_PATH", tmp_path / "fx_rates.json")

@@ -84,9 +84,13 @@ Keep all fields extremely succinct and direct:
 
 # 4. Fetch Function using Chat interface to fix AFC warning
 @retry(**GEMINI_RETRY)  # Claude-authored (2026-10-16): retries only what can recover
-def fetch_live_macro_stories() -> DigestPayload:
+def fetch_live_macro_stories(api_key: Optional[str] = None) -> DigestPayload:
+    """
+    `api_key` overrides the shared GEMINI_API_KEY / GOOGLE_API_KEY (2026-10-26, Andres): get_macro_stories tries the
+    free-tier key first (src/llm/gemini_key_rotation.py); None (the default) uses the regular shared key, as before.
+    """
     debug("\n[DIAGNOSTIC] Initializing Gemini Client...")
-    client = genai.Client(api_key=shared_api_key("Gemini"))
+    client = genai.Client(api_key=api_key or shared_api_key("Gemini"))
     model, count = gemini_model("MACRO_NEWS"), story_count()
 
     today = datetime.now(ZoneInfo("America/New_York")).date()
@@ -122,23 +126,41 @@ def fetch_live_macro_stories() -> DigestPayload:
     return payload
 
 
+def _macro_issue(e: BaseException) -> tuple[dict, Optional[ApiKeyUnusable]]:
+    """(issue, key_error) for a failed attempt: shared_key_issue's shape, and the ApiKeyUnusable behind it (if any)."""
+    key_error = e if isinstance(e, ApiKeyUnusable) else gemini_key_error(e, None)
+    if key_error:
+        return shared_key_issue(key_error), key_error
+    return {"source": "Gemini (macro news)", "reason": "failed", "message": f"Macro news failed: {str(e)[:200]}"}, None
+
+
 def get_macro_stories() -> tuple[Optional[DigestPayload], list[dict]]:
     """
     Claude-authored (2026-10-16): (stories, issues) for the universal content. Never raises: a missing or failing
     shared Gemini key, or any other failure, comes back as an issue ({"source", "reason", "message"}) and alerts the
     admins, so the digest still goes out without macro news.
+
+    2026-10-26 (Andres): tries the free-tier GEMINI_FREE_API_KEY first (src/llm/gemini_key_rotation.py). The first
+    time it fails for anything but a transient rate limit, this slot switches to the paid key for good, Andres is
+    told once on Telegram, and this same request is retried right away with the paid key.
     """
     from src.telegram_alert.notices import alert_admins  # Imported here: only needed when something fails
+    from src.llm.gemini_key_rotation import free_key, notify_switch, switch_to_paid
 
+    api_key = free_key()  # None when there's no free key, or this slot already switched to paid
     try:
-        return fetch_live_macro_stories(), []
-    except ApiKeyUnusable as e:  # Shared key not set
-        issue = shared_key_issue(e)
+        return fetch_live_macro_stories(api_key=api_key), []
     except Exception as e:
-        key_error = gemini_key_error(e, None)
-        issue = shared_key_issue(key_error) if key_error else {
-            "source": "Gemini (macro news)", "reason": "failed", "message": f"Macro news failed: {str(e)[:200]}",
-        }
+        issue, key_error = _macro_issue(e)
+
+    if api_key and key_error is not None and key_error.blocks_run:
+        if switch_to_paid(None, key_error):
+            notify_switch(None, key_error)
+        try:
+            return fetch_live_macro_stories(), []  # No api_key -> shared_api_key("Gemini"), the paid key
+        except Exception as e:
+            issue, _ = _macro_issue(e)
+
     alert_admins(f"universal content: {issue['source']} {issue['reason']}", issue["message"])
     return None, [issue]
 

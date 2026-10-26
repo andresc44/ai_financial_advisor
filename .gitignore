@@ -241,6 +241,8 @@ cron_test_results.csv
 # Watchdog state and shared market-context cache (Claude-authored 2026-10-13, see docs/watchdog.md)
 data/watchdog_state.json
 data/market_context_cache.json
+# Claude-authored (2026-10-26): which Gemini slots have switched to their paid key (src/llm/gemini_key_rotation.py)
+data/gemini_key_state.json
 
 # Claude-authored (2026-10-15): run outputs. They hold users' holdings, emails, and alert history, or are
 # regenerated on every run, so they must never be committed.

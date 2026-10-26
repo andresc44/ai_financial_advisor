@@ -51,14 +51,40 @@ def fetch_holdings_news(
     Claude-authored (2026-10-14, split out 2026-10-15): up to DIGEST.SYMBOL_NEWS_BULLETS news items per stock from
     Gemini with the user's own key, plus the key error (missing, invalid, expired, no credits, exhausted quota)
     that stopped them, or None. Only stocks whose news was fetched are in the result.
+
+    2026-10-26 (Andres): tries this user's free-tier Gemini key first (src/llm/gemini_key_rotation.py). The first
+    time it fails for anything but a transient rate limit, this user's slot switches to their paid key for good,
+    Andres is told once on Telegram, and the stocks that didn't get news are asked for again with the paid key.
     """
     if not companies:
         return {}, None
-    try:
-        return fetch_symbol_news(companies, api_key=get_gemini_api_key(user_name), user_name=user_name)
-    except ApiKeyUnusable as e:  # Key not set
-        print(f"[ERROR] {e} Holding news skipped.")
-        return {}, e
+    from src.llm.gemini_key_rotation import free_key, notify_switch, switch_to_paid
+
+    api_key, used_free = free_key(user_name), True
+    if api_key is None:
+        used_free = False
+        try:
+            api_key = get_gemini_api_key(user_name)
+        except ApiKeyUnusable as e:  # Key not set
+            print(f"[ERROR] {e} Holding news skipped.")
+            return {}, e
+
+    news, key_error = fetch_symbol_news(companies, api_key=api_key, user_name=user_name)
+
+    if used_free and key_error is not None and key_error.blocks_run:
+        if switch_to_paid(user_name, key_error):
+            notify_switch(user_name, key_error)
+        remaining = {symbol: company for symbol, company in companies.items() if symbol not in news}
+        if not remaining:
+            return news, None  # The free key got every stock before its last request failed
+        try:
+            paid = get_gemini_api_key(user_name)
+        except ApiKeyUnusable as e:  # No paid key either: keep what the free key got, report this instead
+            return news, e
+        more, key_error = fetch_symbol_news(remaining, api_key=paid, user_name=user_name)
+        news.update(more)
+
+    return news, key_error
 
 def settle_holdings_news(
     user_name: str,

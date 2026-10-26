@@ -177,9 +177,11 @@ def test_missing_data_issues():
 
 # --------------------------------------------------------------------------------------------- macro news
 def test_macro_news_key_failure_becomes_an_issue(monkeypatch, telegram):
+    # 2026-10-26: no free key in this test (see test_gemini_key_rotation.py for that), so this is the shared paid key
+    monkeypatch.delenv("GEMINI_FREE_API_KEY", raising=False)
     error = genai_errors.APIError(400, {"error": {"code": 400, "message": "API key not valid.", "status": "INVALID_ARGUMENT"}})
 
-    def failing():
+    def failing(api_key=None):
         raise error
 
     monkeypatch.setattr(market_news, "fetch_live_macro_stories", failing)
@@ -192,6 +194,7 @@ def test_macro_news_key_failure_becomes_an_issue(monkeypatch, telegram):
 def test_macro_news_missing_shared_key(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_FREE_API_KEY", raising=False)  # 2026-10-26: isolate from the real free key in .env
     stories, issues = market_news.get_macro_stories()
     assert stories is None and issues[0]["reason"] == "missing"
 
