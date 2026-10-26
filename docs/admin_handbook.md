@@ -69,6 +69,28 @@ A full test run is the last two together: `--payload-only --period Post-Market`,
 
 Each job waits up to 15 minutes for the lock, so the watchdog and the digest never write state at the same time. Setup: [operations.md](operations.md).
 
+### Claude Code session on the VM (tmux, auto-restart)
+
+Claude Code (with the Telegram channel) runs in the tmux session `claude`, so closing the laptop or losing SSH doesn't stop it. Reconnect with `tmux attach -t claude`. Start Claude only from inside tmux, never from Cursor's terminal: those processes die with the Cursor connection.
+
+The scripts live in `~/bin`, outside this repo (they are not versioned):
+
+| Script | What it does |
+|---|---|
+| `claude-tg` | Runs `claude --continue --channels plugin:telegram@claude-plugins-official` in a loop and restarts it if it dies (a crash within 15 s restarts without `--continue`). A clean exit (`/exit`, Ctrl-D) stops the loop and creates `~/.claude-tg-stop`. |
+| `claude-tg-ensure` | Starts `claude-tg` in the `claude` tmux session if no Telegram-channel Claude is running. Does nothing if `~/.claude-tg-stop` exists. |
+| `claude-tg-health` | If Claude is running but its Telegram plugin process (`bun run ... telegram`) is gone, stops that Claude so it is restarted. Skips a Claude under 3 minutes old and does nothing if `~/.claude-tg-stop` exists. It checks processes, not Telegram's servers. |
+
+```cron
+@reboot sleep 30 && /home/ubuntu/bin/claude-tg-ensure >> /home/ubuntu/claude-tg-ensure.log 2>&1
+*/5 * * * * /home/ubuntu/bin/claude-tg-ensure >> /home/ubuntu/claude-tg-ensure.log 2>&1
+0 * * * * /home/ubuntu/bin/claude-tg-health >> /home/ubuntu/claude-tg-ensure.log 2>&1
+```
+
+- **Stop it on purpose:** `touch ~/.claude-tg-stop`, then end Claude (or `/exit`). Cron then leaves it alone.
+- **Turn auto-restart back on:** run `claude-tg` in the tmux window (it deletes the marker), or `rm ~/.claude-tg-stop` and wait up to 5 minutes (or run `claude-tg-ensure`).
+- **Limits:** a `tmux kill-session` is revived within 5 minutes unless the marker exists; a restart interrupts a task in progress (`--continue` reloads the conversation, not the unfinished work). Log: `~/claude-tg-ensure.log`.
+
 ---
 
 ## 2. A day in Finnbot
