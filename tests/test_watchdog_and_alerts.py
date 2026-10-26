@@ -383,3 +383,22 @@ def test_the_report_just_past_is_remembered_when_the_next_date_moves_on(tmp_path
     assert after["last_earnings_date"] == "2026-10-23" and after["next_earnings_date"] == "2027-01-22"
     later = evaluate(datetime(2026, 10, 27, 15, tzinfo=timezone.utc), None)  # No date known: the report is kept
     assert later["last_earnings_date"] == "2026-10-23"
+
+
+def test_the_earnings_window_counts_trading_days(monkeypatch):
+    # Claude-authored (2026-10-26, Andres): EARNINGS_WINDOW_DAYS is in trading days. A report on Monday 2026-11-02
+    # is 1 trading day away on Friday 10-30 and 2 on Thursday 10-29 (calendar days would be 3 and 4)
+    monkeypatch.setitem(params_dict["WATCHDOG"], "EARNINGS_AFTER_TRADING_DAYS", 0)
+    snapshot = pd.DataFrame({"symbol": ["XYZ"], "current_price": [10.0], "natr": [2.0]})
+
+    def check(day, window, report="2026-11-02"):
+        monkeypatch.setitem(params_dict["WATCHDOG"], "EARNINGS_WINDOW_DAYS", window)
+        now = datetime(2026, 10, day, 15, 0, tzinfo=timezone.utc)
+        record = {"evaluated_at": (now - timedelta(hours=1)).isoformat(), "price": 10.0, "recommendation": "hold",
+                  "next_earnings_date": report}
+        return wd.select_symbols_to_evaluate(snapshot, {"XYZ": record}, True, False, now)
+
+    assert check(30, 1) == {"XYZ": "earnings in 1 trading day(s)"}
+    assert check(29, 1) == {} and check(29, 2) == {"XYZ": "earnings in 2 trading day(s)"}
+    assert check(30, 0, report="2026-10-30") == {"XYZ": "earnings in 0 trading day(s)"}  # The day itself
+    assert check(26, 7, report="2026-11-09") == {}  # 10 trading days away, past a 7-day window

@@ -103,19 +103,23 @@ def test_macro_news_switches_to_paid_on_a_blocking_free_key_failure(monkeypatch,
     assert calls == [None] and telegram.messages == []
 
 
-def test_macro_news_does_not_switch_on_a_transient_rate_limit(monkeypatch, telegram):
+def test_a_rate_limit_that_outlasts_the_retries_switches_too(monkeypatch, telegram):
+    # 2026-10-26: the free tier has no Google Search quota, which shows as a 429 classified rate_limited once every
+    # retry has failed; it used to leave the free key in place, so the morning digest had no news at all
     monkeypatch.setenv("GEMINI_FREE_API_KEY", "shared-free")
     monkeypatch.setenv("GEMINI_API_KEY", "shared-paid")
+    stories = SimpleNamespace(macro_stories=["ok"])
 
     def fetch(api_key=None):
-        raise rate_limit_error()
+        if api_key == "shared-free":
+            raise rate_limit_error()
+        return stories
 
     monkeypatch.setattr(market_news, "fetch_live_macro_stories", fetch)
-    stories, issues = market_news.get_macro_stories()
-    assert stories is None and issues[0]["reason"] == "rate_limited"
-    # Not a blocking failure: no switch, and no "switched to paid" notice (alert_admins' own notice still fires)
-    assert not rotation.switched_to_paid()
-    assert not any("switched to the paid key" in body for _, body in telegram.messages)
+    assert market_news.get_macro_stories() == (stories, [])  # The paid key got the news in the same run
+    assert rotation.switched_to_paid() is True
+    assert rotation.free_key_failed(rate_limit_error()) and rotation.free_key_failed(quota_error())
+    assert not rotation.free_key_failed(None)
 
 
 # --------------------------------------------------------------------------------------------- per-user (Andres)

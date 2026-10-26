@@ -74,8 +74,9 @@ Who pays for what:
     runs on YOUR OWN API keys, so those providers bill you directly:
       Anthropic (the reviews): about $1-2 a month for 10-20 holdings with both digests, plus a
         few cents to a dollar or so for the watchdog.
-      Google (the news, optional): free on Google's free tier, which is where everyone starts. Only
-        if Andres asks you to turn on billing does it cost anything (about $0.50-1.05 a month).
+      Google (the news, optional): about $0.25-0.55 a month for 10-20 holdings with both digests.
+        It needs billing turned on for your Gemini key: Google's free tier doesn't include the web
+        search the news uses.
     Section 3.10 has the full table.
   - An ideas-only user (section 2.3) pays nothing.
 
@@ -373,7 +374,7 @@ so the provider bills you directly for your holdings' reviews. You need:
   ---------  ----------------------------------------  -------------------------------------------
   Anthropic  Always, with holdings                     Reviewing each holding, and the
                                                        portfolio review
-  Gemini     With holdings and news on (3.7)           News for each holding (free tier to start)
+  Gemini     With holdings and news on (3.7)           News for each holding (billing on)
 
 Before you start: have a safe place ready to store each key the moment you create it (section 6).
 Anthropic shows a key only once; if you lose it, you have to create a new one.
@@ -398,27 +399,23 @@ GETTING A GEMINI KEY (only if you want news for each holding, 3.7)
   1. Go to aistudio.google.com/api-keys and sign in with a Google account.
   2. Click "Create API key". Choose an existing Google Cloud project or let it create one (any name
      is fine, e.g. Finnbot).
-  3. Copy the key (it usually starts with AIza) and save it in your password manager.
-  That's all: no card, no billing. The key starts on Google's free tier, which costs nothing and
-  has daily limits (about 1,500 requests and 500 web searches a day, reset at midnight Pacific
-  time) that are far above what Finnbot needs: a 20-holding digest uses about 7 requests, since
-  each covers 3 stocks. It also has a per-minute limit, which can now and then leave a stock
-  without news in one digest.
-  When billing is needed: if your holdings' news is often missing, or Google stops the key for
-  being over a free limit (the top of your email says so), Andres may ask you to turn on billing:
-  go to console.cloud.google.com, open Billing, and attach a payment card to the key's project.
-  The same key keeps working. That costs about $0.50 a month for 10 holdings and about $1.05 for
-  20, with both digests (3.10). Then set a budget alert in Billing, so you're emailed if costs rise.
-  Google's free-tier terms let it use what's sent to improve its products. For Finnbot that's only
-  your stocks' symbols and company names (6.6), never your share counts, prices, or accounts.
+  3. Turn on billing for that project: go to console.cloud.google.com, open Billing, and attach a
+     payment card to the key's project. This is required: Google's free tier doesn't include the
+     web search the news uses (tested on every current model in October 2026), so a key without
+     billing gets no news at all.
+  4. Recommended: in Billing, set a budget alert, so you're emailed if costs rise.
+  5. Copy the key (it usually starts with AIza) and save it in your password manager.
+  Cost: about $0.27 a month for 10 holdings and $0.53 for 20, with both digests (3.10). Each key
+  also gets 5,000 free web searches a month, far more than Finnbot uses, so you pay only for the
+  text the model writes.
 
 Tips for both:
   - Create a key used ONLY for Finnbot. If it ever leaks, you can delete it without affecting
     anything else you use the provider for.
   - Check your usage page after the first week to confirm costs match section 3.10.
-  - If a key stops working (expired, out of credit, over a free-tier limit), the top of your email
-    says so, and the rest of your digest still arrives. Create a new key, top up, or turn on
-    billing, and send Andres the new key if you made one.
+  - If a key stops working (expired, out of credit, billing off), the top of your email says so,
+    and the rest of your digest still arrives. Create a new key, top up, or turn billing back on,
+    and send Andres the new key if you made one.
 
 3.7 News for each holding
 -------------------------
@@ -426,18 +423,16 @@ What it is: for each holding, Gemini searches the web for its most important rec
 writes up to 2 short summaries (medium priority or higher), each with a link to its source. They
 appear on the stock's card and feed the portfolio review.
 Options: on (default) or off.
-Cost: nothing on Google's free tier (3.6), which is where you start. With billing on, about $0.002
-per stock for a digest's news. The Post-Market digest shows the morning's news again for stocks
-that haven't moved much, kept their signal, and haven't reported earnings since, so most of its
-news costs nothing.
+Cost: about $0.001 per stock for a digest's news (Gemini 3.5 Flash-Lite, chosen in October 2026:
+about half the cost of the model before it, with news close to its quality). The Post-Market
+digest shows the morning's news again for stocks that haven't moved much, kept their signal, and
+haven't reported earnings since, so most of its news costs nothing.
 How much you see: with up to 10 holdings, each card shows up to 2 stories. With more, each shows its
 single most important story, except stocks flagged risky or urgent sell, which keep 2. This keeps
 the email under Gmail's size limit.
 Pros (on): explains WHY a stock is moving, with sources; the reviews can weigh real events.
-Cons (on): needs a Gemini key; costs a little if you ever need billing on.
+Cons (on): needs a Gemini key with billing on; costs a little.
 Turning it off means you don't need a Gemini key at all.
-Note: Google has announced that this model's prices double on January 1, 2027. That doubles the
-news cost with billing on; the free tier stays free.
 
 3.8 Telegram
 ------------
@@ -482,7 +477,7 @@ Andres; the options are listed under each, and section 5 lists everything else y
 How a check works, and why it stays cheap: each check first looks at prices without any AI.
 Only stocks that need it get a new AI review:
   - the price moved about one average day's range since the stock's last review, or
-  - it reports earnings within 7 days, or reported on the previous trading day (the day the
+  - it reports earnings within 4 trading days, or reported on the previous trading day (the day the
     market reacts to a report released after the close), or
   - its last review is more than 24 hours old.
 Every other stock keeps its latest signal. There is also a hard cap of 40 AI reviews per day for
@@ -533,37 +528,34 @@ Your bill = digests + watchdog (3.9). Ideas, market signals, and macro news are 
 What each digest costs you:
   - The AI review: about $0.002 per holding (Claude Haiku 5.5, 3.4). Anthropic bills it.
   - The portfolio review: about $0.0015 per digest, however many holdings you have. Anthropic.
-  - News, if on: nothing on Google's free tier (3.6). With billing on, about $0.002 per holding;
-    with both digests, the Post-Market one reuses most of the morning's news (3.7), so its news
-    costs much less. Google bills it.
+  - News, if on: about $0.001 per holding; with both digests, the Post-Market one reuses most of
+    the morning's news (3.7), so its news costs much less. Google bills it.
 
 Estimates for 21 trading days a month:
 
-  Digests  Holdings  ANTHROPIC (always)     GOOGLE (news; $0 on the free tier,
-  a day              per month              this only once billing is on)
-  -------  --------  ---------------------  ----------------------------------
-  1        1         $0.07                  $0.05
-  1        10        $0.45                  $0.42
-  1        20        $0.87                  $0.84
-  2        1         $0.15                  $0.05
-  2        10        $0.90                  $0.53
-  2        20        $1.74                  $1.05
+  Digests  Holdings  ANTHROPIC (always)     GOOGLE (news, only if on)
+  a day              per month              per month
+  -------  --------  ---------------------  -------------------------
+  1        1         $0.07                  $0.03
+  1        10        $0.45                  $0.21
+  1        20        $0.87                  $0.42
+  2        1         $0.15                  $0.03
+  2        10        $0.90                  $0.27
+  2        20        $1.74                  $0.53
 
 Then add the watchdog from 3.9, also on Anthropic (typically $0.20-0.50 a month for 10 holdings;
 the hard maximum is $1.70, whatever the number of holdings).
 
 Examples:
-  - 10 holdings, news on (free tier), both digests, watchdog on:
-      about $0.90 + $0.20 = roughly $1.10 a month, all Anthropic.
-  - The same, if Andres asks you to turn on Google billing: add about $0.53, so about $1.65.
-  - 20 holdings, news on (free tier), both digests, watchdog on:
-      about $1.74 + $0.20-0.50 = roughly $2.00-2.25 a month; at most $3.45 if the watchdog hits
-      its daily cap every day, plus about $1.05 with Google billing on.
+  - 10 holdings, news on, both digests, watchdog on:
+      about $0.90 + $0.27 + $0.20 = roughly $1.40 a month (Anthropic about $1.10, Google $0.27).
+  - 20 holdings, news on, both digests, watchdog on:
+      about $1.74 + $0.53 + $0.20-0.50 = roughly $2.50-2.75 a month; at most about $4 if the
+      watchdog hits its daily cap every day.
   - 10 holdings, news off, Pre-Market only, watchdog off:
       about $0.45 a month.
 
-From January 1, 2027, Google's prices roughly double (3.7), so its column doubles too, but only if
-your billing is on. All figures are estimates at October 2026 prices; your real costs depend on
+All figures are estimates at October 2026 prices; your real costs depend on
 market activity and on how much the models write. Measured digests so far have come in at or a
 little under these figures. The news figures are the least certain.
 
@@ -587,7 +579,7 @@ little under these figures. The news figures are the least certain.
 
 Things that are still needed even though you might expect otherwise:
   - Google Sheets: the sheet's ID, sent privately (the form doesn't ask for it).
-  - News on with the free tier: a Gemini key, even though it costs nothing.
+  - News on: a Gemini key with billing turned on (Google's free tier has no web search).
 
 
 ================================================================================
@@ -689,8 +681,8 @@ How to send your keys to Andres:
 6.4 Limit the damage in advance
 -------------------------------
   - Create a key used only for Finnbot, so you can delete it without affecting anything else.
-  - Set a monthly spend limit (Anthropic) or, once billing is on, a budget alert (Google), so a
-    leak can never cost much. A Gemini key on the free tier can't run up a bill at all.
+  - Set a monthly spend limit (Anthropic) or a budget alert (Google), so a leak can never cost
+    much.
   - Turn on two-factor authentication for each provider account and for SnapTrade.
   - Look at each provider's usage page now and then. Usage you don't recognise is the first sign of
     a leak.
@@ -707,8 +699,7 @@ How to send your keys to Andres:
 ------------------------
   - Your holdings (symbols, share counts, prices paid) are sent to Anthropic, whose AI model
     reviews them and writes the portfolio review (with your account names). Gemini's news
-    searches use only the symbols and company names; on the free tier, Google may use those to
-    improve its products.
+    searches use only the symbols and company names.
   - With SnapTrade, SnapTrade can read your brokerage positions.
   - With Google Sheets, only you and Finnbot's service account can see it (2.2).
   - Andres sees your settings and keys in order to run Finnbot for you, and never shares them.
@@ -743,7 +734,7 @@ With holdings (SnapTrade or Google Sheets), in the form:
   [ ] Telegram: with the watchdog, without it, or none (3.8)
 And sent PRIVATELY:
   [ ] Anthropic key
-  [ ] Gemini key (only with news on; free tier, no billing needed to start)
+  [ ] Gemini key (only with news on; billing turned on for its project)
   [ ] Telegram chat ID (only if you chose Telegram)
 
 Ideas only, optionally (in the form):

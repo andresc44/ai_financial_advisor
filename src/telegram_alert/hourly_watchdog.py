@@ -129,7 +129,7 @@ def select_symbols_to_evaluate(
     Returns {symbol: reason} for stocks that need a fresh Claude evaluation.
 
     On a scheduled (due) check: never-evaluated stocks, evaluations older than MAX_EVALUATION_AGE_HOURS,
-    moves >= REEVAL_NATR_MULTIPLE x NATR since the last evaluation, earnings within EARNINGS_WINDOW_DAYS, or
+    moves >= REEVAL_NATR_MULTIPLE x NATR since the last evaluation, earnings within EARNINGS_WINDOW_DAYS trading days, or
     within EARNINGS_AFTER_TRADING_DAYS trading days after a report (2026-10-26).
     Tripwire (any run, if enabled): moves >= TRIPWIRE_NATR_MULTIPLE x NATR, or price below the last SAR stop.
     Everything else keeps its last recommendation.
@@ -151,15 +151,18 @@ def select_symbols_to_evaluate(
                 reasons[symbol] = "never evaluated"
                 continue
             age_hours = (now - datetime.fromisoformat(last["evaluated_at"])).total_seconds() / 3600
+            # 2026-10-26 (Andres): counted in trading days (calendar days before), e.g. a Monday report is 1 trading
+            # day away on Friday; a report today is 0
             earnings = last.get("next_earnings_date")
-            days_to_earnings = (date.fromisoformat(earnings) - today).days if earnings else None
+            report = date.fromisoformat(earnings) if earnings else None
+            days_to_earnings = trading_days_after(today, report) if report and report >= today else None
 
             if age_hours >= WATCHDOG_PARAMS["MAX_EVALUATION_AGE_HOURS"]:
                 reasons[symbol] = f"last evaluated {age_hours:.0f}h ago"
             elif move is not None and move >= WATCHDOG_PARAMS["REEVAL_NATR_MULTIPLE"]:
                 reasons[symbol] = f"moved {move:.1f}x NATR since last evaluation"
             elif days_to_earnings is not None and 0 <= days_to_earnings <= WATCHDOG_PARAMS["EARNINGS_WINDOW_DAYS"]:
-                reasons[symbol] = f"earnings in {days_to_earnings} day(s)"
+                reasons[symbol] = f"earnings in {days_to_earnings} trading day(s)"
             elif (days_after := _trading_days_since_earnings(last, today)) is not None:
                 reasons[symbol] = f"reported earnings {days_after} trading day(s) ago"
             if symbol in reasons:

@@ -286,8 +286,11 @@ params_dict = {
     # API_PRICES["gemini"] is still counted in api_usage, just not costed.
     # 2026-10-23: no PORTFOLIO_REVIEW any more: the portfolio review is written by LLM["HOLDINGS"] (below)
     "GEMINI_MODELS": {
-        "HOLDING_NEWS": "gemini-3.6-flash",      # News bullets per holding (src/personalized/symbol_specific_news.py)
-        "MACRO_NEWS": "gemini-3.6-flash",        # Top macro stories in the universal content (src/universal/market_news.py)
+        # 2026-10-26 (Andres): gemini-3.5-flash-lite, was gemini-3.6-flash. In that day's comparison (11 holdings and the
+        # macro news, 2 runs each) it cost about half as much (a quarter from 2027-01-01, when 3.6's price doubles),
+        # since it doesn't think, with news close to 3.6's; 3.1-flash-lite thought ~5K tokens a run, so cost more
+        "HOLDING_NEWS": "gemini-3.5-flash-lite",  # News bullets per holding (src/personalized/symbol_specific_news.py)
+        "MACRO_NEWS": "gemini-3.5-flash-lite",    # Top macro stories in the universal content (src/universal/market_news.py)
     },
     # Claude-authored (2026-10-23, at Andres's request): settings for every Gemini call in the project
     # (src/llm/gemini_settings.py). Until then no call set a thinking level, so gemini-3.6-flash thought as much as it
@@ -716,6 +719,13 @@ params_dict = {
                 {"from": "2026-01-01", "input": 0.75, "output": 3.75, "cached_input": 0.075, "search_per_1000": 14.0},
                 {"from": "2027-01-01", "input": 1.50, "output": 7.50, "cached_input": 0.15, "search_per_1000": 14.0},
             ],
+            # 2026-10-26: Google's Global prices, from Andres; no change announced
+            "gemini-3.5-flash-lite": [
+                {"from": "2026-01-01", "input": 0.30, "output": 2.50, "cached_input": 0.03, "search_per_1000": 14.0},
+            ],
+            "gemini-3.1-flash-lite": [
+                {"from": "2026-01-01", "input": 0.25, "output": 1.50, "cached_input": 0.025, "search_per_1000": 14.0},
+            ],
         },
         # Claude-authored (2026-10-16): peak prices, with "off_peak" ones (50%) outside DEEPSEEK_PEAK_HOURS_UTC.
         # "input" is a cache miss, "cache_read" a cache hit (DeepSeek caches repeated prompt prefixes automatically).
@@ -768,7 +778,7 @@ params_dict = {
         "REEVAL_NATR_MULTIPLE": 1.0,             # On a scheduled check, re-evaluate a stock that moved >= this many NATRs since its last evaluation
         "TRIPWIRE_NATR_MULTIPLE": 2.0,           # Between scheduled checks, force an early evaluation at >= this many NATRs
         "MAX_EVALUATION_AGE_HOURS": 24,          # On a scheduled check, re-evaluate anything older than this even if it hasn't moved
-        "EARNINGS_WINDOW_DAYS": 7,               # On a scheduled check, re-evaluate a stock whose next earnings date is within this many days
+        "EARNINGS_WINDOW_DAYS": 4,               # On a scheduled check, re-evaluate a stock whose next earnings date is within this many trading days (2026-10-26, Andres: 4; was 7 calendar days)
         "EARNINGS_AFTER_TRADING_DAYS": 1,        # 2026-10-26, Andres: ... and for this many trading days after a report (0 = off)
         "ALERT_RECOMMENDATIONS": ["urgent_sell"],  # Recommendations that trigger a Telegram alert
         "ALERT_COOLDOWN_HOURS": 24,              # Suppress a repeat alert for the same (user, symbol, recommendation)

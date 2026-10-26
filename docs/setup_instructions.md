@@ -78,9 +78,9 @@ Only needed if you want news for each holding.
 
 1. Go to <https://aistudio.google.com/api-keys> and sign in with a Google account.
 2. Click **Create API key** (let it create a project if asked) and copy the key (it starts with `AIza`). Save it.
-
-It's free to start with. If your holdings' news is often missing or late, Andres may ask you to turn on billing for the
-key's project (about $0.50 a month for 10 holdings, $1.05 for 20, with both digests).
+3. Turn on billing for the key's project: at <https://console.cloud.google.com>, open **Billing** and attach a card.
+   Required: Google's free tier doesn't include the web search the news uses. About $0.27 a month for 10 holdings,
+   $0.53 for 20, with both digests. Recommended: set a budget alert there too.
 
 ## 7. Gmail: so the email's dropdowns work
 

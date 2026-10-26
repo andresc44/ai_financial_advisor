@@ -145,7 +145,7 @@ def get_macro_stories() -> tuple[Optional[DigestPayload], list[dict]]:
     told once on Telegram, and this same request is retried right away with the paid key.
     """
     from src.telegram_alert.notices import alert_admins  # Imported here: only needed when something fails
-    from src.llm.gemini_key_rotation import free_key, notify_switch, switch_to_paid
+    from src.llm.gemini_key_rotation import free_key, free_key_failed, notify_switch, switch_to_paid
 
     api_key = free_key()  # None when there's no free key, or this slot already switched to paid
     try:
@@ -153,7 +153,7 @@ def get_macro_stories() -> tuple[Optional[DigestPayload], list[dict]]:
     except Exception as e:
         issue, key_error = _macro_issue(e)
 
-    if api_key and key_error is not None and key_error.blocks_run:
+    if api_key and free_key_failed(key_error):
         if switch_to_paid(None, key_error):
             notify_switch(None, key_error)
         try:

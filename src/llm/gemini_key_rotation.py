@@ -8,9 +8,9 @@ to see whether the free tier's quota covers Finnbot's Gemini calls before paying
 
 How it works:
 - A slot (None/omitted = the shared universal key, or a user's name) tries its free key first.
-- The first time that key fails for anything but a transient per-minute rate limit (any reason
-  ApiKeyUnusable.blocks_run is True for: a key problem, a billing requirement, or the daily quota running out),
-  the slot switches to its paid key (the one Finnbot used before the free key existed) for the rest of this call
+- The first time that key fails (free_key_failed: any reason ApiKeyUnusable.blocks_run is True for, i.e. a key
+  problem, a billing requirement, or the daily quota running out; and since 2026-10-26 a rate limit that outlasted
+  every retry, which is how the free tier's missing Google Search quota shows), the slot switches to its paid key (the one Finnbot used before the free key existed) for the rest of this call
   and every one after it, and Andres is told once on Telegram.
 - The switch is permanent, remembered in data/gemini_key_state.json, until he resets it by hand (`--reset`,
   below): nothing clears it automatically, even once a daily quota would otherwise have reset, since he asked to
@@ -112,6 +112,16 @@ def paid_key(user_name: Optional[str]) -> Optional[str]:
                 return value
         return None
     return env_setting((USER_PROFILES.get(user_name) or {}).get("gemini_api_key"))
+
+
+def free_key_failed(error: Optional[ApiKeyUnusable]) -> bool:
+    """
+    Whether a free key's error switches its slot to the paid key: any blocking error, and (2026-10-26) a rate limit
+    too. A rate limit only reaches the callers once GEMINI_RETRY's backoff (~30 s) has run out, and the free tier
+    has no Google Search quota on any current model (429 RESOURCE_EXHAUSTED, without the quota details that would
+    classify it as quota_exhausted), so on 2026-10-26 every news request failed that way and nothing switched.
+    """
+    return error is not None and (error.blocks_run or error.reason == "rate_limited")
 
 
 def switch_to_paid(user_name: Optional[str], error: ApiKeyUnusable) -> bool:

@@ -58,7 +58,7 @@ def fetch_holdings_news(
     """
     if not companies:
         return {}, None
-    from src.llm.gemini_key_rotation import free_key, notify_switch, switch_to_paid
+    from src.llm.gemini_key_rotation import free_key, free_key_failed, notify_switch, switch_to_paid
 
     api_key, used_free = free_key(user_name), True
     if api_key is None:
@@ -71,7 +71,7 @@ def fetch_holdings_news(
 
     news, key_error = fetch_symbol_news(companies, api_key=api_key, user_name=user_name)
 
-    if used_free and key_error is not None and key_error.blocks_run:
+    if used_free and free_key_failed(key_error):
         if switch_to_paid(user_name, key_error):
             notify_switch(user_name, key_error)
         remaining = {symbol: company for symbol, company in companies.items() if symbol not in news}

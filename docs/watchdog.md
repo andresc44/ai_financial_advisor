@@ -61,7 +61,7 @@ Since 2026-10-23 every setting in `src/config/parameters.py` can also be changed
 | `WATCHDOG.REEVAL_NATR_MULTIPLE` | `1.0` | On a scheduled check, re-evaluate a stock that moved at least this many NATRs since its last evaluation. |
 | `WATCHDOG.TRIPWIRE_NATR_MULTIPLE` | `2.0` | Between scheduled checks, force an evaluation at this many NATRs. |
 | `WATCHDOG.MAX_EVALUATION_AGE_HOURS` | `24` | On a scheduled check, re-evaluate anything older than this. Also the maximum age of an evaluation that can still trigger an alert. |
-| `WATCHDOG.EARNINGS_WINDOW_DAYS` | `7` | On a scheduled check, re-evaluate when earnings fall within this many days. |
+| `WATCHDOG.EARNINGS_WINDOW_DAYS` | `4` | On a scheduled check, re-evaluate when earnings fall within this many trading days (2026-10-26; was 7 calendar days). |
 | `WATCHDOG.EARNINGS_AFTER_TRADING_DAYS` | `1` | And for this many trading days after a report (2026-10-26; 0 = off). |
 | `WATCHDOG.ALERT_RECOMMENDATIONS` | `["urgent_sell"]` | Recommendations that send Telegram alerts. |
 | `WATCHDOG.ALERT_COOLDOWN_HOURS` | `24` | No repeat alert for the same (user, symbol, recommendation) within this window. |
@@ -243,7 +243,7 @@ Switching to this schedule gave every user one extra check on its first run (the
 - it has never been evaluated;
 - its last evaluation is older than `MAX_EVALUATION_AGE_HOURS`;
 - it moved at least `REEVAL_NATR_MULTIPLE` × NATR since its last evaluation;
-- earnings are within `EARNINGS_WINDOW_DAYS`;
+- earnings are within `EARNINGS_WINDOW_DAYS` trading days;
 - it reported earnings 1 to `EARNINGS_AFTER_TRADING_DAYS` trading days ago (2026-10-26, default 1; the report is the state's `last_earnings_date`, kept by `record_evaluations` once the next date moves on, or a `next_earnings_date` already past);
 - **24_7 only**, while the market is overnight or closed: Finnhub has headlines newer than the last evaluation (one Finnhub call per stock).
 

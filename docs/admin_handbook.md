@@ -167,7 +167,7 @@ Details: [watchdog.md](watchdog.md), sections "Swing screen" and "Universal pick
 - **A fresh swing idea that started a new uptrend usually shows hold.** Kept that way on 2026-10-23.
 
 **The watchdog** repeats steps 1-5 between digests for stocks that need it:
-- which stocks: moved 1+ NATR since their last review, earnings within 7 days, or a review older than 24 h;
+- which stocks: moved 1+ NATR since their last review, earnings within 4 trading days or 1 trading day after a report, or a review older than 24 h;
 - the tripwire forces an early review at 2 NATRs;
 - at most 40 reviews per user per day.
 
