@@ -62,6 +62,7 @@ Since 2026-10-23 every setting in `src/config/parameters.py` can also be changed
 | `WATCHDOG.TRIPWIRE_NATR_MULTIPLE` | `2.0` | Between scheduled checks, force an evaluation at this many NATRs. |
 | `WATCHDOG.MAX_EVALUATION_AGE_HOURS` | `24` | On a scheduled check, re-evaluate anything older than this. Also the maximum age of an evaluation that can still trigger an alert. |
 | `WATCHDOG.EARNINGS_WINDOW_DAYS` | `7` | On a scheduled check, re-evaluate when earnings fall within this many days. |
+| `WATCHDOG.EARNINGS_AFTER_TRADING_DAYS` | `1` | And for this many trading days after a report (2026-10-26; 0 = off). |
 | `WATCHDOG.ALERT_RECOMMENDATIONS` | `["urgent_sell"]` | Recommendations that send Telegram alerts. |
 | `WATCHDOG.ALERT_COOLDOWN_HOURS` | `24` | No repeat alert for the same (user, symbol, recommendation) within this window. |
 | `WATCHDOG.MAX_CLAUDE_CALLS_PER_USER_DAY` | `40` | Cap on watchdog Claude calls per user per market day. Digest calls don't count. |
@@ -243,6 +244,7 @@ Switching to this schedule gave every user one extra check on its first run (the
 - its last evaluation is older than `MAX_EVALUATION_AGE_HOURS`;
 - it moved at least `REEVAL_NATR_MULTIPLE` × NATR since its last evaluation;
 - earnings are within `EARNINGS_WINDOW_DAYS`;
+- it reported earnings 1 to `EARNINGS_AFTER_TRADING_DAYS` trading days ago (2026-10-26, default 1; the report is the state's `last_earnings_date`, kept by `record_evaluations` once the next date moves on, or a `next_earnings_date` already past);
 - **24_7 only**, while the market is overnight or closed: Finnhub has headlines newer than the last evaluation (one Finnhub call per stock).
 
 **On any run with the tripwire on**, a stock is evaluated if:
@@ -277,6 +279,7 @@ A full fetch costs about 9 Finnhub calls and 6 Twelve Data credits per stock. A 
 - **Logging:** a send is logged only after Telegram accepts it, so a failed send is retried on the next run.
 - **Addressed by name, and "Urgent" only when it is** (2026-10-23, Andres): every Telegram message used to start with "Urgent Alert for <user>". Now the urgent ones, the watchdog's sell alerts and a swing idea's position reaching its stop or target, start with "🚨 Urgent alert for <user>:" (`send_telegram_message(..., urgent=True)`), and every other message (settings, sign-ups, key and holdings problems, earnings reminders, the holiday notice, scorecards, run failures) starts with "Hi <user>," above its own heading.
 - **Which recommendations alert:** the latest *recorded* recommendation, not only this run's evaluations, so an `urgent_sell` from the morning digest also alerts. Recommendations older than `MAX_EVALUATION_AGE_HOURS` never alert.
+- **The digest sends its own (2026-10-26):** once every digest of a run is out, `run_daily_digests` calls `hourly_watchdog.send_digest_alerts` from the main thread, for each user with holdings and a chat ID, watchdog on or off, limited to the stocks in their digest. Before, a digest's `urgent_sell` waited for the next watchdog run past its gates, about an hour later (the tripwire sits out the hour after a digest), and never came for a user with the watchdog off. Same alert log and cooldown, so neither job repeats the other's alert; a failed send stays unrecorded, and the watchdog retries it.
 - **Confirmed first (added 2026-10-22, at Andres's request):** a review that says `urgent_sell` or `profit_sell` (`HOLDINGS_RECHECK.SIGNALS`) is followed by `EXTRA_REVIEWS` (2) more of the same stock, and the majority's label is kept; a tie goes to the milder label (of three different ones, the middle). So a one-off urgent sell neither alerts nor flags the stock. The same holdings' labels matched 8 times out of 10 on identical data (2026-10-20). Other labels, and sentiment, are never re-reviewed. Each extra review costs one more request for that stock (`recommendation.ParallelHoldingEvaluator._confirmed`, `majority_review`).
 
 ## Files written

@@ -535,3 +535,24 @@ def test_holding_news_can_be_switched_off(personal_env, monkeypatch):
     monkeypatch.setattr(pc, "fetch_symbol_news", lambda *args, **kwargs: pytest.fail("news fetched while switched off"))
     content = pc.get_personal_content("TestUser")
     assert content["holdings"] and all(h["news_bullets"] == [] for h in content["holdings"])
+
+
+def test_the_digests_urgent_alerts_go_once_every_email_is_out(digest_run, monkeypatch):
+    # Claude-authored (2026-10-26, Andres): from the main thread after the emails, with each user's digest holdings;
+    # a payload-only run sends none, and a failure there never fails the run
+    monkeypatch.setattr(dp.DigestPayload, "personal_content",
+                        lambda self, user: {"holdings": [{"symbol": f"{user}X"}, {"symbol": None}, "junk"]})
+    calls = []
+    monkeypatch.setattr(dp, "send_digest_alerts",
+                        lambda held, now: calls.append((dict(held), len(digest_run.sent), threading.current_thread())))
+    dp.run_daily_digests(["U0", "U1"], now=digest_run.now)
+    assert calls == [({"U0": {"U0X"}, "U1": {"U1X"}}, 2, threading.main_thread())]
+
+    calls.clear()
+    monkeypatch.setattr(dp.DigestPayload, "save_payload", lambda self, user, personal=None: "saved.json")
+    dp.run_daily_digests(["U0"], now=digest_run.now, payload_only=True)
+    assert calls == []
+
+    monkeypatch.setattr(dp, "send_digest_alerts", lambda held, now: (_ for _ in ()).throw(RuntimeError("down")))
+    ok, _ = dp.run_daily_digests(["U0"], now=digest_run.now)
+    assert ok

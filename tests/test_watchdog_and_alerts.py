@@ -303,3 +303,83 @@ def test_the_tripwire_waits_out_the_hour_after_a_digest(watchdog_env, monkeypatc
     watchdog_env.state["users"]["Andres"]["last_digest_at"] = (NOW - timedelta(hours=2)).isoformat()
     wd.check_user("Andres", NOW, EMPTY_LOG)
     assert user_state(watchdog_env)["last_check"] is None  # The tripwire ran (nothing due), without a scheduled check
+
+
+def test_the_digest_sends_its_own_urgent_alerts_once(monkeypatch, telegram):
+    # Claude-authored (2026-10-26, Andres): once every digest is out, from the main thread, to each user with holdings
+    # and a chat ID (watchdog on or off), for stocks still in their digest; the watchdog's log and cooldown stop repeats
+    from src.personalized.user_profiles import USER_PROFILES, build_profile
+    monkeypatch.setitem(USER_PROFILES, "Kim", build_profile("Kim"))
+    monkeypatch.setattr(wd, "is_user_eligible", lambda user: user != "Kim")  # Kim: no chat ID ("No Telegram")
+    urgent = {"recommendation": "urgent_sell", "rationale": "Guidance cut.", "evaluated_at": NOW.isoformat()}
+    state = {"users": {"Andres": {"symbols": {"XYZ": urgent, "OLD": urgent, "ABC": {**urgent, "recommendation": "hold"}}},
+                       "Kim": {"symbols": {"XYZ": urgent}}}}
+    monkeypatch.setattr(wd, "load_state", lambda *a, **k: copy.deepcopy(state))
+
+    held = {"Andres": {"XYZ", "ABC"}, "Kim": {"XYZ"}}  # OLD was sold since its evaluation
+    assert wd.send_digest_alerts(held, NOW) == 1
+    assert telegram.messages == [("Andres", "ACTION REQUIRED:\n\n<b>XYZ</b> - URGENT SELL: Guidance cut.")]
+    assert telegram.urgent == [True]
+    # Logged in the watchdog's alert log: neither the next digest nor the watchdog sends it again
+    assert wd.send_digest_alerts(held, NOW + timedelta(hours=1)) == 0 and len(telegram.messages) == 1
+    log = wd.load_and_prune_alert_logs(notices.CSV_PATH)
+    assert wd.is_alert_suppressed(log, "Andres", wd.alert_key("XYZ", "urgent_sell"))
+
+
+def test_a_failed_digest_alert_is_left_for_the_watchdog(monkeypatch, capsys):
+    urgent = {"recommendation": "urgent_sell", "rationale": "x", "evaluated_at": NOW.isoformat()}
+    monkeypatch.setattr(wd, "load_state", lambda *a, **k: {"users": {"Andres": {"symbols": {"XYZ": urgent}}}})
+    monkeypatch.setattr(wd, "is_user_eligible", lambda user: True)
+
+    def down(*args, **kwargs):
+        raise RuntimeError("Telegram is down")
+
+    monkeypatch.setattr(wd, "send_telegram_message", down)
+    assert wd.send_digest_alerts({"Andres": {"XYZ"}}, NOW) == 0  # Never raises
+    assert "the watchdog retries it" in capsys.readouterr().out
+    assert wd.load_and_prune_alert_logs(notices.CSV_PATH).empty  # Not recorded, so the watchdog's next run sends it
+
+
+def test_the_watchdog_rechecks_on_the_trading_days_after_a_report(monkeypatch):
+    # Claude-authored (2026-10-26, Andres): EARNINGS_AFTER_TRADING_DAYS (default 1) after a report, every scheduled
+    # check re-evaluates the stock, as in the days before it. Reported Friday 2026-10-23: Monday is the 1 trading day
+    # after, Tuesday isn't; the weekend doesn't count
+    monkeypatch.setitem(params_dict["WATCHDOG"], "EARNINGS_AFTER_TRADING_DAYS", 1)
+    snapshot = pd.DataFrame({"symbol": ["NEW", "OLD", "QUIET"], "current_price": [10.0] * 3, "natr": [2.0] * 3})
+
+    def check(day, records):
+        now = datetime(2026, 10, day, 15, 0, tzinfo=timezone.utc)
+        base = {"evaluated_at": (now - timedelta(hours=1)).isoformat(), "price": 10.0, "recommendation": "hold"}
+        return wd.select_symbols_to_evaluate(snapshot, {s: {**base, **r} for s, r in records.items()}, True, False, now)
+
+    records = {
+        "NEW": {"last_earnings_date": "2026-10-23", "next_earnings_date": "2027-01-22"},  # Evaluated since the report
+        "OLD": {"next_earnings_date": "2026-10-23"},  # Not evaluated since: the past date counts
+        "QUIET": {"last_earnings_date": "2026-07-24", "next_earnings_date": "2027-01-22"},
+    }
+    assert check(26, records) == {"NEW": "reported earnings 1 trading day(s) ago",
+                                  "OLD": "reported earnings 1 trading day(s) ago"}
+    assert check(27, records) == {}
+    assert check(24, records) == {}  # Saturday: no trading day since yet
+    monkeypatch.setitem(params_dict["WATCHDOG"], "EARNINGS_AFTER_TRADING_DAYS", 0)
+    assert check(26, records) == {}  # Off
+
+
+def test_the_report_just_past_is_remembered_when_the_next_date_moves_on(tmp_path):
+    from src.personalized import holdings_state as hs
+    path = tmp_path / "state.json"
+
+    def evaluate(when, next_date):
+        context = {"catalysts_and_earnings": {"upcoming_earnings": [{"date": next_date}] if next_date else []}}
+        df = pd.DataFrame([{"symbol": "XYZ", "recommendation": "hold", "current_price": 10.0, "market_context": context}])
+        hs.record_evaluations("Andres", df, evaluated_at=when, path=path)
+        return hs.get_user_state(hs.load_state(path), "Andres")["symbols"]["XYZ"]
+
+    before = evaluate(datetime(2026, 10, 22, 15, tzinfo=timezone.utc), "2026-10-23")
+    assert before["next_earnings_date"] == "2026-10-23" and before["last_earnings_date"] is None
+    on_the_day = evaluate(datetime(2026, 10, 23, 15, tzinfo=timezone.utc), "2026-10-23")  # Not reported yet
+    assert on_the_day["last_earnings_date"] is None
+    after = evaluate(datetime(2026, 10, 26, 15, tzinfo=timezone.utc), "2027-01-22")
+    assert after["last_earnings_date"] == "2026-10-23" and after["next_earnings_date"] == "2027-01-22"
+    later = evaluate(datetime(2026, 10, 27, 15, tzinfo=timezone.utc), None)  # No date known: the report is kept
+    assert later["last_earnings_date"] == "2026-10-23"

@@ -769,6 +769,7 @@ params_dict = {
         "TRIPWIRE_NATR_MULTIPLE": 2.0,           # Between scheduled checks, force an early evaluation at >= this many NATRs
         "MAX_EVALUATION_AGE_HOURS": 24,          # On a scheduled check, re-evaluate anything older than this even if it hasn't moved
         "EARNINGS_WINDOW_DAYS": 7,               # On a scheduled check, re-evaluate a stock whose next earnings date is within this many days
+        "EARNINGS_AFTER_TRADING_DAYS": 1,        # 2026-10-26, Andres: ... and for this many trading days after a report (0 = off)
         "ALERT_RECOMMENDATIONS": ["urgent_sell"],  # Recommendations that trigger a Telegram alert
         "ALERT_COOLDOWN_HOURS": 24,              # Suppress a repeat alert for the same (user, symbol, recommendation)
         "ALERT_LOG_RETENTION_DAYS": 30,          # Days of alert history kept in data/alerts_sent/

@@ -46,7 +46,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.tracking.idea_positions import attach_idea_origins
-from src.market.market_session import is_in_session, market_date, market_phase
+from src.market.market_session import is_in_session, market_date, market_phase, trading_days_after
 from src.market.watchdog_schedule import check_due, digest_just_ran
 from src.config.parameters import params_dict
 from src.personalized.add_metrics import HoldingsDataFetcher
@@ -129,7 +129,8 @@ def select_symbols_to_evaluate(
     Returns {symbol: reason} for stocks that need a fresh Claude evaluation.
 
     On a scheduled (due) check: never-evaluated stocks, evaluations older than MAX_EVALUATION_AGE_HOURS,
-    moves >= REEVAL_NATR_MULTIPLE x NATR since the last evaluation, or earnings within EARNINGS_WINDOW_DAYS.
+    moves >= REEVAL_NATR_MULTIPLE x NATR since the last evaluation, earnings within EARNINGS_WINDOW_DAYS, or
+    within EARNINGS_AFTER_TRADING_DAYS trading days after a report (2026-10-26).
     Tripwire (any run, if enabled): moves >= TRIPWIRE_NATR_MULTIPLE x NATR, or price below the last SAR stop.
     Everything else keeps its last recommendation.
     """
@@ -159,6 +160,8 @@ def select_symbols_to_evaluate(
                 reasons[symbol] = f"moved {move:.1f}x NATR since last evaluation"
             elif days_to_earnings is not None and 0 <= days_to_earnings <= WATCHDOG_PARAMS["EARNINGS_WINDOW_DAYS"]:
                 reasons[symbol] = f"earnings in {days_to_earnings} day(s)"
+            elif (days_after := _trading_days_since_earnings(last, today)) is not None:
+                reasons[symbol] = f"reported earnings {days_after} trading day(s) ago"
             if symbol in reasons:
                 continue
 
@@ -170,6 +173,21 @@ def select_symbols_to_evaluate(
                 reasons[symbol] = f"tripwire: price {price:.2f} below SAR stop {sar_stop:.2f}"
 
     return reasons
+
+
+def _trading_days_since_earnings(record: dict, today: date) -> Optional[int]:
+    """
+    Claude-authored (2026-10-26, Andres): trading days since the stock's last report, while that's 1 to
+    EARNINGS_AFTER_TRADING_DAYS (the report day itself is in EARNINGS_WINDOW_DAYS), else None. The report is
+    last_earnings_date, or a next_earnings_date already past (a record not evaluated since the report).
+    """
+    window = WATCHDOG_PARAMS.get("EARNINGS_AFTER_TRADING_DAYS", 0)
+    dates = [d for d in (record.get("last_earnings_date"), record.get("next_earnings_date")) if d]
+    past = [date.fromisoformat(d) for d in dates if date.fromisoformat(d) < today]
+    if window <= 0 or not past:
+        return None
+    days_after = trading_days_after(max(past), today)
+    return days_after if 1 <= days_after <= window else None
 
 
 def symbols_with_news_since(symbol_states: Dict[str, dict], symbols: Iterable[str]) -> Dict[str, str]:
@@ -412,6 +430,40 @@ def check_user(
     if key_error is not None and key_error.blocks_run:
         alert_logs = send_key_notice(user_name, key_error, alert_logs, cooldown_hours)
     return alert_logs
+
+
+def send_digest_alerts(held_by_user: Dict[str, set], now: Optional[datetime] = None,
+                       cooldown_hours: int = COOLDOWN_HOURS) -> int:
+    """
+    Claude-authored (2026-10-26, Andres): the digest's own urgent alerts, sent once every digest of the run is out,
+    from the main thread. Before, an urgent_sell found by a digest waited for the next watchdog run that got past its
+    gates: about an hour, since the tripwire sits out the hour after a digest (or longer if the digest ran past :45
+    and held the lock), and never for a user with the watchdog off.
+
+    `held_by_user` is {user: the symbols in their digest}, so a stock sold since isn't alerted. Every user with
+    holdings and a Telegram chat ID is covered, watchdog on or off (Andres: "No Telegram" means no chat ID, so no
+    alert). The alert log and its cooldown are the watchdog's, so neither job repeats the other's alert. Never raises:
+    a failed send is logged and left unrecorded, so the next watchdog run retries it. Returns the users alerted.
+    """
+    now = now or datetime.now(timezone.utc)
+    users = [user for user in held_by_user if held_by_user[user] and user in USER_PROFILES and is_user_eligible(user)]
+    if not users:
+        return 0
+    alert_logs = load_and_prune_alert_logs(notices.CSV_PATH, retention_days=RETENTION_DAYS)
+    before, alerted = len(alert_logs), 0
+    state = load_state()
+    for user in users:
+        rows = len(alert_logs)
+        try:
+            alert_logs = send_new_alerts(user, get_user_state(state, user)["symbols"], held_by_user[user], alert_logs,
+                                         now, cooldown_hours)
+        except Exception as e:  # Unrecorded, so the watchdog's next run sends it
+            print(f"[ERROR] {user}'s urgent alert from the digest wasn't sent ({e!r}); the watchdog retries it.")
+            continue
+        alerted += len(alert_logs) > rows
+    if len(alert_logs) > before:
+        merge_and_save_alert_logs(alert_logs)
+    return alerted
 
 
 def process_user_alerts(

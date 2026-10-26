@@ -442,7 +442,8 @@ news cost with billing on; the free tier stays free.
 3.8 Telegram
 ------------
 What it is: Telegram is a free messaging app. Finnbot's Telegram bot sends you:
-  - Urgent sell alerts from the watchdog (3.9), at most once per stock per day.
+  - Urgent sell alerts, at most once per stock per day: from each digest, as soon as it's sent,
+    and with the watchdog (3.9) also between digests.
   - If you buy a stock from one of Finnbot's swing ideas (by the end of the next trading day), an
     alert when it reaches the idea's stop or target, and a monthly scorecard of how the ideas you
     bought did against the S&P 500. (Section 9 explains how Finnbot notices the purchase.)
@@ -452,12 +453,13 @@ What it is: Telegram is a free messaging app. Finnbot's Telegram bot sends you:
     your brokerage connection expired. (Problems with an API key show in the email instead.)
 Only the sell alerts and the stop or target alerts are marked urgent.
 Your three choices in the form:
-  Yes, with the watchdog      Everything above. The watchdog (3.9) runs with its standard settings.
-  Yes, without the watchdog   Everything above except the watchdog's urgent sell alerts: earnings
-                              reminders, stop and target alerts (checked at each digest instead of
-                              during the day), and notices. Urgent sells still show in the email.
-  No Telegram                 None of the above. Urgent sells and holdings problems appear only in
-                              the email.
+  Yes, with the watchdog      Everything above. The watchdog (3.9) runs with its standard settings,
+                              so an urgent sell can reach you during the day, not only at digests.
+  Yes, without the watchdog   Everything above, but only as each digest finds it: urgent sells and
+                              stop and target alerts arrive right after a digest instead of during
+                              the day. Earnings reminders and notices are the same.
+  No Telegram                 None of the above, and no watchdog or tripwire. Urgent sells and
+                              holdings problems appear only in the email.
 Required: no. Telegram is only for users with holdings.
 Cost: free.
 
@@ -480,7 +482,8 @@ Andres; the options are listed under each, and section 5 lists everything else y
 How a check works, and why it stays cheap: each check first looks at prices without any AI.
 Only stocks that need it get a new AI review:
   - the price moved about one average day's range since the stock's last review, or
-  - it reports earnings within 7 days, or
+  - it reports earnings within 7 days, or reported on the previous trading day (the day the
+    market reacts to a report released after the close), or
   - its last review is more than 24 hours old.
 Every other stock keeps its latest signal. There is also a hard cap of 40 AI reviews per day for
 your watchdog, whatever happens.

@@ -92,6 +92,24 @@ def trading_day_bounds(
     return min(opens), max(closes)
 
 
+def trading_days_after(since: date, today: date, calendars: Optional[Iterable[str]] = None) -> int:
+    """
+    Claude-authored (2026-10-26): how many trading days fall after `since`, up to and including `today` (0 when
+    `today` <= `since`). A day counts when any configured exchange trades, as in trading_day_bounds.
+    """
+    if today <= since:
+        return 0
+    codes = list(calendars) if calendars is not None else WATCHDOG_PARAMS["EXCHANGE_CALENDARS"]
+    days = set()
+    for code in codes:
+        cal = _get_calendar(code)
+        start = max(pd.Timestamp(since) + pd.Timedelta(days=1), cal.first_session)
+        end = min(pd.Timestamp(today), cal.last_session)
+        if start <= end:
+            days.update(cal.sessions_in_range(start, end))
+    return len(days)
+
+
 def market_phase(now: datetime, calendars: Optional[Iterable[str]] = None) -> str:
     """Returns the current market phase (one of MARKET_PHASES), independent of any user's session setting."""
     ts = _to_utc(now)

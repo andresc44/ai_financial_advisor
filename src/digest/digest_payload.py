@@ -35,6 +35,7 @@ from src.telegram_alert.earnings_reminder import send_earnings_reminders
 from src.tracking.idea_positions import send_idea_scorecards
 from src.telegram_alert.holiday_notice import send_holiday_notice
 from src.telegram_alert.notices import alert_admins
+from src.telegram_alert.hourly_watchdog import send_digest_alerts  # Claude-authored (2026-10-26): urgent alerts
 from src.ops.cron_start import sync_at_start
 from src.digest.glossary_page import publish_if_changed
 import copy
@@ -258,6 +259,7 @@ def run_daily_digests(
     digest = DigestPayload(period=period, day=day)
     started = time.monotonic()
     sent, failed = [], []
+    held_by_user = {}  # 2026-10-26: {user: symbols in their digest}, for the urgent alerts once every digest is out
 
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="universal") as universal_pool, \
             ThreadPoolExecutor(max_workers=max_parallel_users, thread_name_prefix="user") as user_pool:
@@ -286,7 +288,10 @@ def run_daily_digests(
                         path = digest.save_payload(user, personal=future.result())
                         print(f"[{stamp}] Saved {user}'s payload to {path}")
                     else:
-                        digest.send_daily_digest_to(user, personal=future.result())
+                        personal = future.result()
+                        digest.send_daily_digest_to(user, personal=personal)
+                        held_by_user[user] = {h["symbol"] for h in personal.get("holdings") or []
+                                              if isinstance(h, dict) and h.get("symbol")}
                         record_sent(day, period, user)  # Not sent again if a later hourly run is still in the window
                         # 2026-10-25 (Andres): a digest resets the clock of the user's next watchdog check
                         update_user_state(user, lambda state: state.__setitem__(
@@ -298,6 +303,17 @@ def run_daily_digests(
                     print(f"[{stamp}] [ERROR] Sending the digest to {user} failed: {e}")
                     traceback.print_exc()
                     alert_admins(f"{period} digest failed for {user}", repr(e))
+
+    # Claude-authored (2026-10-26, Andres): the digests' urgent sells on Telegram, once they're all out, from this
+    # (main) thread: the watchdog would only send them an hour or more later (hourly_watchdog.send_digest_alerts)
+    if held_by_user:
+        try:
+            alerted = send_digest_alerts(held_by_user, now)
+            if alerted:
+                print(f"[{stamp}] Sent urgent Telegram alerts from the digest to {alerted} user(s).")
+        except Exception as e:  # Never fails the run: the watchdog sends anything left unsent
+            print(f"[{stamp}] [ERROR] The digest's urgent alerts failed: {e!r}")
+            traceback.print_exc()
 
     # Claude-authored (2026-10-15): one summary line per run, easy to grep in logs/digest.log
     elapsed = time.monotonic() - started

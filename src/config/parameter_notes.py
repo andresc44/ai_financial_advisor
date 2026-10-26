@@ -228,6 +228,8 @@ NOTES: dict[str, str] = {
     "WATCHDOG.TRIPWIRE_NATR_MULTIPLE": "Between checks, review early a stock that moved at least this many NATRs.",
     "WATCHDOG.MAX_EVALUATION_AGE_HOURS": "Review again anything older than this many hours, even if it hasn't moved.",
     "WATCHDOG.EARNINGS_WINDOW_DAYS": "Review again a stock reporting earnings within this many days.",
+    "WATCHDOG.EARNINGS_AFTER_TRADING_DAYS": "Review again, at every check, a stock for this many trading days after "
+                                            "it reports earnings (0 = off).",
     "WATCHDOG.ALERT_RECOMMENDATIONS": f"Signals that send a Telegram alert (any of {SIGNALS}).",
     "WATCHDOG.ALERT_COOLDOWN_HOURS": "The same alert (user, stock, signal) is sent at most once per this many hours. "
                                      "Takes effect from the next run.",

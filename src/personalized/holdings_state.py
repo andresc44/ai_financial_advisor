@@ -26,7 +26,8 @@ File layout:
       "symbols": {
         "<symbol>": {"evaluated_at": iso, "price": float, "natr": float, "recommendation": str,
                      "sentiment": str | null, "rationale": str, "sar_stop": float | null,
-                     "next_earnings_date": "YYYY-MM-DD" | null}
+                     "next_earnings_date": "YYYY-MM-DD" | null,
+                     "last_earnings_date": "YYYY-MM-DD" | null}  # 2026-10-26: the report just past
       }
     }
   }
@@ -192,7 +193,20 @@ def record_evaluations(
             "next_earnings_date": _next_earnings_date(context, today),
         }
 
-    update_user_state(user_name, lambda user_state: user_state["symbols"].update(records), path)
+    def _save(user_state: dict) -> None:
+        # Claude-authored (2026-10-26, Andres): the report just past, for the watchdog's days after earnings
+        # (WATCHDOG.EARNINGS_AFTER_TRADING_DAYS). Once a report's date is today or earlier and the next one has moved
+        # on, the old one is kept as last_earnings_date; otherwise the one kept before stays
+        for symbol, record in records.items():
+            previous = user_state["symbols"].get(symbol) or {}
+            last = previous.get("last_earnings_date")
+            reported = previous.get("next_earnings_date")
+            if reported and reported <= today.isoformat() and record["next_earnings_date"] != reported:
+                last = max(last or reported, reported)
+            record["last_earnings_date"] = last
+        user_state["symbols"].update(records)
+
+    update_user_state(user_name, _save, path)
 
 
 def reusable_evaluations(
