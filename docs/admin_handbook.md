@@ -163,7 +163,7 @@ Details: [watchdog.md](watchdog.md), sections "How one run works" and "When Clau
 5. Swing ideas.
 6. Long-term ideas.
 7. The glossary: only the terms that day's email uses.
-8. About this digest: costs for this run and the last 30 days, the user's and the admin's.
+8. About this digest: costs for this run and the last 30 days, the user's and the admin's. The email's size in KB is listed too.
 
 **Versions:** an HTML version and an AMP version (`DIGEST.AMP_EMAIL`).
 - The AMP version's dropdowns work only in Gmail, and only for a reader who has allowed the sender `finnbot107@gmail.com` (dynamic email; new_user_guide 1.4).

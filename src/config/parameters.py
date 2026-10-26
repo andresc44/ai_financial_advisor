@@ -822,6 +822,11 @@ params_dict = {
         # Claude-authored (2026-10-25, Andres): the glossary's web page (src/digest/glossary_page.py). When set, the email
         # shows a one-line link to it instead of the ~10 KB glossary card; None keeps the card in the email
         "GLOSSARY_URL": "https://andresc44.github.io/finnbot-glossary/",
+        # Claude-authored (2026-10-25, Andres): users whose email links each chart's own address (charts2-node.finviz.com)
+        # instead of finviz.com/chart.ashx, which redirects twice and sets cookies, a possible reason charts sometimes
+        # don't show in Gmail's app. The same picture, but about 270 bytes longer per chart, so it is the first thing given up
+        # when the email is too big (create_html._short_chart_links). "*" = everyone; [] = nobody
+        "CHART_DIRECT_USERS": ["*"],
         # Claude-authored (2026-10-21): where each market signal's name links (Andres asked for Yahoo or another site
         # than StockCharts). Google Finance opens at its 1-month view (window=1M) for the series it has; its links
         # can't preset a comparison, so each "A vs B" opens A. It has no dollar index (Yahoo, which opens on 1 day),

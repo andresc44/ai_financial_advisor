@@ -262,6 +262,8 @@ NOTES: dict[str, str] = {
     "DIGEST.AMP_EMAIL": "Also send the AMP version, whose dropdowns work in the Gmail app.",
     "DIGEST.HEAT_MAP_URL": "Link of the heat map button under the greeting.",
     "DIGEST.HEAT_MAP_LABEL": "Text of the heat map button.",
+    "DIGEST.CHART_DIRECT_USERS": "Users whose email links the chart picture's own address (no redirects), in case "
+                                 "charts don't show in Gmail. '*' = everyone. About 200 bytes more per chart.",
     "DIGEST.GLOSSARY_URL": "Web page of the glossary. When set, the email links to it instead of carrying it (~10 KB).",
     "DIGEST.INDICATOR_LINKS.*": "Where this market signal's name links in the email.",
     "DIGEST.OPEN_SECTIONS": "Email sections that start open (any of risk, markets, holdings, swing, long_term); the rest "

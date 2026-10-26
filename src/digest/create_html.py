@@ -313,15 +313,29 @@ def _sentiment_badge(value: Any) -> Optional[dict]:
     return _badge(sentiment, *SENTIMENTS[sentiment])
 
 
-def _chart(symbol: str, version: str) -> dict:
+FINVIZ_CHART_HOST = "https://charts2-node.finviz.com/chart"
+# The same picture finviz.com/chart.ashx?...&ta=1&p=d&s=l ends up at after two redirects (checked byte for byte on 38
+# stocks, 2026-10-25): candles, SMA 20/50/200, and trendline patterns. `{symbol}` and `{version}` are filled in.
+FINVIZ_CHART_QUERY = ("w={w}&h={h}&bw=2&bm=1&bb=1&t={symbol}&tf=d&ct=candle_stick&o[0][ot]=sma&o[0][op]=20&o[0][oc]=DC32B363"
+                      "&o[1][ot]=sma&o[1][op]=50&o[1][oc]=FF8F33C6&o[2][ot]=sma&o[2][op]=200&o[2][oc]=DCB3326D"
+                      "&o[3][ot]=patterns&o[3][op]=&o[3][oc]=000&v={version}")
+
+
+def _chart(symbol: str, version: str, direct: bool = False) -> dict:
     """
     Finviz's daily candlestick chart (moving averages, trendlines, volume), as in the first version of the email.
     Finviz covers US listings; for symbols it doesn't know, it returns a "Chart not available" image rather than an
     error. `version` changes with each digest, so Gmail's image proxy can't show an earlier digest's cached chart.
     """
     finviz_symbol = symbol.replace("/", "-").replace(".", "-")
+    # 2026-10-25 (Andres): `direct` links the picture's own address, with no redirects or cookies for Gmail's image proxy
+    # to follow (DIGEST.CHART_DIRECT_USERS); the extra v is ignored by Finviz and keeps the proxy's copies apart
+    short = f"https://finviz.com/chart.ashx?t={finviz_symbol}&ty=c&ta=1&p=d&s=l&v={version}"
+    src = (f"{FINVIZ_CHART_HOST}?" + FINVIZ_CHART_QUERY.format(w=CHART_WIDTH, h=CHART_HEIGHT, symbol=finviz_symbol,
+                                                                version=version)) if direct else short
     return {
-        "src": f"https://finviz.com/chart.ashx?t={finviz_symbol}&ty=c&ta=1&p=d&s=l&v={version}",
+        "src": src,
+        "src_short": short,  # What _short_chart_links falls back to when the email is too big
         "link": f"https://finviz.com/quote.ashx?t={finviz_symbol}",
         "alt": f"{symbol} chart",
         "width": CHART_WIDTH,
@@ -1566,12 +1580,14 @@ def build_view(payload: dict) -> dict:
     # listings); the ideas come from the US screener.
     version = f"{today:%Y%m%d}" if today else "0"
     version += "pre" if _period(payload) == "Pre-Market" else "post"
+    direct_users = params_dict["DIGEST"].get("CHART_DIRECT_USERS") or []
+    direct = "*" in direct_users or str(payload.get("user_name") or "") in direct_users
     for card in cards:
-        card["chart"] = _chart(card["symbol"], version) if card["us_listing"] else None
+        card["chart"] = _chart(card["symbol"], version, direct) if card["us_listing"] else None
     # Claude-authored (2026-10-22): an idea the user already holds says so
     held = {str(h.get("symbol")).upper() for h in holdings if h.get("symbol")}
     for card in swing + long_term:
-        card["chart"] = _chart(card["ticker"], version) if card["ticker"] else None
+        card["chart"] = _chart(card["ticker"], version, direct) if card["ticker"] else None
         card["held"] = str(card["ticker"] or "").upper() in held
     # Claude-authored (2026-10-17): currencies the payload doesn't give are assumed USD, and listed for the run log.
     # The ideas and the market dashboard are always USD (see IDEAS_CURRENCY), so they aren't listed.
@@ -1718,6 +1734,16 @@ def render_amp(view: dict, template_dir: Path) -> Optional[str]:
     return amp_html
 
 
+def _short_chart_links(view: dict) -> None:
+    """
+    Claude-authored (2026-10-25, Andres): the first thing given up when the email is too big. Each chart goes back to
+    finviz.com's short link, which redirects (~270 bytes shorter each), as before DIGEST.CHART_DIRECT_USERS.
+    """
+    for card in view["holdings"] + view["swing"] + view["long_term"]:
+        if card.get("chart"):
+            card["chart"]["src"] = card["chart"]["src_short"]
+
+
 def _drop_about(view: dict) -> None:
     """Claude-authored (2026-10-21): the footer's "About this digest" (costs, model, screening counts)."""
     view["usage"], view["screening"] = [], []
@@ -1804,10 +1830,13 @@ def _drop_hold_charts(view: dict) -> None:
 # Gmail would clip the bottom of a big portfolio's email (the ideas), the Hold cards' charts
 # 2026-10-25 (Andres's order): the Hold cards' lesser news and every Low story first, then the quote buttons, the
 # footer, and the glossary
-TRIM_STEPS = (_drop_hold_news, _drop_low_news, _drop_quote_links, _drop_about, _drop_glossary, _drop_sector_chart,
+TRIM_STEPS = (_short_chart_links, _drop_hold_news, _drop_low_news, _drop_quote_links, _drop_about, _drop_glossary, _drop_sector_chart,
               _drop_pick_about,
               _top_news_only,
               _no_hold_news, _drop_pick_details, _flagged_top_news_only, _no_news, _drop_hold_charts)
+
+
+SIZE_LABEL = "Email size"
 
 
 def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
@@ -1823,13 +1852,34 @@ def fit_for_gmail(view: dict, template_dir: Path, amp: bool = False) -> str:
     if view.get("glossary"):
         view["glossary"] = terms_in_use(view["glossary"], visible_text(render_html({**view, "glossary": []},
                                                                                  template_dir)))
-    html = render_html(view, template_dir, amp=amp)
+    html = render_sized(view, template_dir, amp)
     for step in TRIM_STEPS:
         if len(html.encode("utf-8")) <= limit:
             break
         step(view)
         view["trimmed"] = True
-        html = render_html(view, template_dir, amp=amp)
+        html = render_sized(view, template_dir, amp)
+    return html
+
+
+def render_sized(view: dict, template_dir: Path, amp: bool = False) -> str:
+    """
+    Claude-authored (2026-10-25, Andres): render_html with the email's own size as a row ("Email size", in KB) of
+    "About this digest". The row changes the size it reports, so it is rendered again with the new size until the
+    text stops changing (twice, nearly always). Nothing is added when "About this digest" is left out.
+    """
+    view["usage"] = [row for row in view["usage"] if row[0] != SIZE_LABEL]
+    html = render_html(view, template_dir, amp=amp)
+    if not (view["usage"] or view["screening"]):
+        return html
+    base = list(view["usage"])
+    for _ in range(3):
+        view["usage"] = base + [(SIZE_LABEL, f"{len(html.encode('utf-8')) / 1000:.1f} KB")]
+        again = render_html(view, template_dir, amp=amp)
+        stable = again == html
+        html = again
+        if stable:
+            break
     return html
 
 

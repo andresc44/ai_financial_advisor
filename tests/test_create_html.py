@@ -24,6 +24,10 @@ def glossary_in_the_email(monkeypatch):
     """Claude-authored (2026-10-25): these tests cover the glossary card in the email; the digest links to its web page
     instead (DIGEST.GLOSSARY_URL), which test_with_a_glossary_page_the_email_links_to_it_instead covers."""
     monkeypatch.setitem(ch.params_dict["DIGEST"], "GLOSSARY_URL", None)
+    # ...and the charts' short finviz.com links; the tests of CHART_DIRECT_USERS switch it on themselves
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "CHART_DIRECT_USERS", [])
+
+
 RATIONALE = ("Price is above the 21-day EMA and the SAR, RSI is neutral, and earnings are three weeks away. " * 6).strip()
 NEWS = ("On October 15, 2026, the company launched a new product line. The launch should support the stock over "
         "the next 1-3 weeks if demand holds up as analysts expect, though margins remain the key question.")
@@ -715,7 +719,7 @@ def test_the_glossary_is_static_and_left_out_first():
     # 2026-10-21: "About this digest" goes first, then the glossary
     # 2026-10-25 (Andres's order): the Hold cards' lesser news and Low stories go before them, the blurbs after
     assert [step.__name__ for step in ch.TRIM_STEPS] == [
-        "_drop_hold_news", "_drop_low_news", "_drop_quote_links", "_drop_about", "_drop_glossary", "_drop_sector_chart", "_drop_pick_about",
+        "_short_chart_links", "_drop_hold_news", "_drop_low_news", "_drop_quote_links", "_drop_about", "_drop_glossary", "_drop_sector_chart", "_drop_pick_about",
         "_top_news_only",
         "_no_hold_news", "_drop_pick_details", "_flagged_top_news_only", "_no_news", "_drop_hold_charts"]
     trimmed = ch.build_view(payload(screening={"stages": [{"stage": "listings", "count": 7012}]}))
@@ -1141,3 +1145,42 @@ def test_risk_section_charts_the_sectors_and_the_chart_goes_before_the_swing_blu
     assert "Sectors: Technology 70%, Healthcare 20%, Other 10%" in ch.render_text(view)
     ch._drop_sector_chart(view)
     assert "Sectors, by share of portfolio value" not in ch.render_html(view, TEMPLATE_DIR)
+
+
+def test_about_this_digest_shows_the_emails_own_size():
+    # Claude-authored (2026-10-25, Andres): the row names the size of the email it is in, and drops out with the section
+    view = ch.build_view(payload())
+    html = ch.fit_for_gmail(view, TEMPLATE_DIR)
+    shown = re.search(r"Email size</td><td class=\"kv\">([\d.]+) KB<", html)
+    assert shown and abs(float(shown.group(1)) - len(html.encode("utf-8")) / 1000) < 0.06
+    trimmed = ch.build_view(payload())
+    ch._drop_about(trimmed)
+    assert "Email size" not in ch.render_sized(trimmed, TEMPLATE_DIR)
+
+
+def test_charts_can_link_their_own_address_for_chosen_users(monkeypatch):
+    # Claude-authored (2026-10-25, Andres): DIGEST.CHART_DIRECT_USERS skips finviz.com's two redirects
+    view = ch.build_view(payload())
+    assert view["holdings"][0]["chart"]["src"].startswith("https://finviz.com/chart.ashx?t=")
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "CHART_DIRECT_USERS", [payload()["user_name"]])
+    direct = ch.build_view(payload())["holdings"][0]["chart"]["src"]
+    card = ch.build_view(payload())["holdings"][0]
+    assert direct.startswith("https://charts2-node.finviz.com/chart?w=466&h=219&") and f"&t={card['symbol']}&" in direct
+    assert "o[2][op]=200" in direct and re.search(r"&v=\d{8}(pre|post)$", direct)
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "CHART_DIRECT_USERS", ["Somebody else"])
+    assert ch.build_view(payload())["holdings"][0]["chart"]["src"].startswith("https://finviz.com/chart.ashx")
+    monkeypatch.setitem(ch.params_dict["DIGEST"], "CHART_DIRECT_USERS", ["*"])
+    assert ch.build_view(payload())["swing"] == [] or "charts2-node" in ch.build_view(payload())["swing"][0]["chart"]["src"]
+
+
+def test_direct_chart_links_are_the_first_thing_given_up_for_size():
+    # Claude-authored (2026-10-25, Andres): a big email goes back to finviz.com's short links before anything else is cut
+    assert ch.TRIM_STEPS[0].__name__ == "_short_chart_links"
+    ch.params_dict["DIGEST"]["CHART_DIRECT_USERS"] = ["*"]  # Restored by the fixture's monkeypatch after the test
+    view = ch.build_view(payload())
+    full = ch.render_html(view, TEMPLATE_DIR)
+    assert "charts2-node.finviz.com" in full
+    ch._short_chart_links(view)
+    short = ch.render_html(view, TEMPLATE_DIR)
+    assert "charts2-node.finviz.com" not in short and "finviz.com/chart.ashx" in short
+    assert len(full.encode()) - len(short.encode()) > 200 * 3  # The payload has several charts
